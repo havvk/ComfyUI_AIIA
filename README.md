@@ -55,8 +55,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 这是一个功能强大且高度可定制的视频合并节点，是您工作流中处理视频生成的终极解决方案。
 
-<img src="https://raw.githubusercontent.com/havvk/ComfyUI_AIIA/main/assets/video_combine_node_ui.png" alt="AIIA Video Combine Node UI" width="600"/>
-*(建议您截一张节点在UI中的图，保存到仓库的 `assets` 目录下并替换此链接)*
+![video_combine_node_ui](https://github.com/user-attachments/assets/4185c2a7-e1a6-4980-ac8a-3d326bff4b87)
 
 #### 核心亮点
 -   **内存高效**: 通过 `frames_directory` 输入，可以处理几乎无限数量的图像帧，完美解决了 OOM 问题。
