@@ -1,0 +1,18 @@
+{
+  "extension": "mp4",
+  "description": "H.264 (AVC) 编码, 适用于广泛兼容性。",
+  "main_pass": [
+    "-c:v", "libx264",
+    "-pix_fmt", "${pix_fmt_h264}",
+    "-preset", "${codec_preset}",
+    "-crf", "${crf}",
+    "-profile:v", "${h264_profile}",
+    "-level", "${h264_level}"
+  ],
+  "audio_pass": ["-c:a", "aac", "-b:a", "192k"],
+  "extra_widgets": [
+    ["pix_fmt_h264", ["yuv420p", "yuvj420p", "yuv420p10le", "yuv444p"], {"default": "yuv420p", "tooltip": "像素格式。yuv420p 兼容性最好。"}],
+    ["h264_profile", ["baseline", "main", "high", "high10", "high422", "high444"], {"default": "high", "tooltip": "H.264 Profile. 'high' 通常是个不错的选择。"}],
+    ["h264_level", ["3.0", "3.1", "3.2", "4.0", "4.1", "4.2", "5.0", "5.1", "5.2"], {"default": "4.1", "tooltip": "H.264 Level. 影响分辨率和帧率上限。"}]
+  ]
+}

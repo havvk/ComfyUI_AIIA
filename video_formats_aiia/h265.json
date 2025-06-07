@@ -1,0 +1,17 @@
+{
+  "extension": "mp4",
+  "description": "H.265 (HEVC) 编码, 在相同质量下通常有更高的压缩率。",
+  "main_pass": [
+    "-c:v", "libx265",
+    "-pix_fmt", "${pix_fmt_h265}",
+    "-preset", "${codec_preset}",
+    "-crf", "${crf}",
+    "-tag:v", "hvc1",
+    "-x265-params", "profile=${h265_profile}"
+  ],
+  "audio_pass": ["-c:a", "aac", "-b:a", "192k"],
+  "extra_widgets": [
+    ["pix_fmt_h265", ["yuv420p", "yuv420p10le", "yuv422p10le", "yuv444p10le"], {"default": "yuv420p10le", "tooltip": "像素格式。H.265 常用于 10-bit (p10le)。"}],
+    ["h265_profile", ["main", "main10", "mainstillpicture", "mainrext"], {"default": "main10", "tooltip": "H.265 Profile. 'main10' 支持 10-bit。"}]
+  ]
+}
