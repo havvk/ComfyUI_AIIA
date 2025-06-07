@@ -1,0 +1,15 @@
+[project]
+name = "aiia"
+description = ""
+version = "1.0.0"
+license = {file = "LICENSE"}
+
+[project.urls]
+Repository = "https://github.com/havvk/ComfyUI_AIIA"
+#  Used by Comfy Registry https://registry.comfy.org
+
+[tool.comfy]
+PublisherId = "hawk"
+DisplayName = "ComfyUI_AIIA"
+Icon = ""
+includes = []
