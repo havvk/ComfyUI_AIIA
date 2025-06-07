@@ -97,7 +97,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 -   **用途**: 将 `Generate Speaker Segments` 的识别结果**精确地应用**到由 Whisper 等工具生成的、带有文本的 `WHISPER_CHUNKS` 上。
 -   **输入**: `WHISPER_CHUNKS` (来自文本转录节点) 和 `AUDIO` 张量。
 -   **输出**: 更新后的 `WHISPER_CHUNKS`，其中每个文本块都已被赋予了最匹配的说话人标签。
--   **工作流**: `(音频) -> Whisper -> (文本Chunks)` + `(音频)  => `E2E Diarizer` => **最终带有说话人标签的文本稿**。
+-   **工作流**: `(音频) -> Whisper -> (文本Chunks)` + `(音频)  => E2E Diarizer` => **最终带有说话人标签的文本稿**。
 
 ---
 
