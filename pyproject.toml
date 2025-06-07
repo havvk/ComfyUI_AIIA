@@ -1,7 +1,7 @@
 [project]
 name = "aiia"
 description = "AIIA Nodes for ComfyUI is a comprehensive suite of advanced nodes designed to streamline and supercharge your video and audio generation workflows. It centrally addresses the critical Out-Of-Memory (OOM) issues encountered when processing long sequences by intelligently handling frames on disk. The suite includes: a powerful Video Combiner with an extensible format system; memory-efficient FLOAT Talking Head Animator nodes with both in-memory (for speed) and on-disk (for stability) modes; and a sophisticated Speaker Diarization toolkit powered by NeMo for identifying who spoke when. Utility nodes like the OOM-safe Image Sequence Concatenator are also included to create comparison or multi-panel videos effortlessly."
-version = "1.0.2"
+version = "1.0.3"
 license = {file = "LICENSE"}
 
 [project.urls]
