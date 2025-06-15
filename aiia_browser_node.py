@@ -13,22 +13,14 @@ import traceback
 from io import BytesIO
 import re
 import tempfile
+import folder_paths
 
 print("--- [AIIA] Loading Media Browser API Endpoints (V19 - Robustness Fixes) ---")
 
 # --- START OF FIX: Path and Cache Logic Refinement ---
 try:
     # Attempt to find the ComfyUI root directory robustly
-    comfyui_root_path = Path(__file__).resolve().parents[2]
-    if not (comfyui_root_path / "main.py").exists():
-         current_dir = Path(__file__).resolve().parent
-         while not (current_dir / "main.py").exists() and current_dir != current_dir.parent:
-             current_dir = current_dir.parent
-         if (current_dir / "main.py").exists():
-             comfyui_root_path = current_dir
-         else:
-             raise FileNotFoundError("Could not find ComfyUI root directory.")
-    output_dir = comfyui_root_path / "output"
+    output_dir = Path(folder_paths.get_output_directory())
     print(f"--- [AIIA] Successfully located ComfyUI root. Output directory set to: {output_dir}")
 
 except Exception as e:
