@@ -90,6 +90,7 @@ async def _get_file_metadata(file_path: Path):
                         metadata['width'] = video_stream.get('width')
                         metadata['height'] = video_stream.get('height')
         except Exception as e:
+            print(f"--- [AIIA] Warning: Could not get metadata for {file_path}. Reason: {e}")
             pass
         return metadata
 
