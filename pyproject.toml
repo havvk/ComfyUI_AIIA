@@ -3,6 +3,9 @@ name = "aiia"
 description = """A suite of powerful, intuitive, and highly customizable nodes for ComfyUI, featuring a high-performance Media Browser and OOM-safe video tools.
 
 ---
+### Changelog v1.2.1
+- **Bug Fix**: Restored the asynchronous loading behavior of the media browser. File lists now appear instantly while metadata (like thumbnails and workflow info) loads in the background, fixing a user experience regression from v1.2.0.
+
 ### Changelog v1.2.0
 - **Features & Optimizations**:
   - Added one-click workflow loading and file downloading directly from the browser.
@@ -14,7 +17,7 @@ description = """A suite of powerful, intuitive, and highly customizable nodes f
   - Correctly sets workflow names on load for both standard and API formats.
   - Resolved issues with the icon sizing slider, ensuring instant and correct view updates.
 """
-version = "1.2.0"
+version = "1.2.1"
 license = {file = "LICENSE"}
 
 [project.urls]

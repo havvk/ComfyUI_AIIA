@@ -52,14 +52,26 @@ semaphore = asyncio.Semaphore(CONCURRENT_LIMIT)
 def get_safe_path(base_dir, relative_path_str):
     try:
         safe_base = base_dir.resolve()
+        
+        # If the relative path is empty or just a dot, return the base directory itself.
+        if not relative_path_str or relative_path_str == '.':
+            return safe_base
+
         clean_path = os.path.normpath(relative_path_str)
         if '..' in clean_path.split(os.sep):
              raise PermissionError("Path traversal attempt detected.")
+        
         target_path = (safe_base / Path(clean_path)).resolve()
+        
+        # Ensure the resolved target path is still within the base directory.
         target_path.relative_to(safe_base)
+        
         return target_path
     except ValueError:
         raise PermissionError("Forbidden path, not within the base directory.")
+    except Exception as e:
+        print(f"[AIIA Browser] Error in get_safe_path: {e}")
+        raise
 
 
 async def _get_file_metadata(file_path: Path):
@@ -86,8 +98,17 @@ async def _get_file_metadata(file_path: Path):
                 stdout, stderr = await proc.communicate()
                 if proc.returncode == 0:
                     ffprobe_data = json.loads(stdout)
-                    if 'format' in ffprobe_data and 'duration' in ffprobe_data['format']:
-                        metadata['duration'] = float(ffprobe_data['format']['duration'])
+                    if 'format' in ffprobe_data:
+                        if 'duration' in ffprobe_data['format']:
+                            metadata['duration'] = float(ffprobe_data['format']['duration'])
+                        # Check for workflow in format tags (e.g., 'comment' for MP4/MOV)
+                        tags = ffprobe_data['format'].get('tags', {})
+                        for key, value in tags.items():
+                            # A more strict check for workflow JSON
+                         if isinstance(value, str) and value.strip().startswith('{') and '"nodes"' in value and '"links"' in value:
+                             metadata['has_workflow'] = True
+                             break # Found it, no need to check other tags
+                    
                     video_stream = next((s for s in ffprobe_data.get('streams', []) if s.get('codec_type') == 'video'), None)
                     if video_stream:
                         metadata['width'] = video_stream.get('width')
@@ -101,7 +122,8 @@ async def list_items(request):
     relative_path_str = request.query.get("path", "")
     try:
         target_path = get_safe_path(output_dir, relative_path_str)
-        if not target_path.is_dir(): return web.Response(status=404, text="Directory not found")
+        if not target_path.is_dir(): 
+            return web.Response(status=404, text=f"Directory not found: {target_path}")
         
         directories, files = [], []
         for item in os.scandir(target_path):
@@ -280,16 +302,36 @@ async def get_workflow(request):
         if not file_path.is_file():
             return web.Response(status=404, text="File not found")
 
-        with Image.open(file_path) as img:
-            # Prioritize the full 'workflow' data if it exists, otherwise fall back to 'prompt'.
-            workflow_data_str = img.info.get('workflow') or img.info.get('prompt')
+        ext = file_path.suffix.lower()
+        workflow_obj = None
+
+        if ext in {'.png', '.jpg', '.jpeg', '.gif', '.webp'}:
+            with Image.open(file_path) as img:
+                workflow_data_str = img.info.get('workflow') or img.info.get('prompt')
+                if workflow_data_str:
+                    workflow_obj = json.loads(workflow_data_str)
+        
+        elif ext in {'.mp4', '.mov', '.avi', '.webm'}:
+            if not shutil.which("ffprobe"):
+                return web.Response(status=501, text="ffprobe is not installed on the server.")
             
-            if workflow_data_str:
-                workflow_obj = json.loads(workflow_data_str)
-                sanitized_workflow_obj = replace_nan_with_null(workflow_obj)
-                return web.json_response(sanitized_workflow_obj)
-            else:
-                return web.Response(status=404, text="No workflow data found in the image.")
+            command = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(file_path)]
+            proc = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode == 0:
+                ffprobe_data = json.loads(stdout)
+                tags = ffprobe_data.get("format", {}).get("tags", {})
+                for key, value in tags.items():
+                    if isinstance(value, str) and value.strip().startswith('{') and '"nodes"' in value:
+                        workflow_obj = json.loads(value)
+                        break
+        
+        if workflow_obj:
+            sanitized_workflow_obj = replace_nan_with_null(workflow_obj)
+            return web.json_response(sanitized_workflow_obj)
+        else:
+            return web.Response(status=404, text="No workflow data found in the file.")
 
     except Exception as e:
         traceback.print_exc()

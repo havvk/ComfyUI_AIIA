@@ -496,11 +496,10 @@ class AIIABrowserDialog extends ComfyDialog {
             
             this.itemsData = await response.json().then(data => [...data.directories, ...data.files]);
 
-            // Wait for all metadata to load before the initial render.
-            // This prevents race conditions and ensures the view is always consistent.
-            await this.startMetadataBatchLoading();
-
             this.render();
+
+            // Fetch metadata in the background after rendering placeholders
+            this.startMetadataBatchLoading();
 
         } catch (error) {
             this.contentArea.innerHTML = `<div class="aiia-browser-error">Error: ${error.message}</div>`;
@@ -1050,9 +1049,13 @@ class AIIABrowserDialog extends ComfyDialog {
                 this.metadataLoader.isLoading = false; 
                 const headerContainer = this.element.querySelector('.aiia-list-header'); 
                 if(headerContainer) { 
-                    const headers = [ { key: 'name', text: 'Name' }, { key: 'mtime', text: 'Date modified' }, { key: 'type', text: 'Type' }, { key: 'size', text: 'Size' }, { key: 'dimensions', text: 'Dimensions' }, { key: 'duration', text: 'Duration' } ]; 
+                    const headers = [ { key: 'name', text: 'Name' }, { key: 'mtime', text: 'Date modified' }, { key: 'type', text: 'Type' }, { key: 'size', text: 'Size' }, { key: 'dimensions', text: 'Dimensions' }, { key: 'duration', 'text': 'Duration' } ]; 
                     this.updateListHeader(headerContainer, headers); 
-                } 
+                }
+                // Use setTimeout to push the final render to the next event loop.
+                // This is the most robust way to ensure the UI correctly reflects all
+                // loaded metadata after the initial asynchronous display.
+                setTimeout(() => this.render(), 0);
             } 
             return; 
         } 
