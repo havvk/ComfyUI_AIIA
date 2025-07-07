@@ -75,7 +75,10 @@ async def _get_file_metadata(file_path: Path):
         try:
             if ext in {'.png', '.jpg', '.jpeg', '.gif', '.webp'}:
                 with Image.open(file_path) as img:
+                    img.load() # Force loading of metadata chunks
                     metadata["width"], metadata["height"] = img.size
+                    if 'prompt' in img.info or 'workflow' in img.info:
+                        metadata['has_workflow'] = True
             elif ext in {'.mp4', '.mov', '.avi', '.wav', '.mp3', '.ogg'}:
                 if not shutil.which("ffprobe"): return metadata
                 command = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
@@ -146,7 +149,7 @@ async def get_thumbnail(request):
         cached_thumb_path = cache_sub_dir / f"{Path(filename).stem}.jpg"
 
         if cached_thumb_path.exists() and cached_thumb_path.stat().st_mtime > original_file_path.stat().st_mtime:
-            return web.FileResponse(cached_thumb_path, headers={'Content-Type': 'image/jpeg'})
+            return web.FileResponse(cached_thumb_path, headers={'Content-Type': 'image/jpeg', 'Cache-Control': 'public, must-revalidate'})
 
         with Image.open(original_file_path) as img:
             img = ImageOps.exif_transpose(img)
@@ -164,7 +167,7 @@ async def get_thumbnail(request):
             
             asyncio.create_task(write_cache())
             
-            return web.Response(body=buffer.getvalue(), content_type='image/jpeg')
+            return web.Response(body=buffer.getvalue(), content_type='image/jpeg', headers={'Cache-Control': 'public, must-revalidate'})
 
     except Exception as e:
         traceback.print_exc()
@@ -180,45 +183,49 @@ async def get_video_poster(request):
 
     try:
         original_file_path = get_safe_path(output_dir, os.path.join(relative_path_str, filename))
-        if not original_file_path.is_file(): return web.Response(status=404, text="File not found")
+        if not original_file_path.is_file() or original_file_path.stat().st_size == 0:
+            return web.Response(status=404, text="File not found or is empty")
 
         cache_sub_dir = get_safe_path(video_poster_dir, relative_path_str)
         cache_sub_dir.mkdir(parents=True, exist_ok=True)
         cached_poster_path = cache_sub_dir / f"{Path(filename).stem}.jpg"
         
-        if cached_poster_path.exists() and cached_poster_path.stat().st_mtime > original_file_path.stat().st_mtime:
-            return web.FileResponse(cached_poster_path, headers={'Content-Type': 'image/jpeg'})
+        if cached_poster_path.exists():
+            # If the cached file is valid and up-to-date, serve it.
+            if cached_poster_path.stat().st_size > 0 and cached_poster_path.stat().st_mtime > original_file_path.stat().st_mtime:
+                return web.FileResponse(cached_poster_path, headers={'Content-Type': 'image/jpeg', 'Cache-Control': 'public, must-revalidate'})
+            else:
+                # Delete invalid (0-byte) or outdated cache files.
+                print(f"--- [AIIA Browser Debug] Deleting invalid or outdated cache file: {cached_poster_path}")
+                os.remove(cached_poster_path)
         
-        # 使用临时文件确保 ffmpeg 操作的原子性
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmpfile:
             tmp_poster_path = tmpfile.name
-        
+
+        # Use the 'thumbnail' filter with the 'update' flag, which is robust for both
+        # normal videos and special cases like single-frame videos.
         command = [
             "ffmpeg",
-            "-ss", "00:00:01.00", 
             "-i", str(original_file_path),
+            "-vf", "thumbnail,scale=256:-1:force_original_aspect_ratio=decrease",
             "-frames:v", "1",
-            "-vf", "thumbnail,scale=256:-1",
-            "-y", # Overwrite output file if it exists
+            "-update", "1",
+            "-q:v", "3",
+            "-y",
             str(tmp_poster_path)
         ]
+        
         proc = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        stdout, stderr = await proc.communicate()
+        _, stderr = await proc.communicate()
 
-        if proc.returncode != 0:
+        if proc.returncode != 0 or not os.path.exists(tmp_poster_path) or os.path.getsize(tmp_poster_path) == 0:
             if os.path.exists(tmp_poster_path): os.remove(tmp_poster_path)
-            print(f"[AIIA] FFmpeg error for {filename}: {stderr.decode()}")
-            return web.Response(status=500, text="Failed to extract frame from video.")
+            print(f"[AIIA] FFmpeg failed to extract thumbnail for {filename}. Error: {stderr.decode()}")
+            return web.Response(status=500, text="Failed to extract thumbnail from video.")
 
-        # 检查生成的文件是否有效
-        if not os.path.exists(tmp_poster_path) or os.path.getsize(tmp_poster_path) == 0:
-             if os.path.exists(tmp_poster_path): os.remove(tmp_poster_path)
-             return web.Response(status=500, text="FFmpeg produced an empty file.")
-
-        # 原子性地移动/重命名临时文件到缓存位置
         shutil.move(tmp_poster_path, cached_poster_path)
+        return web.FileResponse(cached_poster_path, headers={'Content-Type': 'image/jpeg', 'Cache-Control': 'public, must-revalidate'})
 
-        return web.FileResponse(cached_poster_path, headers={'Content-Type': 'image/jpeg'})
     except Exception as e:
         if 'tmp_poster_path' in locals() and os.path.exists(tmp_poster_path):
             os.remove(tmp_poster_path)
@@ -245,10 +252,54 @@ async def get_batch_metadata(request):
         traceback.print_exc()
         return web.Response(status=500, text=str(e))
 
+import math
+
+def replace_nan_with_null(obj):
+    """
+    Recursively traverses a Python object (dicts, lists) and replaces
+    float('nan') with None, which serializes to JSON 'null'.
+    """
+    if isinstance(obj, dict):
+        return {k: replace_nan_with_null(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [replace_nan_with_null(elem) for elem in obj]
+    # The core of the fix: only replace actual float NaN values
+    elif isinstance(obj, float) and math.isnan(obj):
+        return None
+    else:
+        return obj
+
+async def get_workflow(request):
+    relative_path_str = request.query.get("path", "")
+    filename = request.query.get("filename", "")
+    if not filename:
+        return web.Response(status=400, text="Filename is required.")
+
+    try:
+        file_path = get_safe_path(output_dir, os.path.join(relative_path_str, filename))
+        if not file_path.is_file():
+            return web.Response(status=404, text="File not found")
+
+        with Image.open(file_path) as img:
+            # Prioritize the full 'workflow' data if it exists, otherwise fall back to 'prompt'.
+            workflow_data_str = img.info.get('workflow') or img.info.get('prompt')
+            
+            if workflow_data_str:
+                workflow_obj = json.loads(workflow_data_str)
+                sanitized_workflow_obj = replace_nan_with_null(workflow_obj)
+                return web.json_response(sanitized_workflow_obj)
+            else:
+                return web.Response(status=404, text="No workflow data found in the image.")
+
+    except Exception as e:
+        traceback.print_exc()
+        return web.Response(status=500, text=str(e))
+
 server.PromptServer.instance.app.router.add_get('/api/aiia/v1/browser/list_items', list_items)
 server.PromptServer.instance.app.router.add_post('/api/aiia/v1/browser/get_batch_metadata', get_batch_metadata)
 server.PromptServer.instance.app.router.add_get('/api/aiia/v1/browser/thumbnail', get_thumbnail)
 server.PromptServer.instance.app.router.add_get('/api/aiia/v1/browser/poster', get_video_poster)
+server.PromptServer.instance.app.router.add_get('/api/aiia/v1/browser/get_workflow', get_workflow)
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}

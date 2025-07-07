@@ -1,4 +1,4 @@
-// aiia_browser_styles.js (V67 - 设置面板样式修复)
+// aiia_browser_styles.js (V82 - 虚拟滚动引擎重构)
 export const browserStyles = `
     /* Main Browser Styles */
     #aiia-browser-menu-button { margin-left: 10px; }
@@ -77,16 +77,65 @@ export const browserStyles = `
     .aiia-grid-wrapper::-webkit-scrollbar-thumb, .aiia-list-body::-webkit-scrollbar-thumb, .aiia-custom-tooltip::-webkit-scrollbar-thumb, .aiia-filmstrip-container::-webkit-scrollbar-thumb, .aiia-directory-list::-webkit-scrollbar-thumb { background-color: rgba(155, 155, 155, 0.5); border-radius: 8px; border: 4px solid transparent; background-clip: content-box; }
     .aiia-grid-wrapper:hover::-webkit-scrollbar-thumb, .aiia-list-container:hover .aiia-list-body::-webkit-scrollbar-thumb, .aiia-filmstrip-container:hover::-webkit-scrollbar-thumb, .aiia-directory-list:hover::-webkit-scrollbar-thumb { background-color: rgba(155, 155, 155, 0.8); }
     
-    .aiia-grid-wrapper { height: 100%; width: 100%; overflow-y: auto; overflow-x: hidden; }
-    .aiia-grid-inner-wrapper { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--aiia-icon-size, 120px), 1fr)); gap: 10px; padding: 10px; }
-    .aiia-item-icon { width: 100%; display: flex; flex-direction: column; border: 1px solid transparent; border-radius: 5px; cursor: pointer; }
-    .aiia-icon-preview { position: relative; height: var(--aiia-icon-size, 120px); min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; overflow: hidden; }
-    .aiia-icon-preview.media-placeholder { background-color: var(--comfy-menu-bg); border: 1px solid var(--border-color); }
-    .aiia-image-preview, .aiia-video-preview { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .aiia-grid-wrapper { height: 100%; width: 100%; overflow-y: scroll; overflow-x: hidden; position: relative; }
+    .aiia-virtual-scroller { position: absolute; top: 0; left: 0; width: 1px; opacity: 0; pointer-events: none; }
+    .aiia-grid-inner-wrapper { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--aiia-icon-size, 120px), 1fr)); gap: 10px; padding: 10px; position: absolute; top: 0; left: 0; right: 0; }
+    
+    .aiia-item-icon {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--border-color);
+        border-radius: 5px;
+        cursor: pointer;
+        position: relative;
+        background-color: var(--comfy-menu-bg);
+        overflow: hidden;
+    }
+    .aiia-item-icon:hover .aiia-icon-button-overlay {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    .aiia-icon-preview {
+        position: relative;
+        flex-grow: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        overflow: hidden;
+    }
+    .aiia-icon-preview.media-placeholder { background-color: var(--comfy-box-bg); }
+    .aiia-image-preview, .aiia-video-preview {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        width: calc(100% - 16px);
+        height: calc(100% - 16px);
+        border-radius: 4px;
+    }
     .aiia-audio-container { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; gap: 8px; }
     .aiia-audio-container audio { width: 90%; }
     .aiia-audio-duration { font-size: 11px; color: var(--descrip-text); }
-    .aiia-item-label { flex-shrink: 0; width: 100%; text-align: center; font-size: 12px; padding: 4px; white-space: normal; word-break: break-all; color: #E5E7EB; }
+    .aiia-item-label {
+        flex-shrink: 0;
+        width: 100%;
+        text-align: center;
+        font-size: 12px;
+        padding: 8px 4px;
+        white-space: normal;
+        word-break: break-all;
+        color: #E5E7EB;
+        line-height: 1.3;
+        background-color: rgba(0,0,0,0.2);
+    }
+    .aiia-item-label.has-workflow {
+        background-color: rgba(59, 130, 246, 0.25);
+        border-top: 1px solid rgba(96, 165, 250, 0.3);
+        color: #eff6ff;
+    }
     
     .aiia-video-poster-container::after {
         content: '';
@@ -105,7 +154,6 @@ export const browserStyles = `
         -webkit-mask-size: 60%;
         mask-size: 60%;
         -webkit-mask-repeat: no-repeat;
-        mask-repeat: no-repeat;
         -webkit-mask-position: center;
         mask-position: center;
         transition: background-color 0.2s ease-in-out, transform 0.2s ease-in-out;
@@ -125,21 +173,95 @@ export const browserStyles = `
     .aiia-tooltip-label { color: #aaa; text-align: right; white-space: nowrap; }
     .aiia-tooltip-value { color: #eee; font-weight: bold; white-space: normal; overflow-wrap: break-word; min-width: 0; }
     
+    .aiia-tooltip-metadata audio {
+        width: 100%;
+        margin-bottom: 8px;
+    }
+    .aiia-tooltip-metadata audio::-webkit-media-controls-play-button,
+    .aiia-tooltip-metadata audio::-webkit-media-controls-mute-button,
+    .aiia-tooltip-metadata audio::-webkit-media-controls-volume-slider {
+        display: none;
+    }
+    
     .aiia-list-container { display: flex; flex-direction: column; height: 100%; width: 100%; }
-    .aiia-list-body { flex-grow: 1; overflow-y: auto; position: relative; }
-    .aiia-list-body-content { }
-    .aiia-list-header, .aiia-list-row { display: grid; grid-template-columns: 28px minmax(150px, 3fr) minmax(140px, 1.5fr) minmax(70px, 1fr) minmax(80px, 1fr) minmax(100px, 1fr) minmax(80px, 1fr); align-items: center; gap: 8px; padding: 0 8px; }
-    .aiia-list-row { border-bottom: 1px solid var(--border-color); cursor: pointer; }
+    .aiia-list-body { flex-grow: 1; overflow-y: scroll; position: relative; }
+    .aiia-list-body-content { position: relative; width: 100%; height: 100%; }
+    .aiia-list-header, .aiia-list-row { display: grid; grid-template-columns: 28px minmax(150px, 3fr) minmax(140px, 1.5fr) minmax(70px, 1fr) minmax(80px, 1fr) minmax(100px, 1fr) minmax(80px, 1fr) 110px; align-items: center; gap: 8px; padding: 0 8px; }
+    .aiia-list-row { border-bottom: 1px solid var(--border-color); cursor: pointer; position: absolute; left: 0; right: 0; }
     .aiia-list-header { position: sticky; top: 0; z-index: 10; background: var(--comfy-box-bg); border-bottom: 2px solid var(--border-color); }
     .aiia-list-header-cell { padding: 8px 0; font-weight: bold; color: #F9FAFB; cursor: pointer; user-select: none; }
     .aiia-list-header-cell:hover { color: var(--link-color); }
-    .aiia-list-row > div { padding: 6px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #E5E7EB; }
+    .aiia-list-cell { padding: 6px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #E5E7EB; }
     .aiia-list-cell-icon { font-size: 16px; text-align: center; }
+    .aiia-list-cell-actions { display: flex; justify-content: center; align-items: center; gap: 4px; }
+
+    .aiia-icon-button-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        padding: 8px;
+        box-sizing: border-box;
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+        pointer-events: none;
+    }
+    .aiia-item-icon:hover .aiia-icon-button-overlay,
+    .aiia-item-icon.actions-visible .aiia-icon-button-overlay {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: all;
+    }
+    .aiia-icon-button-overlay > button {
+        pointer-events: all;
+        position: static;
+        padding: 4px 8px;
+        font-size: 14px;
+        line-height: 1;
+        background-color: rgba(30, 30, 30, 0.8);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 4px;
+        cursor: pointer;
+        backdrop-filter: blur(2px);
+        transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+    }
+    .aiia-icon-button-overlay > button:hover {
+        background-color: rgba(0, 123, 255, 0.9);
+        transform: scale(1.05);
+    }
+    .aiia-icon-button-overlay > button:active {
+        transform: scale(1);
+    }
+
+    /* Hide old, now-unused absolute buttons in icon view */
+    .aiia-item-icon > .aiia-load-workflow-button,
+    .aiia-item-icon > .aiia-download-button {
+        display: none;
+    }
+
+    /* Keep original styles for list view */
+    .aiia-list-row .aiia-load-workflow-button, .aiia-list-row .aiia-download-button {
+        position: static;
+        background-color: transparent;
+        border: none;
+        color: #E5E7EB;
+        font-size: 18px;
+    }
+    .aiia-list-row .aiia-load-workflow-button:hover, .aiia-list-row .aiia-download-button:hover {
+        color: var(--accent-color);
+        background-color: transparent;
+    }
 
     .aiia-browser-error, .aiia-browser-placeholder { padding: 20px; text-align: center; font-size: 16px; color: var(--descrip-text); width: 100%; }
-    .aiia-empty-file-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--descrip-text); }
-    .aiia-empty-file-placeholder span:first-child { font-size: 24px; }
-    .aiia-empty-file-placeholder span:last-child { font-size: 11px; margin-top: 4px; }
+    .aiia-empty-file-placeholder, .aiia-no-preview-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--descrip-text); }
+    .aiia-empty-file-placeholder span:first-child, .aiia-no-preview-placeholder span:first-child { font-size: 24px; }
+    .aiia-empty-file-placeholder span:last-child, .aiia-no-preview-placeholder span:last-child { font-size: 11px; margin-top: 4px; }
     
     .aiia-progress-container { display: none; flex-direction: column; gap: 4px; margin-bottom: 8px; }
     .aiia-progress-text { font-size: 12px; color: var(--descrip-text); }
@@ -174,3 +296,4 @@ export const browserStyles = `
     .aiia-info-panel-label { color: #aaa; text-align: right; }
     .aiia-info-panel-value { font-weight: 500; overflow-wrap: break-word; min-width: 0; }
 `;
+
