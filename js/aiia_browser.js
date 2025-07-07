@@ -24,7 +24,7 @@ function setSetting(key, value) {
     } catch (e) { console.error(`[AIIA] Error setting localStorage for key ${key}:`, e); }
 }
 
-const CACHE_PREFIX = "aiia-cache:v2:";
+const CACHE_PREFIX = "aiia-cache:v3:";
 function getCacheKey(path, filename) { return `${CACHE_PREFIX}${path ? `${path}/` : ''}${filename}`; }
 function getCache(key) { try { const data = localStorage.getItem(key); return data ? JSON.parse(data) : null; } catch (e) { console.error(`[AIIA] Error parsing cache for key ${key}:`, e); return null; } }
 function setCache(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.error(`[AIIA] Error setting cache for key ${key}:`, e); } }
@@ -1335,13 +1335,13 @@ app.registerExtension({
     setup() {
         // --- START: One-time cache cleanup ---
         try {
-            const migrationKey = "aiia-cache-v2-migrated";
+            const migrationKey = "aiia-cache-v3-migrated";
             if (!localStorage.getItem(migrationKey)) {
                 console.log("[AIIA Browser] Checking for old cache entries to migrate...");
                 const keysToRemove = [];
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
-                    if (key.startsWith("aiia-cache:") && !key.startsWith("aiia-cache:v2:")) {
+                    if (key.startsWith("aiia-cache:") && !key.startsWith("aiia-cache:v3:")) {
                         keysToRemove.push(key);
                     }
                 }
