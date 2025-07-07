@@ -13,7 +13,8 @@
 **还在费力地翻找 `output` 文件夹，或者对着一堆时间戳命名的文件猜内容吗？**
 
 我们隆重推出 **AIIA 媒体浏览器**——一个完全集成在 ComfyUI 内部的、功能完备的媒体文件管理中心。它的诞生，旨在彻底改变你管理和使用生成结果的方式，让整个过程变得高效、直观且充满乐趣。
-![image](https://github.com/user-attachments/assets/5480a864-7af6-4129-ba84-7be75ae73403)
+![image](https://github.com/user-attachments/assets/358b9ca9-59c8-4433-b84c-c150503af04a)
+
 ### ✨ 为何选择 AIIA 浏览器？
 
 *   **告别猜测：** 无需离开 ComfyUI 即可即时预览图片、视频和音频。
