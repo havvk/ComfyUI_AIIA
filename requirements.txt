@@ -1,0 +1,7 @@
+mediapipe
+diffusers>=0.24.0
+transformers
+huggingface-hub
+omegaconf
+einops
+accelerate

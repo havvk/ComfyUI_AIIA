@@ -190,3 +190,32 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **修复列表视图按钮渲染问题**: 解决了一个因竞态条件导致的“加载工作流”按钮在列表视图中不显示的Bug。
 - **修复加载工作流时的名称设置**: 通过为标准格式和API格式的工作流调用正确的API，现在加载工作流后能正确地在ComfyUI标题栏设置其名称。
 - **修复图标缩放滑块**: 图标大小滑块现在可以通过触发一次完整的、干净的视图重绘来即时、正确地更新视图。
+
+---
+
+### PersonaLive 视频驱动 (AIIA Integrated)
+
+这组节点基于强大的 [PersonaLive](https://github.com/GVCLab/PersonaLive) 模型，专为生成高质量的 Talking Head 视频而设计。我们将原版代码完全重构并集成到 ComfyUI 中，通过特有的分块处理和磁盘流式技术，**彻底解决了长视频生成时的显存和内存溢出 (OOM) 问题**。
+
+#### 1. PersonaLive Checkpoint Loader
+-   **用途**: 加载所有必要的模型权重（Base Model, VAE, PersonaLive Weights）。
+-   **功能**: 首次运行时会自动从 HuggingFace 下载所需模型，无需手动配置。
+
+#### 2. PersonaLive Photo Sampler (AIIA In-Memory)
+-   **用途**: 标准生成模式，适合**短视频**或**中等长度**视频。
+-   **输入**:
+    -   `ref_image`: 参考的人物肖像图。
+    -   `driving_image`: 驱动视频（输入为一系列图像帧）。
+    -   `chunk_size`: **关键参数**。控制每次送入显存进行推理的帧数。默认为 16。如果显存较小，请调低此值（如 8 或 4）。
+-   **输出**: `IMAGE` 张量（所有生成的帧）。
+-   **机制**: 节点会自动将长视频切分为多个 Chunk 进行推理，每推理完一个 Chunk 就会清空显存，从而允许你在有限的显存下生成较长的视频。最终结果会在内存中合并返回。
+
+#### 3. PersonaLive Photo Sampler (AIIA To-Disk for Long Video)
+-   **用途**: 专为**超长视频**（如数千帧、数万帧）设计。这是解决系统内存（System RAM）OOM 的终极方案。
+-   **输入**: 与 In-Memory 版本相同，额外增加了 `output_subdir_name` 用于指定输出目录名。
+-   **输出**: `STRING` (包含生成帧的目录路径) 和 `INT` (帧数)。
+-   **机制**: 
+    -   除了分块推理（Chunking）以节省显存外，此节点会在每个 Chunk 生成完毕后，立即将图像**保存到磁盘**并从内存中释放。
+    -   这意味着无论视频多长，内存占用都始终保持在一个极低且恒定的水平。
+-   **最佳实践**: 将此节点的 `frames_directory` 输出直接连接到 **AIIA Video Combine** 节点，即可实现从生成到合成的全流程 OOM-Safe。
+
