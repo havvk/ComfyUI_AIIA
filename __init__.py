@@ -58,6 +58,9 @@ _load_nodes_from_module(".aiia_personalive_nodes", "aiia_personalive_nodes")
 # 8. 处理 aiia_audio_isolator.py
 _load_nodes_from_module(".aiia_audio_isolator", "aiia_audio_isolator")
 
+# 9. 处理 aiia_audio_merger.py
+_load_nodes_from_module(".aiia_audio_merger", "aiia_audio_merger")
+
 # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
 WEB_DIRECTORY = "js"
 

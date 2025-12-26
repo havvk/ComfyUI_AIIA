@@ -172,11 +172,23 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
         -   **Concatenate**: 将属于该说话人的所有片段无缝拼接在一起，去除中间的空隙。
 -   **亮点**: 
     -   **防爆音**: 内置微小的淡入淡出（Fade In/Out）处理，确保片段边缘自然顺滑。
-    -   **时间对齐**: 专门针对 AIIA 视频节点套件优化，保证音画同步。
-
----
-
-### PersonaLive 视频驱动 (AIIA Integrated)
+        - **时间对齐**: 专门针对 AIIA 视频节点套件优化，保证音画同步。
+    
+    #### Audio Speaker Merger (AIIA)
+    -   **用途**: 将两段不同的音频流合并为一条。通常用于在分别对不同说话人进行视频驱动后，将各自的音轨重新混缩。
+    -   **输入**:
+        -   `audio_1`, `audio_2`: 待合并的两段音频。
+        -   `duration_mode`: 
+            -   `Longest`: 输出时长等于两段音频中的最大值。
+            -   `Shortest`: 输出时长等于两段音频中的最小值。
+            -   `Audio 1 / Audio 2`: 严格跟随特定输入段的时长。
+            -   `Specified`: 手动指定输出秒数。
+        -   `normalize`: 开启后将自动防止音量叠加导致的破音。
+    
+    ---
+    
+    ### PersonaLive 视频驱动 (AIIA Integrated)
+    
 
 这组节点基于强大的 [PersonaLive](https://github.com/GVCLab/PersonaLive) 模型，专为生成高质量的 Talking Head 视频而设计。我们将原版代码完全重构并集成到 ComfyUI 中，通过特有的分块处理和磁盘流式技术，**彻底解决了长视频生成时的显存和内存溢出 (OOM) 问题**。
 
