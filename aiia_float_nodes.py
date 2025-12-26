@@ -117,14 +117,14 @@ def _patched_decode_and_save_to_disk(
 
                     for frame_idx_in_chunk in range(chunk_cpu_hwc_float_0_1.shape[0]):
                         frame_to_save_np = (chunk_cpu_hwc_float_0_1[frame_idx_in_chunk].numpy() * 255).astype(np.uint8)
-                        filename = f"frame_{{saved_frame_count:06d}}.png"
+                        filename = f"frame_{saved_frame_count:06d}.png"
                         filepath = os.path.join(output_frames_dir, filename)
                         try:
                             Image.fromarray(frame_to_save_np).save(filepath)
                             saved_frame_count += 1
                         except Exception as e_save:
                             import sys
-                            print(f"警告: [{node_name_log_prefix}] 保存帧 {filepath} 失败: {{e_save}}", file=sys.stderr)
+                            print(f"警告: [{node_name_log_prefix}] 保存帧 {filepath} 失败: {e_save}", file=sys.stderr)
                     del chunk_cpu_chw, chunk_cpu_hwc_float_0_1
 
             comfy_pbar.update(1)
