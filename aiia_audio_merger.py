@@ -20,15 +20,15 @@ class AIIA_Audio_Speaker_Merge:
     CATEGORY = "AIIA/audio"
 
     def merge_audio(self, audio_1, audio_2, duration_mode, specified_duration, normalize):
-        waveform_1 = audio_1["waveform"] # [B, C, T]
-        waveform_2 = audio_2["waveform"]
+        # 强制在 CPU 上处理
+        waveform_1 = audio_1["waveform"].cpu()
+        waveform_2 = audio_2["waveform"].cpu()
         sr_1 = audio_1["sample_rate"]
         sr_2 = audio_2["sample_rate"]
 
         if sr_1 != sr_2:
             print(f"警告: [AIIA Audio Merger] 两段音频采样率不一致 ({sr_1} vs {sr_2})。将以第一段为准。")
         
-        # 确定目标采样点数
         len_1 = waveform_1.shape[-1]
         len_2 = waveform_2.shape[-1]
         
@@ -43,33 +43,41 @@ class AIIA_Audio_Speaker_Merge:
         else: # Specified
             target_len = int(specified_duration * sr_1)
 
-        # 统一 Batch 和 Channel 数 (取最大值)
+        # 检查 target_len 是否过大 (例如超过 2 小时)
+        if target_len > sr_1 * 7200:
+             print(f"错误: [AIIA Audio Merger] 合并后的目标时长过长 (>2小时)，已拦截以防止系统崩溃。请检查输入。")
+             target_len = sr_1 * 10 # 兜底 10 秒
+
         max_b = max(waveform_1.shape[0], waveform_2.shape[0])
         max_c = max(waveform_1.shape[1], waveform_2.shape[1])
 
         def prepare_waveform(wf, target_t, b, c):
-            # 扩展 B 和 C
-            new_wf = wf.repeat(b // wf.shape[0], c // wf.shape[1], 1)
-            # 处理 T (截断或填充)
+            # 处理 Batch 和 Channel 差异
+            # 使用 expand 而不是 repeat 以节省内存
+            new_wf = wf.expand(b, c, -1)
+            
+            # 处理时间轴
             if new_wf.shape[-1] > target_t:
                 return new_wf[:, :, :target_t]
             elif new_wf.shape[-1] < target_t:
-                padding = torch.zeros((b, c, target_t - new_wf.shape[-1]), device=wf.device)
+                padding = torch.zeros((b, c, target_t - new_wf.shape[-1]))
                 return torch.cat([new_wf, padding], dim=-1)
             return new_wf
 
         wf1_final = prepare_waveform(waveform_1, target_len, max_b, max_c)
         wf2_final = prepare_waveform(waveform_2, target_len, max_b, max_c)
 
-        # 合并
+        # 叠加合并
         merged_wf = wf1_final + wf2_final
 
-        # 归一化处理
         if normalize:
             max_val = torch.max(torch.abs(merged_wf))
             if max_val > 1.0:
                 merged_wf /= max_val
-                print(f"信息: [AIIA Audio Merger] 检测到电平超限，已自动归一化。")
+
+        # 预警
+        if merged_wf.shape[-1] > sr_1 * 600:
+            print(f"提示: [AIIA Audio Merger] 合并后的音频较长，请尽量避免在 ComfyUI 中使用 Preview Audio 节点以防止内存溢出。")
 
         return ({"waveform": merged_wf, "sample_rate": sr_1},)
 

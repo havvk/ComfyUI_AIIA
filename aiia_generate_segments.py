@@ -171,6 +171,11 @@ class AIIA_GenerateSpeakerSegments:
            audio["waveform"].ndim < 1:
             return self._create_error_output("音频数据缺失或无效")
 
+        # 检查音频长度
+        if audio["waveform"].shape[-1] == 0:
+            return self._create_error_output("输入的音频长度为0，无法进行分段")
+
+
         try:
             try: from nemo.collections.asr.models.msdd_models import SortformerEncLabelModel
             except ImportError: from nemo.collections.asr.models import SortformerEncLabelModel
