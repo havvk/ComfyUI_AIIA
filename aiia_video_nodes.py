@@ -45,20 +45,37 @@ DEFAULT_STD_ERRORS = "replace"
 def get_aiia_ffmpeg_path() -> str:
     env_path = os.environ.get("AIIA_FFMPEG_PATH")
     if env_path and os.path.isfile(env_path): return env_path
+    
+    # Priority: Conda environment ffmpeg
+    conda_ffmpeg = os.path.join(sys.prefix, "bin", "ffmpeg")
+    if os.path.isfile(conda_ffmpeg): return conda_ffmpeg
+    
+    # Fallback: System ffmpeg
     system_ffmpeg = shutil.which("ffmpeg")
     if system_ffmpeg: return system_ffmpeg
+    
     logger.warning("未能找到 ffmpeg。将默认使用 'ffmpeg'。")
     return "ffmpeg"
 
 def get_aiia_ffprobe_path() -> str:
     env_path = os.environ.get("AIIA_FFPROBE_PATH")
     if env_path and os.path.isfile(env_path): return env_path
-    ffmpeg_dir = os.path.dirname(get_aiia_ffmpeg_path())
-    if ffmpeg_dir:
+    
+    # Priority: Same directory as discovered ffmpeg
+    ffmpeg_exec = get_aiia_ffmpeg_path()
+    if ffmpeg_exec and os.path.isabs(ffmpeg_exec):
+        ffmpeg_dir = os.path.dirname(ffmpeg_exec)
         potential_ffprobe = os.path.join(ffmpeg_dir, "ffprobe" + (".exe" if os.name == 'nt' else ""))
         if os.path.isfile(potential_ffprobe): return potential_ffprobe
+
+    # Priority: Conda environment ffprobe
+    conda_ffprobe = os.path.join(sys.prefix, "bin", "ffprobe")
+    if os.path.isfile(conda_ffprobe): return conda_ffprobe
+
+    # Fallback: System ffprobe
     system_ffprobe = shutil.which("ffprobe")
     if system_ffprobe: return system_ffprobe
+    
     logger.warning("未能找到 ffprobe。音频码率自动检测将不可用。")
     return "ffprobe"
 
