@@ -39,8 +39,8 @@ class AIIA_Utils_Image_Concanate:
 
     def _get_sorted_image_files(self, directory_path):
         """辅助函数：获取目录下排序后的图像文件列表"""
-        # 支持常见的图像格式，扩展大小写支持以适应 Linux
-        supported_extensions = ["*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.bmp", "*.BMP", "*.webp", "*.WEBP"]
+        # 支持常见的图像格式，可以扩展
+        supported_extensions = ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp"]
         image_files = []
         for ext in supported_extensions:
             image_files.extend(glob.glob(os.path.join(directory_path, ext)))
@@ -68,18 +68,16 @@ class AIIA_Utils_Image_Concanate:
 
         files1 = self._get_sorted_image_files(directory_1)
         files2 = self._get_sorted_image_files(directory_2)
-        
-        num_frames1 = len(files1)
-        num_frames2 = len(files2)
-        print(f"{node_name_log} DEBUG: 目录1 ('{os.path.basename(directory_1)}') 包含 {num_frames1} 个图像文件。")
-        print(f"{node_name_log} DEBUG: 目录2 ('{os.path.basename(directory_2)}') 包含 {num_frames2} 个图像文件。")
 
         if not files1 or not files2:
             error_msg = "输入目录为空或未找到图像文件。"
-            if not files1: error_msg += f" 检查目录1: {directory_1}"
-            if not files2: error_msg += f" 检查目录2: {directory_2}"
+            if not files1: error_msg += f" 检查目录: {directory_1}"
+            if not files2: error_msg += f" 检查目录: {directory_2}"
             print(f"错误: {node_name_log} {error_msg}")
             return (f"错误: {error_msg}", 0)
+
+        num_frames1 = len(files1)
+        num_frames2 = len(files2)
 
         # --- 处理帧数不匹配 ---
         if num_frames1 != num_frames2:

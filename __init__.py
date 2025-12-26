@@ -84,9 +84,6 @@ _load_nodes_from_module(".aiia_video_nodes", "aiia_video_nodes")
 # 6. 处理 aiia_browser_node.py (新增 - 确保HTTP路由被注册)
 _load_nodes_from_module(".aiia_browser_node", "aiia_browser_node")
 
-# 7. 处理 aiia_personalive_nodes.py
-_load_nodes_from_module(".aiia_personalive_nodes", "aiia_personalive_nodes")
-
 # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
 WEB_DIRECTORY = "js"
 
