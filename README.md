@@ -183,11 +183,26 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
             -   `Shortest`: 输出时长等于两段音频中的最小值。
             -   `Audio 1 / Audio 2`: 严格跟随特定输入段的时长。
             -   `Specified`: 手动指定输出秒数。
-        -   `normalize`: 开启后将自动防止音量叠加导致的破音。
-    
-    ---
-    
-    ### PersonaLive 视频驱动 (AIIA Integrated)
+            - `normalize`: 开启后将自动防止音量叠加导致的破音。
+        
+        ---
+        
+        ### CosyVoice 增强 (AIIA Enhanced)
+        
+        #### Voice Conversion (AIIA Unlimited)
+        -   **用途**: 增强版语音转换节点，解决了原版 CosyVoice3 只能转换 30 秒内语音的限制。
+        -   **输入**:
+            -   `model`: 连接 `FL-CosyVoice3` 的模型加载器。
+            -   `source_audio`: 待转换的源音频（支持任意时长）。
+            -   `target_audio`: 目标音色参考音频（自动截取前 30 秒）。
+            -   `chunk_size`: 切片大小，默认 25 秒。
+            -   `overlap_size`: 重叠大小，用于实现无缝拼接。
+        -   **亮点**: 自动将长音频切分并调用模型进行转换，通过内部的 **Cross-fade（淡入淡出）** 拼接技术，确保转换后的长音频在衔接处自然顺滑，无断裂感。
+        
+        ---
+        
+        ### PersonaLive 视频驱动 (AIIA Integrated)
+        
     
 
 这组节点基于强大的 [PersonaLive](https://github.com/GVCLab/PersonaLive) 模型，专为生成高质量的 Talking Head 视频而设计。我们将原版代码完全重构并集成到 ComfyUI 中，通过特有的分块处理和磁盘流式技术，**彻底解决了长视频生成时的显存和内存溢出 (OOM) 问题**。
