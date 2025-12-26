@@ -47,7 +47,8 @@ class AIIA_Audio_Silence_Splitter:
         elif len(ends) > len(starts): ends = ends[:len(starts)]
         
         # 过滤过短的静音
-        min_sil_samples = int(min_sil_duration * sample_rate)
+        # 修正变量名：使用参数传入的 min_silence_duration
+        min_sil_samples = int(min_silence_duration * sample_rate)
         valid_silence_gaps = []
         for s, e in zip(starts, ends):
             if e - s >= min_sil_samples:
