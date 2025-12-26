@@ -10,6 +10,7 @@ import folder_paths # ComfyUI 的路径管理模块
 _NEMO_MODELS_SUBDIR_STR = "nemo_models" # 在 ComfyUI/models/ 下
 _E2E_MODEL_FILENAME_MAP = { # 支持多种E2E模型
     "diar_sortformer_4spk-v1": "diar_sortformer_4spk-v1.nemo",
+    "diar_streaming_sortformer_4spk-v2.1": "diar_streaming_sortformer_4spk-v2.1.nemo",
     # "another_e2e_model": "another_e2e_model.nemo", # 未来可以扩展
 }
 
