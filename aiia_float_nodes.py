@@ -1,4 +1,4 @@
-# --- START OF FILE aiia_float_nodes.py (FIXED for MP3 Codec & Tensor Dim) ---
+# --- START OF FILE aiia_float_nodes.py (FIXED for MP3 Codec & Tensor Dim & Context Overlap) ---
 
 import torch
 import os
@@ -31,10 +31,9 @@ def _patched_decode_for_in_memory_stack(
     comfy_pbar = ProgressBar(T_prime) # ComfyUI 进度条
 
     console_pbar_desc = "[FLOAT In-Memory] Processing Frames"
-    # 尝试获取更具体的描述，如果 self_float_model 是可预期的类型
     if hasattr(self_float_model, '__class__') and hasattr(self_float_model.__class__, '__name__'):
         model_name = self_float_model.__class__.__name__
-        if model_name != "FLOATModel": # 如果不是通用的 FLOATModel，则使用更具体的名称
+        if model_name != "FLOATModel":
              console_pbar_desc = f"[{model_name} In-Memory] Processing Frames"
 
 
@@ -118,14 +117,14 @@ def _patched_decode_and_save_to_disk(
 
                     for frame_idx_in_chunk in range(chunk_cpu_hwc_float_0_1.shape[0]):
                         frame_to_save_np = (chunk_cpu_hwc_float_0_1[frame_idx_in_chunk].numpy() * 255).astype(np.uint8)
-                        filename = f"frame_{saved_frame_count:06d}.png"
+                        filename = f"frame_{{saved_frame_count:06d}}.png"
                         filepath = os.path.join(output_frames_dir, filename)
                         try:
                             Image.fromarray(frame_to_save_np).save(filepath)
                             saved_frame_count += 1
                         except Exception as e_save:
                             import sys
-                            print(f"警告: [{node_name_log_prefix}] 保存帧 {filepath} 失败: {e_save}", file=sys.stderr)
+                            print(f"警告: [{node_name_log_prefix}] 保存帧 {filepath} 失败: {{e_save}}", file=sys.stderr)
                     del chunk_cpu_chw, chunk_cpu_hwc_float_0_1
 
             comfy_pbar.update(1)
@@ -141,30 +140,79 @@ def _patched_decode_and_save_to_disk(
     d_hat_placeholder_btchw = torch.empty((batch_size_for_placeholder, 0, img_c, img_h, img_w), device='cpu')
     return {'d_hat': d_hat_placeholder_btchw}
 
-# --- NEW: Audio Emotion Patch ---
+# --- NEW: Audio Emotion Patch with Context Overlap ---
 def _patched_predict_emotion_chunked(self_emotion_encoder, audio_input):
-    # Patch to fix OOM in emotion encoder for long audio
-    # Chunk size: 30 seconds * 16000 Hz = 480000 samples
-    chunk_size = 480000 
+    """
+    Chunks audio processing for wav2vec2 to prevent OOM on long audio.
+    Uses overlapping windows (context) to ensure continuity of emotion features at boundaries.
+    """
+    # 16000 Hz sample rate assumed
+    # 320 is the downsampling factor of wav2vec2 (16000 -> 50Hz)
+    MODEL_STRIDE = 320
+    
+    # Configuration
+    CHUNK_SEC = 30
+    OVERLAP_SEC = 2 # 2 seconds context on each side
+    
+    chunk_samples = CHUNK_SEC * 16000
+    overlap_samples = OVERLAP_SEC * 16000
+    
+    # Align to model stride to avoid rounding errors
+    chunk_samples = (chunk_samples // MODEL_STRIDE) * MODEL_STRIDE
+    overlap_samples = (overlap_samples // MODEL_STRIDE) * MODEL_STRIDE
+    
     total_len = audio_input.shape[1]
     
-    if total_len <= chunk_size:
+    if total_len <= chunk_samples:
         return self_emotion_encoder.wav2vec2_for_emotion(audio_input).logits
         
     outputs = []
-    print(f"Info: [AIIA] Processing Audio Emotion in chunks (total len {total_len})...")
+    print(f"Info: [AIIA] Processing Audio Emotion in chunks (len {total_len}, overlap {overlap_samples}s)...")
     
-    for i in range(0, total_len, chunk_size):
-        end = min(i + chunk_size, total_len)
-        chunk = audio_input[:, i : end]
-        # Ensure we don't pass empty chunk
+    for start_idx in range(0, total_len, chunk_samples):
+        # Define the core region we want to generate
+        end_idx = min(start_idx + chunk_samples, total_len)
+        
+        # Define the expanded region (with context) to feed the model
+        expanded_start = max(0, start_idx - overlap_samples)
+        expanded_end = min(total_len, end_idx + overlap_samples)
+        
+        # Prepare chunk
+        chunk = audio_input[:, expanded_start : expanded_end]
         if chunk.shape[1] == 0: continue
         
-        # Call the underlying wav2vec2 model
+        # Inference
         out = self_emotion_encoder.wav2vec2_for_emotion(chunk).logits
-        outputs.append(out)
+        # out shape: (B, T_frames, C)
+        
+        # Determine crop indices for the output
+        # Calculate offset from the start of the *expanded* chunk to the *core* chunk
+        input_offset_samples = start_idx - expanded_start
+        input_core_len_samples = end_idx - start_idx
+        
+        # Convert sample domain to frame domain (divide by 320)
+        start_frame = input_offset_samples // MODEL_STRIDE
+        keep_frames = input_core_len_samples // MODEL_STRIDE
+        
+        # In case division isn't perfect or model padding differs slightly, clamp
+        # Usually wav2vec2 output length is roughly ceil(input/320) or floor. 
+        # We rely on relative cropping.
+        
+        # Safety check:
+        if start_frame >= out.shape[1]:
+             # Should not happen if logic is correct
+             pass
+        else:
+             # Crop
+             end_frame = start_frame + keep_frames
+             # Ensure we don't go out of bounds (can happen at the very last chunk due to padding)
+             end_frame = min(end_frame, out.shape[1])
+             
+             core_out = out[:, start_frame:end_frame, :]
+             outputs.append(core_out)
         
         # Cleanup
+        del out, chunk
         torch.cuda.empty_cache()
         
     return torch.cat(outputs, dim=1)
@@ -253,7 +301,7 @@ class AIIA_FloatProcess_InMemory:
                 if hasattr(float_pipe.G, 'emotion_encoder') and hasattr(float_pipe.G.emotion_encoder, 'predict_emotion'):
                      original_predict_emotion_method = float_pipe.G.emotion_encoder.predict_emotion
                      float_pipe.G.emotion_encoder.predict_emotion = types.MethodType(_patched_predict_emotion_chunked, float_pipe.G.emotion_encoder)
-                     print(f"信息: {node_name_log} 已替换 emotion_encoder.predict_emotion 为分块版本。")
+                     print(f"信息: {node_name_log} 已替换 emotion_encoder.predict_emotion 为分块版本 (带重叠)。")
 
                 print(f"{node_name_log} 开始运行推理...")
                 images_thwc_cpu_float01 = float_pipe.run_inference(
@@ -410,7 +458,7 @@ class AIIA_FloatProcess_ToDisk:
                 if hasattr(float_pipe.G, 'emotion_encoder') and hasattr(float_pipe.G.emotion_encoder, 'predict_emotion'):
                      original_predict_emotion_method = float_pipe.G.emotion_encoder.predict_emotion
                      float_pipe.G.emotion_encoder.predict_emotion = types.MethodType(_patched_predict_emotion_chunked, float_pipe.G.emotion_encoder)
-                     print(f"信息: {node_name_log} 已替换 emotion_encoder.predict_emotion 为分块版本。")
+                     print(f"信息: {node_name_log} 已替换 emotion_encoder.predict_emotion 为分块版本 (带重叠)。")
 
                 print(f"{node_name_log} 开始运行推理 (帧将保存到磁盘)...")
                 _ = float_pipe.run_inference(
