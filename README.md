@@ -191,13 +191,18 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
         
         #### Voice Conversion (AIIA Unlimited)
         -   **用途**: 增强版语音转换节点，解决了原版 CosyVoice3 只能转换 30 秒内语音的限制。
+        -   **创新设计 (创新亮点)**:
+            -   **语义感知切片 (Semantic-Aware Chunking)**: 节点可选接入 `whisper_chunks` 数据。它能智能识别每句话之间的“缝隙”，优先在说话人停顿的天然空隙处进行切分，从根本上避免了“在单词中间切开”导致的违和感。
+            -   **双层寻点算法**: 在语义缝隙确定的候选范围内，算法会自动进行微秒级的**物理静音探测**（基于能量平滑曲线），确保切点处于绝对静默状态。
+            -   **余弦平滑混合 (Cosine Cross-fade)**: 采用余弦曲线代替传统的线性淡入淡出，使不同分块间的背景噪底和音色过渡更加丝滑、无毛刺。
         -   **输入**:
             -   `model`: 连接 `FL-CosyVoice3` 的模型加载器。
             -   `source_audio`: 待转换的源音频（支持任意时长）。
+            -   `whisper_chunks` (可选): 接入 Diarization 节点数据，开启语义感知切片。
             -   `target_audio`: 目标音色参考音频（自动截取前 30 秒）。
-            -   `chunk_size`: 切片大小，默认 25 秒。
-            -   `overlap_size`: 重叠大小，用于实现无缝拼接。
-        -   **亮点**: 自动将长音频切分并调用模型进行转换，通过内部的 **Cross-fade（淡入淡出）** 拼接技术，确保转换后的长音频在衔接处自然顺滑，无断裂感。
+            -   `chunk_size`: 目标切片大小（默认 25 秒）。
+            -   `overlap_size`: 重叠大小，用于平滑衔接。
+
         
         ---
         
