@@ -57,20 +57,10 @@ try:
             _NEMO_E2E_PATH_INIT_SUCCESS = False # 如果一个模型都没找到，则路径初始化视为不完全成功
 
 except Exception as e:
-    _NEMO_E2E_PATHS_INIT_LOG.append(f"严重错误: [AIIA E2E Diarizer Path Setup] 初始化路径时发生意外错误: {e}")
     _NEMO_E2E_PATH_INIT_SUCCESS = False
 
-# 在模块加载时打印一次收集到的路径初始化日志
-if _NEMO_E2E_PATHS_INIT_LOG:
-    print("\n--- [AIIA E2E Diarizer Node - Path Initialization Log] ---")
-    for msg in _NEMO_E2E_PATHS_INIT_LOG:
-        print(msg)
-    if not _NEMO_E2E_PATH_INIT_SUCCESS:
-        print("警告: [AIIA E2E Diarizer] 一个或多个模型路径未成功初始化或未找到模型。节点可能无法正常工作。")
-    print("--- [End of Path Initialization Log] ---\n")
-
-
 class AIIA_E2E_Speaker_Diarization:
+
     @classmethod
     def INPUT_TYPES(cls):
         available_models = list(_NEMO_E2E_MODEL_PATHS.keys()) 
@@ -379,4 +369,3 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AIIA_E2E_Speaker_Diarization": "AIIA E2E Speaker Diarization"
 }
-print("--- AIIA E2E Speaker Diarization Node Loaded ---")

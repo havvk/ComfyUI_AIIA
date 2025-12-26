@@ -15,17 +15,12 @@ import re
 import tempfile
 import folder_paths
 
-print("--- [AIIA] Loading Media Browser API Endpoints (V19 - Robustness Fixes) ---")
-
-# --- START OF FIX: Path and Cache Logic Refinement ---
 try:
     # Attempt to find the ComfyUI root directory robustly
     output_dir = Path(folder_paths.get_output_directory())
-    print(f"--- [AIIA] Successfully located ComfyUI root. Output directory set to: {output_dir}")
 
 except Exception as e:
     # Fallback path if auto-detection fails
-    print(f"--- [AIIA] Warning: Could not auto-detect ComfyUI root path ({e}). Falling back to default './ComfyUI/output'.")
     output_dir = Path("./ComfyUI/output")
 
 # Define cache directories based on the final output_dir. This ensures consistency.
@@ -39,11 +34,10 @@ try:
     cache_main_dir.mkdir(exist_ok=True)
     image_thumb_dir.mkdir(exist_ok=True)
     video_poster_dir.mkdir(exist_ok=True)
-    print(f"--- [AIIA] Image thumbnail cache: {image_thumb_dir}")
-    print(f"--- [AIIA] Video poster cache: {video_poster_dir}")
 except Exception as e:
     print(f"--- [AIIA] CRITICAL ERROR: Could not create output or cache directories at {output_dir}. Please check permissions. Error: {e}")
 # --- END OF FIX: Path and Cache Logic Refinement ---
+
 
 
 CONCURRENT_LIMIT = 16
@@ -345,5 +339,3 @@ server.PromptServer.instance.app.router.add_get('/api/aiia/v1/browser/get_workfl
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
-
-print("--- [AIIA] Media Browser API Endpoints (V19) loaded successfully. ---")

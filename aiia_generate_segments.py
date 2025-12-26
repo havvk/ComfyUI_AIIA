@@ -59,18 +59,10 @@ try:
 
 
 except Exception as e:
-    _NEMO_E2E_PATHS_INIT_LOG.append(f"严重错误: [AIIA Nodes Path Setup] 初始化路径时发生意外错误: {e}")
     _NEMO_E2E_PATH_INIT_SUCCESS = False
 
-if _NEMO_E2E_PATHS_INIT_LOG:
-    print("\n--- [AIIA Nodes - Path Initialization Log] ---")
-    for msg in _NEMO_E2E_PATHS_INIT_LOG: print(msg)
-    if not _NEMO_E2E_PATH_INIT_SUCCESS or not _NEMO_E2E_MODEL_PATHS:
-        print("警告: [AIIA Nodes] 模型路径初始化未完全成功或未找到任何模型。相关节点可能无法正常工作或无模型可选。")
-    print("--- [End of Path Initialization Log] ---\n")
-
-
 # aiia_generate_segments.py
+
 # ... (顶部的 imports 和全局路径定义保持不变) ...
 
 class AIIA_GenerateSpeakerSegments:
@@ -331,4 +323,3 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AIIA_GenerateSpeakerSegments": "AIIA Generate Speaker Segments"
 }
-print(f"--- {AIIA_GenerateSpeakerSegments.NODE_NAME} Node Loaded ---")

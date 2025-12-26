@@ -105,28 +105,18 @@ class AIIA_PersonaLive_CheckpointLoader:
         weight_dtype = torch.float16 if device == "cuda" else torch.float32
         
         root_dir = os.path.join(folder_paths.models_dir, model_dir)
-        
-        # Auto-download models if missing
-        print(f"\nChecking PersonaLive models in {root_dir}...")
         download_models_if_missing(root_dir)
         
         base_model_path = os.path.join(root_dir, "sd-image-variations-diffusers")
         vae_path = os.path.join(root_dir, "sd-vae-ft-mse")
         personalive_path = os.path.join(root_dir, "persona_live")
-        
         image_encoder_path = os.path.join(base_model_path, "image_encoder")
-
-        print(f"\nLoading PersonaLive models from {root_dir}:")
-        print(f"  Base Model: {base_model_path}")
-        print(f"  VAE: {vae_path}")
-        print(f"  Weights: {personalive_path}")
 
         try:
             vae_model = AutoencoderKL.from_pretrained(vae_path).to(device, dtype=weight_dtype)
         except Exception as e:
-             print(f"Failed to load VAE from {vae_path}: {e}")
-             print(f"Trying to load VAE from base model: {base_model_path}")
              vae_model = AutoencoderKL.from_pretrained(base_model_path, subfolder="vae").to(device, dtype=weight_dtype)
+
 
         reference_unet = UNet2DConditionModel.from_pretrained(
             base_model_path,

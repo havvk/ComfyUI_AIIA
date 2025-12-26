@@ -437,4 +437,3 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AIIA_FloatProcess_InMemory": "Float Process (AIIA In-Memory)",
     "AIIA_FloatProcess_ToDisk": "Float Process (AIIA To-Disk for Long Audio)",
 }
-print(f"--- AIIA FLOAT Process Nodes (InMemory & ToDisk) Loaded ---")

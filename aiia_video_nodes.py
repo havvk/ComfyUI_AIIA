@@ -325,5 +325,3 @@ class AIIA_VideoCombine:
 
 NODE_CLASS_MAPPINGS = { "AIIA_VideoCombine": AIIA_VideoCombine }
 NODE_DISPLAY_NAME_MAPPINGS = { "AIIA_VideoCombine": "视频合并 (AIIA, 图像或目录)" }
-
-print("--- AIIA 视频节点 (UI优先, 高级音频控制, v1.5) 已加载 ---")
