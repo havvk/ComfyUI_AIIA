@@ -16,8 +16,8 @@ class AIIA_CosyVoice_VoiceConversion:
                 "source_audio": ("AUDIO",),
                 "target_audio": ("AUDIO",),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
-                "chunk_size": ("INT", {"default": 25, "min": 10, "max": 29, "step": 1, "tooltip": "每次转换的音频秒数。建议不超过29秒以保证稳定性。"}),
-                "overlap_size": ("INT", {"default": 2, "min": 0, "max": 5, "step": 1, "tooltip": "切片间的重叠秒数，用于平滑拼接。"}),
+                "chunk_size": ("INT", {"default": 25, "min": 10, "max": 29, "step": 1}),
+                "overlap_size": ("INT", {"default": 2, "min": 0, "max": 5, "step": 1}),
             },
             "optional": {
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
@@ -29,25 +29,45 @@ class AIIA_CosyVoice_VoiceConversion:
     FUNCTION = "convert_voice_unlimited"
     CATEGORY = "AIIA/Synthesis"
 
+    def _find_best_split_point(self, waveform, target_idx, search_range_samples):
+        """
+        在目标索引附近寻找能量最低（静音）的点。
+        """
+        start = max(0, target_idx - search_range_samples)
+        end = min(waveform.shape[-1], target_idx + search_range_samples)
+        
+        if start >= end: return target_idx
+        
+        search_region = waveform[:, start:end]
+        # 计算每个样本的能量 (绝对值)
+        energy = torch.abs(search_region).mean(dim=0)
+        
+        # 使用滑动窗口平滑能量曲线，避免孤立的零点
+        window_size = 100
+        if energy.shape[0] > window_size:
+            energy = torch.conv1d(energy.unsqueeze(0).unsqueeze(0), 
+                                 torch.ones(1, 1, window_size, device=energy.device) / window_size,
+                                 padding=window_size//2).squeeze()
+        
+        min_idx = torch.argmin(energy).item()
+        return start + min_idx
+
     def convert_voice_unlimited(self, model, source_audio, target_audio, speed, chunk_size, overlap_size, seed=42):
         cosyvoice_model = model["model"]
-        sample_rate = cosyvoice_model.sample_rate # 通常是 24000
+        sample_rate = cosyvoice_model.sample_rate
         
-        # 1. 准备参考音频 (target_audio) - 限制在 30s 内
+        # 1. 准备参考音频 (target_audio)
         target_waveform = target_audio["waveform"]
         target_sr = target_audio["sample_rate"]
-        # 转换到模型采样率
         if target_sr != sample_rate:
             import torchaudio
             resampler = torchaudio.transforms.Resample(target_sr, sample_rate)
             target_waveform = resampler(target_waveform)
         
-        # 截取前 30s 作为参考
         max_target_samples = 30 * sample_rate
         if target_waveform.shape[-1] > max_target_samples:
             target_waveform = target_waveform[..., :max_target_samples]
         
-        # 保存参考音频到临时文件
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_target:
             target_path = tmp_target.name
             target_np = target_waveform.squeeze().cpu().numpy()
@@ -62,65 +82,74 @@ class AIIA_CosyVoice_VoiceConversion:
             resampler = torchaudio.transforms.Resample(source_sr, sample_rate)
             source_waveform = resampler(source_waveform)
         
-        source_waveform = source_waveform.squeeze() # [Channels, Samples] 或 [Samples]
-        if source_waveform.ndim == 1:
-            source_waveform = source_waveform.unsqueeze(0)
+        source_waveform = source_waveform.squeeze() 
+        if source_waveform.ndim == 1: source_waveform = source_waveform.unsqueeze(0)
         
         total_samples = source_waveform.shape[-1]
         chunk_samples = chunk_size * sample_rate
         overlap_samples = overlap_size * sample_rate
+        search_range = 2 * sample_rate # 在切点前后2秒内搜静音
         
         if total_samples <= 30 * sample_rate:
-            # 短音频直接处理
-            print(f"[AIIA CosyVoice] Short audio detected, processing normally...")
             result_waveform = self._inference_single_chunk(cosyvoice_model, source_waveform, target_path, speed, sample_rate, seed)
+            if os.path.exists(target_path): os.unlink(target_path)
             return ({"waveform": result_waveform.unsqueeze(0), "sample_rate": sample_rate},)
 
-        # 3. 长音频切片处理
-        print(f"[AIIA CosyVoice] Long audio detected ({total_samples/sample_rate:.2f}s). Chunking...")
+        print(f"[AIIA CosyVoice] Long audio detected. Using smart split logic...")
         
+        # 3. 智能分块
+        chunks_to_process = []
+        current_start = 0
+        
+        while current_start < total_samples:
+            target_end = current_start + chunk_samples
+            if target_end >= total_samples:
+                chunks_to_process.append(source_waveform[:, current_start:])
+                break
+            
+            # 在目标末尾寻找静音点
+            split_point = self._find_best_split_point(source_waveform, target_end, search_range)
+            
+            # 为了无缝衔接，我们需要在切块时包含一定的重叠部分
+            # 这个重叠是逻辑上的，不是静音点
+            actual_end = min(split_point + overlap_samples, total_samples)
+            chunks_to_process.append(source_waveform[:, current_start:actual_end])
+            
+            # 下一块的起点是上一块的逻辑结束点（不含重叠）
+            current_start = split_point
+
         final_segments = []
-        step = chunk_samples - overlap_samples
         
-        for start in range(0, total_samples, step):
-            end = min(start + chunk_samples, total_samples)
-            if start >= total_samples: break
-            
-            chunk = source_waveform[:, start:end]
-            print(f"[AIIA CosyVoice] Processing chunk: {start/sample_rate:.1f}s - {end/sample_rate:.1f}s")
-            
+        for i, chunk in enumerate(chunks_to_process):
+            print(f"[AIIA CosyVoice] Processing chunk {i+1}/{len(chunks_to_process)}, len: {chunk.shape[-1]/sample_rate:.1f}s")
             converted_chunk = self._inference_single_chunk(cosyvoice_model, chunk, target_path, speed, sample_rate, seed)
             
-            # 处理拼接
             if not final_segments:
                 final_segments.append(converted_chunk)
             else:
-                # 简单的线性淡入淡出拼接
+                # 平滑拼接逻辑
                 prev_chunk = final_segments[-1]
-                # 计算实际重叠长度 (考虑到 speed 影响，CosyVoice 的输出长度是 source_len / speed)
-                # 但 CosyVoice VC 模式下通常保持 1:1 时间轴（除非设置了 speed）
-                # 我们假设输出与输入长度成比例
-                actual_overlap = int(overlap_samples / speed)
+                # 计算转换后的重叠长度
+                # CosyVoice VC 通常是 1:1，但受 speed 影响
+                chunk_overlap_samples = int(overlap_samples / speed)
                 
-                if actual_overlap > 0 and prev_chunk.shape[-1] > actual_overlap:
-                    fade_out = torch.linspace(1.0, 0.0, actual_overlap, device=converted_chunk.device)
-                    fade_in = torch.linspace(0.0, 1.0, actual_overlap, device=converted_chunk.device)
+                if chunk_overlap_samples > 0 and prev_chunk.shape[-1] > chunk_overlap_samples:
+                    # 使用 Cosine 曲线进行更平滑的淡入淡出
+                    t = torch.linspace(0, np.pi, chunk_overlap_samples, device=converted_chunk.device)
+                    fade_out = 0.5 * (1.0 + torch.cos(t)) # 1 -> 0
+                    fade_in = 1.0 - fade_out # 0 -> 1
                     
-                    # 混合重叠部分
-                    overlap_part = prev_chunk[:, -actual_overlap:] * fade_out + converted_chunk[:, :actual_overlap] * fade_in
+                    overlap_part = prev_chunk[:, -chunk_overlap_samples:] * fade_out + converted_chunk[:, :chunk_overlap_samples] * fade_in
                     
-                    final_segments[-1] = prev_chunk[:, :-actual_overlap]
+                    final_segments[-1] = prev_chunk[:, :-chunk_overlap_samples]
                     final_segments.append(overlap_part)
-                    final_segments.append(converted_chunk[:, actual_overlap:])
+                    final_segments.append(converted_chunk[:, chunk_overlap_samples:])
                 else:
                     final_segments.append(converted_chunk)
             
-            # 清理缓存
             torch.cuda.empty_cache()
 
         merged_waveform = torch.cat(final_segments, dim=-1)
-        
-        # 清理临时文件
         if os.path.exists(target_path): os.unlink(target_path)
         
         return ({"waveform": merged_waveform.unsqueeze(0).cpu(), "sample_rate": sample_rate},)
@@ -137,26 +166,11 @@ class AIIA_CosyVoice_VoiceConversion:
             sf.write(source_path, source_np, sample_rate)
         
         try:
-            output = model.inference_vc(
-                source_wav=source_path,
-                prompt_wav=target_path,
-                stream=False,
-                speed=speed
-            )
-            
-            all_speech = []
-            for chunk in output:
-                all_speech.append(chunk['tts_speech'])
-            
-            res = torch.cat(all_speech, dim=-1)
-            return res
+            output = model.inference_vc(source_wav=source_path, prompt_wav=target_path, stream=False, speed=speed)
+            all_speech = [chunk['tts_speech'] for chunk in output]
+            return torch.cat(all_speech, dim=-1)
         finally:
             if os.path.exists(source_path): os.unlink(source_path)
 
-NODE_CLASS_MAPPINGS = {
-    "AIIA_CosyVoice_VoiceConversion": AIIA_CosyVoice_VoiceConversion
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_CosyVoice_VoiceConversion": "Voice Conversion (AIIA Unlimited)"
-}
+NODE_CLASS_MAPPINGS = {"AIIA_CosyVoice_VoiceConversion": AIIA_CosyVoice_VoiceConversion}
+NODE_DISPLAY_NAME_MAPPINGS = {"AIIA_CosyVoice_VoiceConversion": "Voice Conversion (AIIA Unlimited)"}
