@@ -141,6 +141,34 @@ def _patched_decode_and_save_to_disk(
     d_hat_placeholder_btchw = torch.empty((batch_size_for_placeholder, 0, img_c, img_h, img_w), device='cpu')
     return {'d_hat': d_hat_placeholder_btchw}
 
+# --- NEW: Audio Emotion Patch ---
+def _patched_predict_emotion_chunked(self_emotion_encoder, audio_input):
+    # Patch to fix OOM in emotion encoder for long audio
+    # Chunk size: 30 seconds * 16000 Hz = 480000 samples
+    chunk_size = 480000 
+    total_len = audio_input.shape[1]
+    
+    if total_len <= chunk_size:
+        return self_emotion_encoder.wav2vec2_for_emotion(audio_input).logits
+        
+    outputs = []
+    print(f"Info: [AIIA] Processing Audio Emotion in chunks (total len {total_len})...")
+    
+    for i in range(0, total_len, chunk_size):
+        end = min(i + chunk_size, total_len)
+        chunk = audio_input[:, i : end]
+        # Ensure we don't pass empty chunk
+        if chunk.shape[1] == 0: continue
+        
+        # Call the underlying wav2vec2 model
+        out = self_emotion_encoder.wav2vec2_for_emotion(chunk).logits
+        outputs.append(out)
+        
+        # Cleanup
+        torch.cuda.empty_cache()
+        
+    return torch.cat(outputs, dim=1)
+
 
 class AIIA_FloatProcess_InMemory:
     NODE_NAME = "AIIA Float Process (In-Memory Output)"
@@ -177,6 +205,8 @@ class AIIA_FloatProcess_InMemory:
         print(f"{node_name_log} 本次运行将在设备上: {processing_device}")
 
         original_decode_method = None
+        original_predict_emotion_method = None
+        
         original_opt_rank_backup = getattr(float_pipe.opt, 'rank', None)
         original_opt_fps_backup = getattr(float_pipe.opt, 'fps', None)
         original_opt_decode_chunk_backup = getattr(float_pipe.opt, 'decode_gpu_chunk_size', None)
@@ -214,9 +244,16 @@ class AIIA_FloatProcess_InMemory:
                 if model_current_device_before_move != processing_device: float_pipe.G.to(processing_device)
                 print(f"{node_name_log} 模型移至: {processing_device}")
 
+                # Patch decode
                 original_decode_method = float_pipe.G.decode_latent_into_image
                 float_pipe.G.decode_latent_into_image = types.MethodType(_patched_decode_for_in_memory_stack, float_pipe.G)
                 print(f"信息: {node_name_log} 已替换 decode_latent_into_image 为内存堆叠版本。")
+                
+                # Patch emotion predict
+                if hasattr(float_pipe.G, 'emotion_encoder') and hasattr(float_pipe.G.emotion_encoder, 'predict_emotion'):
+                     original_predict_emotion_method = float_pipe.G.emotion_encoder.predict_emotion
+                     float_pipe.G.emotion_encoder.predict_emotion = types.MethodType(_patched_predict_emotion_chunked, float_pipe.G.emotion_encoder)
+                     print(f"信息: {node_name_log} 已替换 emotion_encoder.predict_emotion 为分块版本。")
 
                 print(f"{node_name_log} 开始运行推理...")
                 images_thwc_cpu_float01 = float_pipe.run_inference(
@@ -235,13 +272,10 @@ class AIIA_FloatProcess_InMemory:
                 return_value = self._create_error_image(f"内部处理错误: {e_proc_inner}", log_message=True)
             finally:
                 if original_decode_method and hasattr(float_pipe.G, 'decode_latent_into_image'):
-                    current_decode_method = getattr(float_pipe.G, 'decode_latent_into_image', None)
-                    if hasattr(current_decode_method, '__func__') and current_decode_method.__func__ is _patched_decode_for_in_memory_stack:
-                        float_pipe.G.decode_latent_into_image = original_decode_method
-                        print(f"信息: {node_name_log} (finally) 已恢复 float_pipe.G.decode_latent_into_image 为原始方法。")
-                    elif current_decode_method is not original_decode_method:
-                        print(f"警告: {node_name_log} (finally) decode_latent_into_image 不是预期中的 patch 方法，但也不是原始方法。仍尝试恢复为原始方法。")
-                        float_pipe.G.decode_latent_into_image = original_decode_method
+                    float_pipe.G.decode_latent_into_image = original_decode_method
+                
+                if original_predict_emotion_method and hasattr(float_pipe.G, 'emotion_encoder'):
+                    float_pipe.G.emotion_encoder.predict_emotion = original_predict_emotion_method
 
                 if original_opt_rank_backup is not None: float_pipe.opt.rank = original_opt_rank_backup
                 if original_opt_fps_backup is not None: float_pipe.opt.fps = original_opt_fps_backup
@@ -309,7 +343,8 @@ class AIIA_FloatProcess_ToDisk:
         print(f"{node_name_log} 本次运行将在设备上: {processing_device}")
 
         original_decode_method = None
-        _intermediate_wrapper_for_patch = None # 声明以便 finally 块可以引用
+        original_predict_emotion_method = None
+        _intermediate_wrapper_for_patch = None
 
         original_opt_rank_backup = getattr(float_pipe.opt, 'rank', None)
         original_opt_fps_backup = getattr(float_pipe.opt, 'fps', None)
@@ -356,8 +391,8 @@ class AIIA_FloatProcess_ToDisk:
                 if model_current_device_before_move != processing_device: float_pipe.G.to(processing_device)
                 print(f"{node_name_log} 模型移至: {processing_device}")
 
+                # Patch decode
                 original_decode_method = float_pipe.G.decode_latent_into_image
-
                 def _intermediate_wrapper_for_patch_local(actual_self, *, s_r, s_r_feats, r_d):
                     return _patched_decode_and_save_to_disk(
                         actual_self,
@@ -367,11 +402,15 @@ class AIIA_FloatProcess_ToDisk:
                         output_frames_dir=frames_output_directory_final,
                         node_name_log_prefix=node_name_log
                     )
-
                 _intermediate_wrapper_for_patch = _intermediate_wrapper_for_patch_local
-
                 float_pipe.G.decode_latent_into_image = types.MethodType(_intermediate_wrapper_for_patch, float_pipe.G)
                 print(f"信息: {node_name_log} 已替换 float_pipe.G.decode_latent_into_image 为磁盘保存版本。")
+                
+                # Patch emotion predict
+                if hasattr(float_pipe.G, 'emotion_encoder') and hasattr(float_pipe.G.emotion_encoder, 'predict_emotion'):
+                     original_predict_emotion_method = float_pipe.G.emotion_encoder.predict_emotion
+                     float_pipe.G.emotion_encoder.predict_emotion = types.MethodType(_patched_predict_emotion_chunked, float_pipe.G.emotion_encoder)
+                     print(f"信息: {node_name_log} 已替换 emotion_encoder.predict_emotion 为分块版本。")
 
                 print(f"{node_name_log} 开始运行推理 (帧将保存到磁盘)...")
                 _ = float_pipe.run_inference(
@@ -395,16 +434,13 @@ class AIIA_FloatProcess_ToDisk:
                 print(f"错误: {node_name_log} 内部处理错误: {e_proc_inner}"); traceback.print_exc()
                 return_value = self._create_error_string_count(f"内部处理错误: {e_proc_inner}", log_message=True)
             finally:
+                # Restore decode patch
                 if original_decode_method and hasattr(float_pipe.G, 'decode_latent_into_image'):
-                    current_decode_method = getattr(float_pipe.G, 'decode_latent_into_image', None)
-                    if _intermediate_wrapper_for_patch is not None and \
-                       hasattr(current_decode_method, '__func__') and \
-                       current_decode_method.__func__ is _intermediate_wrapper_for_patch:
-                        float_pipe.G.decode_latent_into_image = original_decode_method
-                        print(f"信息: {node_name_log} (finally) 已恢复 float_pipe.G.decode_latent_into_image 为原始方法。")
-                    elif current_decode_method is not original_decode_method:
-                        print(f"警告: {node_name_log} (finally) decode_latent_into_image 不是预期中的 patch 方法，但也不是原始方法。仍尝试恢复为原始方法。")
-                        float_pipe.G.decode_latent_into_image = original_decode_method
+                    float_pipe.G.decode_latent_into_image = original_decode_method
+                
+                # Restore emotion patch
+                if original_predict_emotion_method and hasattr(float_pipe.G.emotion_encoder, 'predict_emotion'):
+                    float_pipe.G.emotion_encoder.predict_emotion = original_predict_emotion_method
 
                 if original_opt_rank_backup is not None: float_pipe.opt.rank = original_opt_rank_backup
                 if original_opt_fps_backup is not None: float_pipe.opt.fps = original_opt_fps_backup
