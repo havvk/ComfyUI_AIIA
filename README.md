@@ -167,14 +167,37 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     -   `audio`: 原始音频张量。
     -   `whisper_chunks`: 由 Diarization 节点生成的 JSON 片段数据。
     -   `speaker_label`: 要提取的说话人 ID（例如 "SPEAKER_00"）。
+    -   `isolation_mode`: 
+        -   **Maintain Duration (推荐)**: 输出与原音频等长的音轨，非目标说话人部分填充静音。这对于**视频驱动（Talking Head）**工作流至关重要，能确保口型与原视频时间轴严格对齐。
+        -   **Concatenate**: 将属于该说话人的所有片段无缝拼接在一起，去除中间的空隙。
 -   **亮点**: 
-    -   **无缝拼接**: 自动将属于该人的所有片段拼成一个连续的音轨，非常适合作为视频驱动模型的输入。
-    -   **防爆音**: 内置微小的淡入淡出（Cross-fade）处理，确保拼接处自然顺滑。
-    -   **重叠支持**: 能够处理多人同时说话的复杂场景。
+    -   **防爆音**: 内置微小的淡入淡出（Fade In/Out）处理，确保片段边缘自然顺滑。
+    -   **时间对齐**: 专门针对 AIIA 视频节点套件优化，保证音画同步。
+
+---
+
+### PersonaLive 视频驱动 (AIIA Integrated)
+
+这组节点基于强大的 [PersonaLive](https://github.com/GVCLab/PersonaLive) 模型，专为生成高质量的 Talking Head 视频而设计。我们将原版代码完全重构并集成到 ComfyUI 中，通过特有的分块处理和磁盘流式技术，**彻底解决了长视频生成时的显存和内存溢出 (OOM) 问题**。
+
+#### 1. PersonaLive Checkpoint Loader
+-   **用途**: 加载所有必要的模型权重（Base Model, VAE, PersonaLive Weights）。
+-   **功能**: 首次运行时会自动从 HuggingFace 下载所需模型，无需手动配置。
+
+#### 2. PersonaLive Photo Sampler (AIIA In-Memory)
+-   **用途**: 标准生成模式，适合**短视频**或**中等长度**视频。
+-   **输出**: `IMAGE` 张量（所有生成的帧）。
+-   **机制**: 节点会自动将长视频切分为多个 Chunk 进行推理，每推理完一个 Chunk 就会清空显存，从而允许你在有限的显存下生成较长的视频。
+
+#### 3. PersonaLive Photo Sampler (AIIA To-Disk for Long Video)
+-   **用途**: 专门用于**超长视频**生成。这是解决系统内存（System RAM）OOM 的终极方案。
+-   **输出**: `STRING` (包含生成帧的目录路径) 和 `INT` (帧数)。
+-   **最佳实践**: 将此节点的输出目录直接连接到 **AIIA Video Combine** 节点，即可实现从生成到合成的全流程 OOM-Safe。
 
 ---
 
 ## ❓ 故障排查
+
 
 
 -   **错误: "FFmpeg not found" / "NeMo model not found"**
