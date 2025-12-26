@@ -183,11 +183,20 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
             -   `Shortest`: 输出时长等于两段音频中的最小值。
             -   `Audio 1 / Audio 2`: 严格跟随特定输入段的时长。
             -   `Specified`: 手动指定输出秒数。
-            - `normalize`: 开启后将自动防止音量叠加导致的破音。
-        
-        ---
-        
-        ### CosyVoice 增强 (AIIA Enhanced)
+            -   `normalize`: 开启后将自动防止音量叠加导致的破音。
+
+    #### Audio Smart Chunker (Silence-based)
+    -   **用途**: 全量扫描长音频，寻找最优切片方案。
+    -   **机制**: 
+        -   **全局静音扫描**: 自动识别音频中的天然停顿区间。
+        -   **贪心优化算法**: 在不超出设定时长（如 27s）的前提下，计算出能让每一刀都切在静音处的片段序列。
+    -   **输出**: 供 `Voice Conversion (AIIA Unlimited)` 使用的 `whisper_chunks` 引导数据。
+    -   **协同优势**: 预先规划好切点，避免转换节点在词句中间暴力切分，是彻底消除拼接毛刺的关键。
+
+---
+
+### CosyVoice 增强 (AIIA Enhanced)
+
         
         #### Voice Conversion (AIIA Unlimited)
         -   **用途**: 增强版语音转换节点，解决了原版 CosyVoice3 只能转换 30 秒内语音的限制。
