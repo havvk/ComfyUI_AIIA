@@ -159,7 +159,23 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 ---
 
+### 音频处理：说话人隔离 (Speaker Isolation)
+
+#### Audio Speaker Isolator (AIIA)
+-   **用途**: 根据说话人日志（Diarization）产生的 JSON 数据，从原始音轨中精确提取属于特定说话人的声音。
+-   **输入**:
+    -   `audio`: 原始音频张量。
+    -   `whisper_chunks`: 由 Diarization 节点生成的 JSON 片段数据。
+    -   `speaker_label`: 要提取的说话人 ID（例如 "SPEAKER_00"）。
+-   **亮点**: 
+    -   **无缝拼接**: 自动将属于该人的所有片段拼成一个连续的音轨，非常适合作为视频驱动模型的输入。
+    -   **防爆音**: 内置微小的淡入淡出（Cross-fade）处理，确保拼接处自然顺滑。
+    -   **重叠支持**: 能够处理多人同时说话的复杂场景。
+
+---
+
 ## ❓ 故障排查
+
 
 -   **错误: "FFmpeg not found" / "NeMo model not found"**
     -   请返回阅读 [安装与先决条件](#-安装与先决条件) 部分，确保所有依赖都已正确安装和放置。
