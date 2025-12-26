@@ -43,20 +43,16 @@ class AIIA_Audio_Speaker_Merge:
         else: # Specified
             target_len = int(specified_duration * sr_1)
 
-        # 检查 target_len 是否过大 (例如超过 2 小时)
+        # 检查 target_len 是否过大
         if target_len > sr_1 * 7200:
-             print(f"错误: [AIIA Audio Merger] 合并后的目标时长过长 (>2小时)，已拦截以防止系统崩溃。请检查输入。")
-             target_len = sr_1 * 10 # 兜底 10 秒
+             print(f"错误: [AIIA Audio Merger] 合并后的目标时长过长 (>2小时)，已拦截。")
+             target_len = sr_1 * 10 
 
         max_b = max(waveform_1.shape[0], waveform_2.shape[0])
         max_c = max(waveform_1.shape[1], waveform_2.shape[1])
 
         def prepare_waveform(wf, target_t, b, c):
-            # 处理 Batch 和 Channel 差异
-            # 使用 expand 而不是 repeat 以节省内存
             new_wf = wf.expand(b, c, -1)
-            
-            # 处理时间轴
             if new_wf.shape[-1] > target_t:
                 return new_wf[:, :, :target_t]
             elif new_wf.shape[-1] < target_t:
@@ -74,13 +70,15 @@ class AIIA_Audio_Speaker_Merge:
             max_val = torch.max(torch.abs(merged_wf))
             if max_val > 1.0:
                 merged_wf /= max_val
+                print(f"提示: [AIIA Audio Merger] 检测到电平超限，已自动归一化。")
 
         # 预警
         if merged_wf.shape[-1] > sr_1 * 600:
-            print(f"提示: [AIIA Audio Merger] 合并后的音频较长，请尽量避免在 ComfyUI 中使用 Preview Audio 节点以防止内存溢出。")
+            print(f"提示: [AIIA Audio Merger] 合并后的音频较长，请尽量避免在 ComfyUI 中使用 Preview Audio 节点。")
 
         return ({"waveform": merged_wf, "sample_rate": sr_1},)
 
+# --- ComfyUI 节点注册 ---
 NODE_CLASS_MAPPINGS = {
     "AIIA_Audio_Speaker_Merge": AIIA_Audio_Speaker_Merge
 }

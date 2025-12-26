@@ -33,7 +33,6 @@ class AIIA_Audio_Speaker_Isolator:
         
         # 准备输出容器
         if isolation_mode == "Maintain Duration":
-            # 创建等长的静音张量 (CPU)
             final_waveform = torch.zeros_like(waveform)
         else:
             processed_segments = []
@@ -42,12 +41,11 @@ class AIIA_Audio_Speaker_Isolator:
         total_samples = waveform.shape[-1]
 
         if total_samples == 0:
-            print(f"警告: [AIIA Audio Isolator] 输入音频为空。")
+            print(f"警告: [AIIA Audio Isolator] 输入音频长度为0。")
             return (audio, 0)
 
         for chunk in whisper_chunks["chunks"]:
             if chunk.get("speaker") == speaker_label:
-                # 处理可能的时间戳格式错误
                 try:
                     start_time, end_time = chunk["timestamp"]
                 except (ValueError, KeyError):
@@ -88,8 +86,17 @@ class AIIA_Audio_Speaker_Isolator:
         if isolation_mode == "Concatenate":
             final_waveform = torch.cat(processed_segments, dim=-1)
         
-        # 长度预警：如果音频超过 10 分钟，提醒用户 Preview 可能导致 OOM
+        # 长度预警
         if final_waveform.shape[-1] > sample_rate * 600:
             print(f"提示: [AIIA Audio Isolator] 生成的音频较长 ({final_waveform.shape[-1]/sample_rate:.1f}秒)，请尽量避免在 ComfyUI 中使用 Preview Audio 节点以防止内存溢出。")
 
         return ({"waveform": final_waveform, "sample_rate": sample_rate}, matched_count)
+
+# --- ComfyUI 节点注册 ---
+NODE_CLASS_MAPPINGS = {
+    "AIIA_Audio_Speaker_Isolator": AIIA_Audio_Speaker_Isolator
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIIA_Audio_Speaker_Isolator": "Audio Speaker Isolator (AIIA)"
+}
