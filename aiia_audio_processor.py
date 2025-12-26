@@ -7,9 +7,9 @@ class AIIA_Audio_Silence_Splitter:
         return {
             "required": {
                 "audio": ("AUDIO",),
-                "max_duration": ("FLOAT", {"default": 27.0, "min": 5.0, "max": 29.0, "step": 0.1, "tooltip": "每个片段的最大长度，建议设置为27秒以留出余量"}),
-                "silence_threshold": ("FLOAT", {"default": 0.001, "min": 0.0001, "max": 0.1, "step": 0.0001, "tooltip": "判定为静音的能量阈值"}),
-                "min_silence_duration": ("FLOAT", {"default": 0.3, "min": 0.05, "max": 2.0, "step": 0.05, "tooltip": "判定为有效停顿的最短静音时长"}),
+                "max_duration": ("FLOAT", {"default": 27.0, "min": 5.0, "max": 29.0, "step": 0.1}),
+                "silence_threshold": ("FLOAT", {"default": 0.001, "min": 0.0001, "max": 0.1, "step": 0.0001}),
+                "min_silence_duration": ("FLOAT", {"default": 0.3, "min": 0.05, "max": 2.0, "step": 0.05}),
             }
         }
 
@@ -22,22 +22,29 @@ class AIIA_Audio_Silence_Splitter:
         waveform = audio["waveform"]
         sample_rate = audio["sample_rate"]
         
-        # 计算单通道能量
-        energy = torch.abs(waveform).mean(dim=1).squeeze()
-        if energy.ndim > 1: energy = energy.mean(dim=0) # 处理 batch
+        # 强制在 CPU 处理以防 OOM
+        waveform_cpu = waveform.cpu()
+        
+        # 计算能量
+        # waveform shape: [B, C, T]
+        energy = torch.abs(waveform_cpu).mean(dim=1).squeeze()
+        if energy.ndim > 1: energy = energy.mean(dim=0)
         
         # 1. 识别静音区间
         is_silence = energy < silence_threshold
-        # 转换为 numpy 处理更方便
-        sil_np = is_silence.cpu().numpy()
+        sil_np = is_silence.numpy()
         
-        # 寻找静音区间的起始和结束索引
+        # 寻找变化点
         diff = np.diff(sil_np.astype(int))
         starts = np.where(diff == 1)[0]
         ends = np.where(diff == -1)[0]
         
         if sil_np[0]: starts = np.insert(starts, 0, 0)
         if sil_np[-1]: ends = np.append(ends, len(sil_np) - 1)
+        
+        # 保证成对
+        if len(starts) > len(ends): starts = starts[:len(ends)]
+        elif len(ends) > len(starts): ends = ends[:len(starts)]
         
         # 过滤过短的静音
         min_sil_samples = int(min_sil_duration * sample_rate)
@@ -46,19 +53,17 @@ class AIIA_Audio_Silence_Splitter:
             if e - s >= min_sil_samples:
                 valid_silence_gaps.append((s / sample_rate, e / sample_rate))
         
-        # 2. 贪心算法构建片段
-        total_duration = waveform.shape[-1] / sample_rate
+        # 2. 贪心构建
+        total_duration = waveform_cpu.shape[-1] / sample_rate
         chunks = []
         current_start = 0.0
         
         while current_start < total_duration:
             target_end = current_start + max_duration
-            
             if target_end >= total_duration:
                 chunks.append([current_start, total_duration])
                 break
             
-            # 在 [current_start, target_end] 范围内寻找最后一个有效的静音点
             best_gap_mid = -1
             for g_start, g_end in valid_silence_gaps:
                 g_mid = (g_start + g_end) / 2
@@ -71,12 +76,9 @@ class AIIA_Audio_Silence_Splitter:
                 chunks.append([current_start, best_gap_mid])
                 current_start = best_gap_mid
             else:
-                # 如果没找到静音点，强行截断并打印警告
-                print(f"警告: 在 {current_start:.1f}s 后的 {max_duration}s 内未找到静音点，强行截断。")
                 chunks.append([current_start, target_end])
                 current_start = target_end
 
-        # 3. 构造输出
         whisper_chunks_data = {
             "text": "",
             "chunks": [
@@ -86,7 +88,6 @@ class AIIA_Audio_Silence_Splitter:
             "language": ""
         }
         
-        print(f"--- [AIIA Smart Splitter] 已将 {total_duration:.1f}s 音频划分为 {len(chunks)} 个片段 ---")
         return (whisper_chunks_data, len(chunks))
 
 NODE_CLASS_MAPPINGS = {"AIIA_Audio_Silence_Splitter": AIIA_Audio_Silence_Splitter}
