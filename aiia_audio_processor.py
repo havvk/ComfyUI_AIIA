@@ -101,8 +101,8 @@ class AIIA_Audio_PostProcess:
                 "fade_length": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 5.0, "step": 0.1, "tooltip": "Fade in/out duration in seconds"}),
                 "normalize": ("BOOLEAN", {"default": True, "tooltip": "Normalize to -1dB"}),
                 "resampling_alg": (["sinc_interp_hann", "sinc_interp_kaiser"], {"default": "sinc_interp_hann"}),
-                "lowpass_cutoff": ("INT", {"default": 0, "min": 0, "max": 24000, "step": 100, "tooltip": "Apply LowPass filter at this frequency (Hz) to remove aliasing noise. 0 to disable."}),
-                "highpass_cutoff": ("INT", {"default": 0, "min": 0, "max": 2000, "step": 10, "tooltip": "Apply HighPass filter at this frequency (Hz) to remove low-end rumble/DC offset. 0 to disable."}),
+                "lowpass_cutoff": ("INT", {"default": 11000, "min": 0, "max": 24000, "step": 100, "tooltip": "Apply LowPass filter at this frequency (Hz) to remove aliasing noise. 0 to disable."}),
+                "highpass_cutoff": ("INT", {"default": 60, "min": 0, "max": 2000, "step": 10, "tooltip": "Apply HighPass filter at this frequency (Hz) to remove low-end rumble/DC offset. 0 to disable."}),
             },
             "optional": {
                 "splice_info": ("SPLICE_INFO",),
