@@ -154,8 +154,11 @@ class AIIA_Audio_PostProcess:
         
         # 2. LowPass Filter (Anti-Aliasing / Denoise)
         if lowpass_cutoff > 0:
-            # lowpass_biquad expects [..., time]
-            waveform = F.lowpass_biquad(waveform, original_rate, cutoff_freq=lowpass_cutoff)
+            # lowpass_biquad is a 2nd order filter (12dB/octave).
+            # To remove stubborn aliasing ("stripes"), we need a steeper slope.
+            # We cascade it 6 times to create a ~72dB/octave "Brick Wall" effect.
+            for _ in range(6):
+                waveform = F.lowpass_biquad(waveform, original_rate, cutoff_freq=lowpass_cutoff)
 
         # 3. Fade In/Out
         if fade_length > 0:
