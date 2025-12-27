@@ -101,6 +101,7 @@ class AIIA_Audio_PostProcess:
                 "fade_length": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 5.0, "step": 0.1, "tooltip": "Fade in/out duration in seconds"}),
                 "normalize": ("BOOLEAN", {"default": True, "tooltip": "Normalize to -1dB"}),
                 "resampling_alg": (["sinc_interp_hann", "sinc_interp_kaiser"], {"default": "sinc_interp_hann"}),
+                "lowpass_cutoff": ("INT", {"default": 0, "min": 0, "max": 24000, "step": 100, "tooltip": "Apply LowPass filter at this frequency (Hz) to remove aliasing noise. 0 to disable."}),
             },
             "optional": {
                 "splice_info": ("SPLICE_INFO",),
@@ -112,9 +113,10 @@ class AIIA_Audio_PostProcess:
     FUNCTION = "process_audio"
     CATEGORY = "AIIA/Audio"
 
-    def process_audio(self, audio, target_rate, fade_length, normalize, resampling_alg, splice_info=None):
+    def process_audio(self, audio, target_rate, fade_length, normalize, resampling_alg, lowpass_cutoff, splice_info=None):
         import torchaudio
         import copy
+        import torchaudio.functional as F
         
         waveform = audio["waveform"] # [B, C, T] usually
         original_rate = audio["sample_rate"]
@@ -150,7 +152,12 @@ class AIIA_Audio_PostProcess:
 
                 original_rate = new_rate
         
-        # 2. Fade In/Out
+        # 2. LowPass Filter (Anti-Aliasing / Denoise)
+        if lowpass_cutoff > 0:
+            # lowpass_biquad expects [..., time]
+            waveform = F.lowpass_biquad(waveform, original_rate, cutoff_freq=lowpass_cutoff)
+
+        # 3. Fade In/Out
         if fade_length > 0:
             fade_samples = int(fade_length * original_rate)
             if fade_samples * 2 < waveform.shape[-1]:
