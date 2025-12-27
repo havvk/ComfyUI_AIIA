@@ -106,22 +106,33 @@ class AIIA_Audio_Denoise:
             print(f"[AIIA] Loading VoiceFixer model on {device_str}...")
             setup_voicefixer_path()
             # VoiceFixer(verbose=True, emb_vocoder=True) by default
-            # We enforce the device during init if possible, or later during restore
-            try:
-                AIIA_Audio_Denoise._model_cache = VoiceFixer()
-            except Exception as e:
-                if "PytorchStreamReader" in str(e) or "zip archive" in str(e):
-                    print(f"[AIIA] Error: VoiceFixer model seems corrupted. Purging models to force re-download...")
-                    # Purge target dir
-                    comfy_models_dir = folder_paths.models_dir
-                    target_dir = os.path.join(comfy_models_dir, "voicefixer")
-                    if os.path.exists(target_dir):
-                        shutil.rmtree(target_dir)
-                        os.makedirs(target_dir, exist_ok=True) # Recreate empty dir
-                    
-                    raise RuntimeError("[AIIA] VoiceFixer model file was corrupted and has been deleted. Please RESTART the workflow/ComfyUI to re-download it correctly.") from e
-                else:
-                    raise e
+            def _load_safe(retry_count=0):
+                try:
+                    return VoiceFixer()
+                except Exception as e:
+                    # Check for zip corruption or specific EOF errors
+                    err_str = str(e)
+                    if retry_count < 1 and ("PytorchStreamReader" in err_str or "zip archive" in err_str or "end of file" in err_str):
+                        print(f"[AIIA] Error: VoiceFixer model corrupted. Purging and Retrying Download (Attempt {retry_count+1})...")
+                        
+                        # Purge target dir
+                        comfy_models_dir = folder_paths.models_dir
+                        target_dir = os.path.join(comfy_models_dir, "voicefixer")
+                        
+                        # Force cleanup
+                        if os.path.exists(target_dir):
+                            try:
+                                shutil.rmtree(target_dir)
+                            except:
+                                pass
+                        os.makedirs(target_dir, exist_ok=True)
+                        
+                        # Recursive retry
+                        return _load_safe(retry_count + 1)
+                    else:
+                        raise RuntimeError(f"[AIIA] VoiceFixer initialization failed: {e}. If this is a network issue, please check your connection.") from e
+
+            AIIA_Audio_Denoise._model_cache = _load_safe()
 
         vf = AIIA_Audio_Denoise._model_cache
         
