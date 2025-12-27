@@ -57,17 +57,25 @@ class AIIA_CosyVoice_VoiceConversion:
         if target_waveform.shape[-1] > max_target_samples:
             target_waveform = target_waveform[..., :max_target_samples]
         
+        # Normalize and Save Target
+        if target_waveform.abs().max() > 1.0:
+            target_waveform = target_waveform / target_waveform.abs().max()
+            
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_target:
             target_path = tmp_target.name
             target_np = target_waveform.squeeze().cpu().numpy()
             if target_np.ndim == 2: target_np = target_np.T
-            sf.write(target_path, target_np, sample_rate)
+            sf.write(target_path, target_np, sample_rate, subtype='FLOAT')
 
         source_waveform = source_audio["waveform"]
         if source_audio["sample_rate"] != sample_rate:
             import torchaudio
             source_waveform = torchaudio.transforms.Resample(source_audio["sample_rate"], sample_rate)(source_waveform)
         
+        # Normalize Source
+        if source_waveform.abs().max() > 1.0:
+            source_waveform = source_waveform / source_waveform.abs().max()
+
         source_waveform = source_waveform.squeeze() 
         if source_waveform.ndim == 1: source_waveform = source_waveform.unsqueeze(0)
         total_samples = source_waveform.shape[-1]
@@ -201,7 +209,7 @@ class AIIA_CosyVoice_VoiceConversion:
             source_path = tmp_source.name
             source_np = waveform.cpu().numpy()
             if source_np.ndim == 2: source_np = source_np.T
-            sf.write(source_path, source_np, sample_rate)
+            sf.write(source_path, source_np, sample_rate, subtype='FLOAT')
         try:
             output = model.inference_vc(source_wav=source_path, prompt_wav=target_path, stream=False, speed=speed)
             all_speech = [chunk['tts_speech'] for chunk in output]
