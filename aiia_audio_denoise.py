@@ -109,7 +109,7 @@ class AIIA_Audio_Denoise:
             # We enforce the device during init if possible, or later during restore
             try:
                 AIIA_Audio_Denoise._model_cache = VoiceFixer()
-            except RuntimeError as e:
+            except Exception as e:
                 if "PytorchStreamReader" in str(e) or "zip archive" in str(e):
                     print(f"[AIIA] Error: VoiceFixer model seems corrupted. Purging models to force re-download...")
                     # Purge target dir
