@@ -1,27 +1,19 @@
 [project]
 name = "aiia"
-description = """A suite of powerful, intuitive, and highly customizable nodes for ComfyUI, featuring a high-performance Media Browser and OOM-safe video tools.
-
----
-### Changelog v1.3.0
-- **Major Feature**: Video workflow detection and loading is now supported! The browser can now detect and load workflows embedded in video files (e.g., MP4, WebM), just like with images.
-- **Cache System**: Implemented a seamless cache upgrade to v3. This automatically clears old cache versions and rebuilds it to support new features without requiring any user action.
-
-### Changelog v1.2.1
-- **Bug Fix**: Restored the asynchronous loading behavior of the media browser. File lists now appear instantly while metadata (like thumbnails and workflow info) loads in the background, fixing a user experience regression from v1.2.0.
-
-### Changelog v1.2.0
-- **Features & Optimizations**:
-  - Added one-click workflow loading and file downloading directly from the browser.
-  - Implemented a manual refresh button and automatic refresh on view switching.
-  - Redesigned icon buttons into a clean, hover-activated overlay.
-- **Bug Fixes**:
-  - Fixed a race condition preventing the 'Load Workflow' button from appearing in list view.
-  - Correctly sets workflow names on load for both standard and API formats.
-  - Resolved issues with the icon sizing slider, ensuring instant and correct view updates.
-"""
-version = "1.3.0"
+description = "A suite of powerful, intuitive, and highly customizable nodes for ComfyUI, featuring a high-performance Media Browser and OOM-safe video tools."
+version = "1.3.1"
 license = {file = "LICENSE"}
+readme = "README.md"
+authors = [
+    { name = "Hawk Lee", email = "l.y@live.cn" }
+]
+keywords = ["ComfyUI", "Audio", "Video", "CosyVoice", "PersonaLive", "NeMo", "Diarization"]
+dependencies = [
+    "soundfile",
+    "numpy",
+    "matplotlib",
+    "torchaudio"
+]
 
 [project.urls]
 Repository = "https://github.com/havvk/ComfyUI_AIIA"
@@ -30,5 +22,5 @@ Repository = "https://github.com/havvk/ComfyUI_AIIA"
 [tool.comfy]
 PublisherId = "hawk"
 DisplayName = "ComfyUI_AIIA"
-Icon = ""
-includes = []
+Icon = "https://github.com/user-attachments/assets/358b9ca9-59c8-4433-b84c-c150503af04a"
+
