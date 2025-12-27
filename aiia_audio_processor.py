@@ -100,7 +100,7 @@ class AIIA_Audio_PostProcess:
                 "target_rate": (["44100", "48000", "24000", "22050", "Original"], {"default": "44100"}),
                 "fade_length": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 5.0, "step": 0.1, "tooltip": "Fade in/out duration in seconds"}),
                 "normalize": ("BOOLEAN", {"default": True, "tooltip": "Normalize to -1dB"}),
-                "resampling_alg": (["sinc_best", "sinc_fast", "kaiser_best"], {"default": "sinc_best"}),
+                "resampling_alg": (["sinc_interp_hann", "sinc_interp_kaiser"], {"default": "sinc_interp_hann"}),
             }
         }
 
@@ -122,10 +122,16 @@ class AIIA_Audio_PostProcess:
         if target_rate != "Original":
             new_rate = int(target_rate)
             if new_rate != original_rate:
+                # Map legacy/UI friendly names to valid torchaudio methods if necessary
+                # Though we updated INPUT_TYPES, safety check for existing workflows
+                valid_method = resampling_alg
+                if resampling_alg in ["sinc_best", "sinc_fast"]: valid_method = "sinc_interp_hann"
+                elif resampling_alg == "kaiser_best": valid_method = "sinc_interp_kaiser"
+                
                 resampler = torchaudio.transforms.Resample(
                     orig_freq=original_rate,
                     new_freq=new_rate,
-                    resampling_method=resampling_alg,
+                    resampling_method=valid_method,
                     dtype=waveform.dtype
                 )
                 waveform = resampler(waveform)
