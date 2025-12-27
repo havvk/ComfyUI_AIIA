@@ -76,7 +76,9 @@
 ### 2. 安装 NeMo 模型 (音频AI节点必须)
 音频处理节点（如说话人日志）依赖 NeMo 模型。
 -   在 ComfyUI 的 `models` 目录下，创建一个名为 `nemo_models` 的子目录。最终路径应为 `ComfyUI/models/nemo_models/`。
--   从 [NVIDIA NeMo 目录](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/diar_sortformer_telephonic_tele_ft_marblenet) 下载所需的 `.nemo` 模型文件（例如 `diar_sortformer_4spk-v1.nemo`）。
+-   从 [NVIDIA NeMo 目录](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/diar_sortformer_telephonic_tele_ft_marblenet) 下载所需的 `.nemo` 模型文件。
+    -   基础模型: `diar_sortformer_4spk-v1.nemo`
+    -   流式模型 (v2.1): `diar_streaming_sortformer_4spk-v2.1.nemo`
 -   将下载的 `.nemo` 文件放入 `ComfyUI/models/nemo_models/` 目录中。
 
 ### 3. 安装本节点套件
@@ -91,77 +93,86 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 ## ✨ 可用节点
 
-### 如何使用 AIIA 媒体浏览器
+### 1. 媒体管理 (Media Management)
+
+#### AIIA 媒体浏览器
 1.  安装并重启后，一个 **"AIIA Browser"** 按钮会出现在 ComfyUI 主菜单中。
 2.  点击即可启动浏览器。
 3.  尽情探索你的 `output` 目录吧！
 
-### 视频合并 (AIIA, 图像或目录)
+---
+
+### 2. 视频生成与合成 (Video Generation & Compositing)
+
+#### 视频合并 (AIIA, 图像或目录)
 
 这是一个功能强大且高度可定制的视频合并节点，是您工作流中处理视频生成的终极解决方案。
 
 ![video_combine_node_ui](https://github.com/user-attachments/assets/4185c2a7-e1a6-4980-ac8a-3d326bff4b87)
 
-#### 核心亮点
+**核心亮点**:
 -   **内存高效**: 通过 `frames_directory` 输入，可以处理几乎无限数量的图像帧，完美解决了 OOM 问题。
 -   **直接张量输入**: 接受上游节点的 `IMAGE` 张量，方便快速迭代和测试。
 -   **全面的音频控制**: 支持 `AUDIO` 张量和外部文件，并提供对编解码器和码率的精细控制。
 -   **智能自动配置**: `auto` 模式能自动应用格式预设中的音频参数，并能自动检测源文件的码率。
 
----
-
-### FLOAT 影片生成 (内存与磁盘模式)
+#### FLOAT 影片生成 (内存与磁盘模式)
 
 这组节点封装了先进的 **FLOAT** 模型，能够根据参考图像和音频生成高质量的口型同步影片。我们提供了两种模式，以应对不同长度的生成需求。
 
-#### 1. Float Process (AIIA In-Memory)
+**1. Float Process (AIIA In-Memory)**
 -   **用途**: 用于生成**短片**、快速预览或直接与其他内存节点（如视频合并的 `images` 输入）连接。
 -   **输出**: `IMAGE` 张量。
 -   **优势**: 速度快，流程无缝。
 -   **限制**: 受限于您的 VRAM 和系统内存大小，不适合生成长视频。
 
-#### 2. Float Process (AIIA To-Disk for Long Audio)
+**2. Float Process (AIIA To-Disk for Long Audio)**
 -   **用途**: 专门用于**长音频**的影片生成，是**解决OOM问题的关键**。
 -   **输出**: `STRING` (包含所有生成帧的目录路径) 和 `INT` (帧总数)。
 -   **优势**: 在解码过程中，节点以小批量方式处理帧并**逐帧保存到磁盘**，内存占用极低，可以处理任意长度的音频。
 -   **工作流**: 此节点的输出目录可以直接作为 **视频合并节点** 的 `frames_directory` 输入，构建一个完整的、内存高效的 talking head 视频生成管线。
 
+#### PersonaLive 视频驱动 (AIIA Integrated)
+
+这组节点基于强大的 [PersonaLive](https://github.com/GVCLab/PersonaLive) 模型，专为生成高质量的 Talking Head 视频而设计。我们将原版代码完全重构并集成到 ComfyUI 中，通过特有的分块处理和磁盘流式技术，**彻底解决了长视频生成时的显存和内存溢出 (OOM) 问题**。
+
+**1. PersonaLive Checkpoint Loader**
+-   **用途**: 加载所有必要的模型权重（Base Model, VAE, PersonaLive Weights）。
+-   **功能**: 首次运行时会自动从 HuggingFace 下载所需模型，无需手动配置。
+
+**2. PersonaLive Photo Sampler (AIIA In-Memory)**
+-   **用途**: 标准生成模式，适合**短视频**或**中等长度**视频。
+-   **输出**: `IMAGE` 张量（所有生成的帧）。
+-   **机制**: 节点会自动将长视频切分为多个 Chunk 进行推理，每推理完一个 Chunk 就会清空显存，从而允许你在有限的显存下生成较长的视频。
+
+**3. PersonaLive Photo Sampler (AIIA To-Disk for Long Video)**
+-   **用途**: 专门用于**超长视频**生成。这是解决系统内存（System RAM）OOM 的终极方案。
+-   **输出**: `STRING` (包含生成帧的目录路径) 和 `INT` (帧数)。
+-   **最佳实践**: 将此节点的输出目录直接连接到 **AIIA Video Combine** 节点，即可实现从生成到合成的全流程 OOM-Safe。
+
 ---
 
-### 音频处理：说话人日志 (Diarization)
+### 3. 音频智能处理 (Intelligent Audio Processing)
+
+#### 说话人日志 (Diarization)
 
 这组节点利用 **NeMo Sortformer** E2E 模型，为您的音频提供先进的说话人识别功能。在4090RTX显卡上只需2秒钟就能完成10分钟音频的声纹分割聚类任务。
 
-#### 1. AIIA Generate Speaker Segments
+**1. AIIA Generate Speaker Segments**
 -   **用途**: 对一段音频进行分析，找出“**谁在什么时候说话**”。
 -   **输入**: `AUDIO` 张量。
 -   **输出**: `WHISPER_CHUNKS` (一个结构化的数据，包含一系列带有说话人标签的时间片段，如 `SPEAKER_00`, `SPEAKER_01` 等)。
 -   **亮点**: 提供多种**后处理配置**（从宽松到严格），让您可以微调分割的灵敏度，以适应不同质量的音频。
 
-#### 2. AIIA E2E Speaker Diarization
+**2. AIIA E2E Speaker Diarization**
 -   **用途**: 将 `Generate Speaker Segments` 的识别结果**精确地应用**到由 Whisper 等工具生成的、带有文本的 `WHISPER_CHUNKS` 上。
 -   **输入**: `WHISPER_CHUNKS` (来自文本转录节点) 和 `AUDIO` 张量。
 -   **输出**: 更新后的 `WHISPER_CHUNKS`，其中每个文本块都已被赋予了最匹配的说话人标签。
 -   **工作流**: `(音频) -> Whisper -> (文本Chunks)` + `(音频)  => E2E Diarizer` => **最终带有说话人标签的文本稿**。
 
----
+#### 说话人隔离与合并 (Speaker Isolation & Merger)
 
-### 实用工具 (Utilities)
-
-#### Image Concatenate (AIIA Utils, Disk)
--   **用途**: 将两个图像序列（来自两个不同的目录）逐帧拼接在一起，非常适合创建**对比视频**或**多面板视频**。
--   **核心亮点 (OOM-Safe)**: 此节点**逐帧读取、处理和保存**，从不将整个图像序列加载到内存中，因此可以处理任意数量的帧。
--   **功能**:
-    -   支持上下左右四个方向的拼接。
-    -   可自动调整其中一个图像序列的尺寸以匹配另一个，并保持宽高比。
-    -   可自定义背景填充颜色。
--   **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
-
----
-
-### 音频处理：说话人隔离 (Speaker Isolation)
-
-#### Audio Speaker Isolator (AIIA)
+**Audio Speaker Isolator (AIIA)**
 -   **用途**: 根据说话人日志（Diarization）产生的 JSON 数据，从原始音轨中精确提取属于特定说话人的声音。
 -   **输入**:
     -   `audio`: 原始音频张量。
@@ -173,67 +184,54 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 -   **亮点**: 
     -   **防爆音**: 内置微小的淡入淡出（Fade In/Out）处理，确保片段边缘自然顺滑。
         - **时间对齐**: 专门针对 AIIA 视频节点套件优化，保证音画同步。
-    
-    #### Audio Speaker Merger (AIIA)
-    -   **用途**: 将两段不同的音频流合并为一条。通常用于在分别对不同说话人进行视频驱动后，将各自的音轨重新混缩。
-    -   **输入**:
-        -   `audio_1`, `audio_2`: 待合并的两段音频。
-        -   `duration_mode`: 
-            -   `Longest`: 输出时长等于两段音频中的最大值。
-            -   `Shortest`: 输出时长等于两段音频中的最小值。
-            -   `Audio 1 / Audio 2`: 严格跟随特定输入段的时长。
-            -   `Specified`: 手动指定输出秒数。
-            -   `normalize`: 开启后将自动防止音量叠加导致的破音。
 
-    #### Audio Smart Chunker (Silence-based)
-    -   **用途**: 全量扫描长音频，寻找最优切片方案。
-    -   **机制**: 
-        -   **全局静音扫描**: 自动识别音频中的天然停顿区间。
-        -   **贪心优化算法**: 在不超出设定时长（如 27s）的前提下，计算出能让每一刀都切在静音处的片段序列。
-    -   **输出**: 供 `Voice Conversion (AIIA Unlimited)` 使用的 `whisper_chunks` 引导数据。
-    -   **协同优势**: 预先规划好切点，避免转换节点在词句中间暴力切分，是彻底消除拼接毛刺的关键。
+**Audio Speaker Merger (AIIA)**
+-   **用途**: 将两段不同的音频流合并为一条。通常用于在分别对不同说话人进行视频驱动后，将各自的音轨重新混缩。
+-   **输入**:
+    -   `audio_1`, `audio_2`: 待合并的两段音频。
+    -   `duration_mode`: 
+        -   `Longest`: 输出时长等于两段音频中的最大值。
+        -   `Shortest`: 输出时长等于两段音频中的最小值。
+        -   `Audio 1 / Audio 2`: 严格跟随特定输入段的时长。
+        -   `Specified`: 手动指定输出秒数。
+        -   `normalize`: 开启后将自动防止音量叠加导致的破音。
+
+#### 智能切片与 CosyVoice (Smart Chunking & Voice Conversion)
+
+**Audio Smart Chunker (Silence-based)**
+-   **用途**: 全量扫描长音频，寻找最优切片方案。
+-   **机制**: 
+    -   **全局静音扫描**: 自动识别音频中的天然停顿区间。
+    -   **贪心优化算法**: 在不超出设定时长（如 27s）的前提下，计算出能让每一刀都切在静音处的片段序列。
+-   **输出**: 供 `Voice Conversion (AIIA Unlimited)` 使用的 `whisper_chunks` 引导数据。
+-   **协同优势**: 预先规划好切点，避免转换节点在词句中间暴力切分，是彻底消除拼接毛刺的关键。
+
+**Voice Conversion (AIIA Unlimited)** (CosyVoice 增强)
+-   **用途**: 增强版语音转换节点，解决了原版 CosyVoice3 只能转换 30 秒内语音的限制。
+-   **创新设计 (创新亮点)**:
+    -   **语义感知切片 (Semantic-Aware Chunking)**: 节点可选接入 `whisper_chunks` 数据。它能智能识别每句话之间的“缝隙”，优先在说话人停顿的天然空隙处进行切分，从根本上避免了“在单词中间切开”导致的违和感。
+    -   **双层寻点算法**: 在语义缝隙确定的候选范围内，算法会自动进行微秒级的**物理静音探测**（基于能量平滑曲线），确保切点处于绝对静默状态。
+    -   **余弦平滑混合 (Cosine Cross-fade)**: 采用余弦曲线代替传统的线性淡入淡出，使不同分块间的背景噪底和音色过渡更加丝滑、无毛刺。
+-   **输入**:
+    -   `model`: 连接 `FL-CosyVoice3` 的模型加载器。
+    -   `source_audio`: 待转换的源音频（支持任意时长）。
+    -   `whisper_chunks` (可选): 接入 Diarization 节点数据，开启语义感知切片。
+    -   `target_audio`: 目标音色参考音频（自动截取前 30 秒）。
+    -   `chunk_size`: 目标切片大小（默认 25 秒）。
+    -   `overlap_size`: 重叠大小，用于平滑衔接。
 
 ---
 
-### CosyVoice 增强 (AIIA Enhanced)
+### 4. 图像工具 (Image Utilities)
 
-        
-        #### Voice Conversion (AIIA Unlimited)
-        -   **用途**: 增强版语音转换节点，解决了原版 CosyVoice3 只能转换 30 秒内语音的限制。
-        -   **创新设计 (创新亮点)**:
-            -   **语义感知切片 (Semantic-Aware Chunking)**: 节点可选接入 `whisper_chunks` 数据。它能智能识别每句话之间的“缝隙”，优先在说话人停顿的天然空隙处进行切分，从根本上避免了“在单词中间切开”导致的违和感。
-            -   **双层寻点算法**: 在语义缝隙确定的候选范围内，算法会自动进行微秒级的**物理静音探测**（基于能量平滑曲线），确保切点处于绝对静默状态。
-            -   **余弦平滑混合 (Cosine Cross-fade)**: 采用余弦曲线代替传统的线性淡入淡出，使不同分块间的背景噪底和音色过渡更加丝滑、无毛刺。
-        -   **输入**:
-            -   `model`: 连接 `FL-CosyVoice3` 的模型加载器。
-            -   `source_audio`: 待转换的源音频（支持任意时长）。
-            -   `whisper_chunks` (可选): 接入 Diarization 节点数据，开启语义感知切片。
-            -   `target_audio`: 目标音色参考音频（自动截取前 30 秒）。
-            -   `chunk_size`: 目标切片大小（默认 25 秒）。
-            -   `overlap_size`: 重叠大小，用于平滑衔接。
-
-        
-        ---
-        
-        ### PersonaLive 视频驱动 (AIIA Integrated)
-        
-    
-
-这组节点基于强大的 [PersonaLive](https://github.com/GVCLab/PersonaLive) 模型，专为生成高质量的 Talking Head 视频而设计。我们将原版代码完全重构并集成到 ComfyUI 中，通过特有的分块处理和磁盘流式技术，**彻底解决了长视频生成时的显存和内存溢出 (OOM) 问题**。
-
-#### 1. PersonaLive Checkpoint Loader
--   **用途**: 加载所有必要的模型权重（Base Model, VAE, PersonaLive Weights）。
--   **功能**: 首次运行时会自动从 HuggingFace 下载所需模型，无需手动配置。
-
-#### 2. PersonaLive Photo Sampler (AIIA In-Memory)
--   **用途**: 标准生成模式，适合**短视频**或**中等长度**视频。
--   **输出**: `IMAGE` 张量（所有生成的帧）。
--   **机制**: 节点会自动将长视频切分为多个 Chunk 进行推理，每推理完一个 Chunk 就会清空显存，从而允许你在有限的显存下生成较长的视频。
-
-#### 3. PersonaLive Photo Sampler (AIIA To-Disk for Long Video)
--   **用途**: 专门用于**超长视频**生成。这是解决系统内存（System RAM）OOM 的终极方案。
--   **输出**: `STRING` (包含生成帧的目录路径) 和 `INT` (帧数)。
--   **最佳实践**: 将此节点的输出目录直接连接到 **AIIA Video Combine** 节点，即可实现从生成到合成的全流程 OOM-Safe。
+#### Image Concatenate (AIIA Utils, Disk)
+-   **用途**: 将两个图像序列（来自两个不同的目录）逐帧拼接在一起，非常适合创建**对比视频**或**多面板视频**。
+-   **核心亮点 (OOM-Safe)**: 此节点**逐帧读取、处理和保存**，从不将整个图像序列加载到内存中，因此可以处理任意数量的帧。
+-   **功能**:
+    -   支持上下左右四个方向的拼接。
+    -   可自动调整其中一个图像序列的尺寸以匹配另一个，并保持宽高比。
+    -   可自定义背景填充颜色。
+-   **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
 
 ---
 
