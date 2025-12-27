@@ -249,7 +249,18 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 ### 5. 调试工具 (Debug Tools)
 
-#### Audio Splice Analyzer (AIIA Debug)
+#### 3.3 Audio AI Denoise (VoiceFixer)
+-   **用途**: 使用 AI 模型去除 CosyVoice 等生成式语音中的底噪、电音、混响及破音。
+-   **核心优势**: 相比数学滤波器，它能“听懂”人声，保留人声细节的同时去除背景杂音。
+-   **参数**:
+    -   `mode`:
+        -   **0 (Full)**: 去噪 + 去混响 + 去破音 + 超分。适合质量最差的音频。
+        -   **1 (No DeClip)**: 去噪 + 去混响 + 超分。适合大多数情况。
+        -   **2 (Denoise Only)**: 仅去噪。适合仅有底噪的音频。
+    -   `use_cuda`: 是否使用 GPU (推荐)。
+-   **依赖**: 首次运行会自动安装 `voicefixer` 库。
+
+#### 3.4 Audio Splice Analyzer (AIIA Debug)
 -   **用途**: 可视化验证音频拼接质量。
 -   **功能**: 
     -   生成 Log-Mel 语谱图 (Spectrogram)。

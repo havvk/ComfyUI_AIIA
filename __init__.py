@@ -70,6 +70,9 @@ _load_nodes_from_module(".aiia_audio_debug", "aiia_audio_debug")
 # 11. 处理 aiia_audio_processor.py
 _load_nodes_from_module(".aiia_audio_processor", "aiia_audio_processor")
 
+# 12. 处理 aiia_audio_denoise.py
+_load_nodes_from_module(".aiia_audio_denoise", "aiia_audio_denoise")
+
 # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
 WEB_DIRECTORY = "js"
 
