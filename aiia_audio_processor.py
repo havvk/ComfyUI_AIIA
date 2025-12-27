@@ -101,16 +101,20 @@ class AIIA_Audio_PostProcess:
                 "fade_length": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 5.0, "step": 0.1, "tooltip": "Fade in/out duration in seconds"}),
                 "normalize": ("BOOLEAN", {"default": True, "tooltip": "Normalize to -1dB"}),
                 "resampling_alg": (["sinc_interp_hann", "sinc_interp_kaiser"], {"default": "sinc_interp_hann"}),
+            },
+            "optional": {
+                "splice_info": ("SPLICE_INFO",),
             }
         }
 
-    RETURN_TYPES = ("AUDIO",)
-    RETURN_NAMES = ("audio",)
+    RETURN_TYPES = ("AUDIO", "SPLICE_INFO")
+    RETURN_NAMES = ("audio", "splice_info")
     FUNCTION = "process_audio"
     CATEGORY = "AIIA/Audio"
 
-    def process_audio(self, audio, target_rate, fade_length, normalize, resampling_alg):
+    def process_audio(self, audio, target_rate, fade_length, normalize, resampling_alg, splice_info=None):
         import torchaudio
+        import copy
         
         waveform = audio["waveform"] # [B, C, T] usually
         original_rate = audio["sample_rate"]
@@ -118,12 +122,13 @@ class AIIA_Audio_PostProcess:
         if waveform.ndim == 2:
             waveform = waveform.unsqueeze(0)
             
+        new_splice_info = copy.deepcopy(splice_info) if splice_info else None
+        
         # 1. Resample
         if target_rate != "Original":
             new_rate = int(target_rate)
             if new_rate != original_rate:
                 # Map legacy/UI friendly names to valid torchaudio methods if necessary
-                # Though we updated INPUT_TYPES, safety check for existing workflows
                 valid_method = resampling_alg
                 if resampling_alg in ["sinc_best", "sinc_fast"]: valid_method = "sinc_interp_hann"
                 elif resampling_alg == "kaiser_best": valid_method = "sinc_interp_kaiser"
@@ -135,6 +140,14 @@ class AIIA_Audio_PostProcess:
                     dtype=waveform.dtype
                 )
                 waveform = resampler(waveform)
+                
+                # Update splice info if present
+                if new_splice_info and "splice_points" in new_splice_info:
+                    scale_factor = new_rate / original_rate
+                    new_splice_info["splice_points"] = [int(p * scale_factor) for p in new_splice_info["splice_points"]]
+                    if "total_samples" in new_splice_info:
+                         new_splice_info["total_samples"] = int(new_splice_info["total_samples"] * scale_factor)
+
                 original_rate = new_rate
         
         # 2. Fade In/Out
@@ -145,8 +158,13 @@ class AIIA_Audio_PostProcess:
                 fade_out = torch.linspace(1, 0, fade_samples, device=waveform.device)
                 
                 # Apply to last dim (time)
-                waveform[..., :fade_samples] *= fade_in
-                waveform[..., -fade_samples:] *= fade_out
+                # Ensure we handle multiple channels correctly
+                if waveform.ndim == 3:
+                     waveform[:, :, :fade_samples] *= fade_in
+                     waveform[:, :, -fade_samples:] *= fade_out
+                else: 
+                     waveform[..., :fade_samples] *= fade_in
+                     waveform[..., -fade_samples:] *= fade_out
         
         # 3. Normalize (to -1dB = 0.891)
         if normalize:
@@ -155,7 +173,7 @@ class AIIA_Audio_PostProcess:
                 target_peak = 0.891 # -1.0 dB
                 waveform = waveform * (target_peak / peak)
             
-        return ({"waveform": waveform, "sample_rate": original_rate},)
+        return ({"waveform": waveform, "sample_rate": original_rate}, new_splice_info)
 
 NODE_CLASS_MAPPINGS = {
     "AIIA_Audio_Silence_Splitter": AIIA_Audio_Silence_Splitter,
