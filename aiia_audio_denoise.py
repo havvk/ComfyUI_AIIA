@@ -11,7 +11,7 @@ try:
     from voicefixer import VoiceFixer
 except ImportError:
     print("[AIIA] VoiceFixer not found. Installing automatically...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "voicefixer==0.1.2"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "voicefixer>=0.1.3"])
     from voicefixer import VoiceFixer
 
 class AIIA_Audio_Denoise:
