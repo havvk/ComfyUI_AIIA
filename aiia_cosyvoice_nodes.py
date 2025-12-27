@@ -25,8 +25,8 @@ class AIIA_CosyVoice_VoiceConversion:
             }
         }
 
-    RETURN_TYPES = ("AUDIO",)
-    RETURN_NAMES = ("audio",)
+    RETURN_TYPES = ("AUDIO", "SPLICE_INFO")
+    RETURN_NAMES = ("audio", "splice_info")
     FUNCTION = "convert_voice_unlimited"
     CATEGORY = "AIIA/Synthesis"
 
@@ -77,10 +77,17 @@ class AIIA_CosyVoice_VoiceConversion:
         overlap_samples = overlap_size * sample_rate
         max_total_samples = int(MAX_TOTAL_SEC * sample_rate)
         
+        # 记录切片信息用于调试
+        splice_info = {
+            "sample_rate": sample_rate,
+            "total_samples": total_samples,
+            "splice_points": []
+        }
+
         if total_samples <= max_total_samples:
             result_waveform = self._inference_single_chunk(cosyvoice_model, source_waveform, target_path, speed, sample_rate, seed)
             if os.path.exists(target_path): os.unlink(target_path)
-            return ({"waveform": result_waveform.unsqueeze(0), "sample_rate": sample_rate},)
+            return ({"waveform": result_waveform.unsqueeze(0), "sample_rate": sample_rate}, splice_info)
 
         # 3. 智能分块逻辑
         chunks_to_process = []
@@ -124,30 +131,67 @@ class AIIA_CosyVoice_VoiceConversion:
                 if total_samples - current_start < sample_rate:
                     break
 
+        # 4. 拼接逻辑 (Sacrificial Context Cross-fade)
         final_segments = []
+        MAX_CROSS_FADE_DURATION = 0.05 # 50ms 强制最大淡入淡出
+        max_xfade_samples = int(MAX_CROSS_FADE_DURATION * sample_rate)
+
         for i, chunk in enumerate(chunks_to_process):
             print(f"[AIIA CosyVoice] Processing chunk {i+1}/{len(chunks_to_process)}, actual input len: {chunk.shape[-1]/sample_rate:.2f}s")
             converted_chunk = self._inference_single_chunk(cosyvoice_model, chunk, target_path, speed, sample_rate, seed)
+            
             if not final_segments:
                 final_segments.append(converted_chunk)
             else:
                 prev_chunk = final_segments[-1]
-                chunk_overlap_samples = int(overlap_samples / speed)
-                if chunk_overlap_samples > 0 and prev_chunk.shape[-1] > chunk_overlap_samples:
-                    t = torch.linspace(0, np.pi, chunk_overlap_samples, device=converted_chunk.device)
+                # 计算重叠
+                # overlap_samples 是输入时的重叠，对应输出需要除以 speed (虽然 CosyVoice 不一定会严格且线性地遵循 speed，但这是一个估算)
+                estimated_overlap_samples = int(overlap_samples / speed)
+                
+                # 我们只使用仅仅够消除爆音的短 crossfade，剩下的重叠部分作为“牺牲上下文”被丢弃
+                xfade_len = min(estimated_overlap_samples, max_xfade_samples)
+                sacrificial_len = 0
+                
+                if estimated_overlap_samples > xfade_len:
+                    sacrificial_len = estimated_overlap_samples - xfade_len
+
+                # 确保 tensor 够长
+                if prev_chunk.shape[-1] > (sacrificial_len + xfade_len):
+                     # 1. 裁剪前一段的尾部 (Sacrificial Context)
+                    trim_idx = prev_chunk.shape[-1] - sacrificial_len
+                    prev_chunk_trimmed = prev_chunk[:, :trim_idx]
+                    
+                    # 2. 准备 Cross-fade
+                    t = torch.linspace(0, np.pi, xfade_len, device=converted_chunk.device)
                     fade_out = 0.5 * (1.0 + torch.cos(t))
                     fade_in = 1.0 - fade_out
-                    overlap_part = prev_chunk[:, -chunk_overlap_samples:] * fade_out + converted_chunk[:, :chunk_overlap_samples] * fade_in
-                    final_segments[-1] = prev_chunk[:, :-chunk_overlap_samples]
-                    final_segments.append(overlap_part)
-                    final_segments.append(converted_chunk[:, chunk_overlap_samples:])
+                    
+                    prev_tail = prev_chunk_trimmed[:, -xfade_len:]
+                    curr_head = converted_chunk[:, :xfade_len]
+                    
+                    # 只有当维度匹配时才做 xfade，否则直接拼接
+                    if prev_tail.shape[-1] == xfade_len and curr_head.shape[-1] == xfade_len:
+                        overlap_part = prev_tail * fade_out + curr_head * fade_in
+                        
+                        final_segments[-1] = prev_chunk_trimmed[:, :-xfade_len] # 移除 xfade 部分
+                        final_segments.append(overlap_part)
+                        final_segments.append(converted_chunk[:, xfade_len:])   # 添加 xfade 之后的部分
+                        
+                        # 记录拼接点 (相对于最终音频的采样点)
+                        current_total_len = sum([seg.shape[-1] for seg in final_segments]) - converted_chunk.shape[-1] + xfade_len # 指向 overlap 中心
+                        splice_info["splice_points"].append(current_total_len)
+
+                    else:
+                         # 维度不够，直接硬拼接
+                        final_segments.append(converted_chunk)
                 else:
                     final_segments.append(converted_chunk)
+            
             torch.cuda.empty_cache()
 
         merged_waveform = torch.cat(final_segments, dim=-1)
         if os.path.exists(target_path): os.unlink(target_path)
-        return ({"waveform": merged_waveform.unsqueeze(0).cpu(), "sample_rate": sample_rate},)
+        return ({"waveform": merged_waveform.unsqueeze(0).cpu(), "sample_rate": sample_rate}, splice_info)
 
     def _inference_single_chunk(self, model, waveform, target_path, speed, sample_rate, seed):
         if seed >= 0:

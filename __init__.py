@@ -64,6 +64,9 @@ _load_nodes_from_module(".aiia_audio_merger", "aiia_audio_merger")
 # 10. 处理 aiia_cosyvoice_nodes.py
 _load_nodes_from_module(".aiia_cosyvoice_nodes", "aiia_cosyvoice_nodes")
 
+# 11. 处理 aiia_audio_debug.py (新增调试节点)
+_load_nodes_from_module(".aiia_audio_debug", "aiia_audio_debug")
+
 # 11. 处理 aiia_audio_processor.py
 _load_nodes_from_module(".aiia_audio_processor", "aiia_audio_processor")
 
