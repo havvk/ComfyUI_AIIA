@@ -226,6 +226,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 -   **功能**:
     -   **Resample**: 使用高精度算法（sinc_interp_hann）将音频上采样至 44.1kHz 或 48kHz，改善听感清晰度。
     -   **LowPass Filter**: 可选的低通滤波器（如设为 11000 Hz）。用于消除由低采样率（CosyVoice）转换到高采样率时可能产生的“频谱混叠”噪声和条纹。
+    -   **HighPass Filter**: 可选的高通滤波器（如设为 60 Hz）。用于消除低频轰鸣声、直流偏移及深层底噪，让低音更紧致。
     -   **Fade In/Out**: 对音频首尾添加淡入淡出，消除由于切割或拼接可能残留的爆音。
     -   **Normalize**: 将音量标准化至 -1dB，确保输出响度饱满且不破音。
 -   **场景**: 建议串联在 `Voice Conversion` 节点之后使用。

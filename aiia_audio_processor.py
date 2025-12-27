@@ -102,6 +102,7 @@ class AIIA_Audio_PostProcess:
                 "normalize": ("BOOLEAN", {"default": True, "tooltip": "Normalize to -1dB"}),
                 "resampling_alg": (["sinc_interp_hann", "sinc_interp_kaiser"], {"default": "sinc_interp_hann"}),
                 "lowpass_cutoff": ("INT", {"default": 0, "min": 0, "max": 24000, "step": 100, "tooltip": "Apply LowPass filter at this frequency (Hz) to remove aliasing noise. 0 to disable."}),
+                "highpass_cutoff": ("INT", {"default": 0, "min": 0, "max": 2000, "step": 10, "tooltip": "Apply HighPass filter at this frequency (Hz) to remove low-end rumble/DC offset. 0 to disable."}),
             },
             "optional": {
                 "splice_info": ("SPLICE_INFO",),
@@ -113,7 +114,7 @@ class AIIA_Audio_PostProcess:
     FUNCTION = "process_audio"
     CATEGORY = "AIIA/Audio"
 
-    def process_audio(self, audio, target_rate, fade_length, normalize, resampling_alg, lowpass_cutoff, splice_info=None):
+    def process_audio(self, audio, target_rate, fade_length, normalize, resampling_alg, lowpass_cutoff, highpass_cutoff, splice_info=None):
         import torchaudio
         import copy
         import torchaudio.functional as F
@@ -152,7 +153,13 @@ class AIIA_Audio_PostProcess:
 
                 original_rate = new_rate
         
-        # 2. LowPass Filter (Anti-Aliasing / Denoise)
+        # 2. HighPass Filter (Remove Rumble / DC Offset)
+        if highpass_cutoff > 0:
+            # Cascade for steep "Brick Wall" effect
+            for _ in range(6):
+                waveform = F.highpass_biquad(waveform, original_rate, cutoff_freq=highpass_cutoff)
+
+        # 3. LowPass Filter (Anti-Aliasing / Denoise)
         if lowpass_cutoff > 0:
             # lowpass_biquad is a 2nd order filter (12dB/octave).
             # To remove stubborn aliasing ("stripes"), we need a steeper slope.
