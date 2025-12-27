@@ -179,3 +179,11 @@ class AIIA_Audio_Denoise:
                 pass
 
         return ({"waveform": result_waveform, "sample_rate": result_sr},)
+
+NODE_CLASS_MAPPINGS = {
+    "AIIA_Audio_Denoise": AIIA_Audio_Denoise
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIIA_Audio_Denoise": "Audio AI Denoise (VoiceFixer)"
+}
