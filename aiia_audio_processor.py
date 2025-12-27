@@ -176,7 +176,9 @@ class AIIA_Audio_PostProcess:
         # 3. Normalize (to -1dB = 0.891)
         if normalize:
             peak = waveform.abs().max()
-            if peak > 0:
+            # Safe Normalize: Only normalize if signal is above -30dB (0.03)
+            # This prevents boosting pure silence/noise floors into loud artifacts.
+            if peak > 0.03: 
                 target_peak = 0.891 # -1.0 dB
                 waveform = waveform * (target_peak / peak)
             
