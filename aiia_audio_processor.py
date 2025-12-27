@@ -155,9 +155,9 @@ class AIIA_Audio_PostProcess:
         
         # 2. HighPass Filter (Remove Rumble / DC Offset)
         if highpass_cutoff > 0:
-            # Cascade for steep "Brick Wall" effect
-            for _ in range(6):
-                waveform = F.highpass_biquad(waveform, original_rate, cutoff_freq=highpass_cutoff)
+            # Single pass (2nd order, 12dB/oct) is safer for preserving voice body.
+            # Cascading here was too aggressive and killed the bass details.
+            waveform = F.highpass_biquad(waveform, original_rate, cutoff_freq=highpass_cutoff)
 
         # 3. LowPass Filter (Anti-Aliasing / Denoise)
         if lowpass_cutoff > 0:
