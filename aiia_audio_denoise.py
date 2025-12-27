@@ -14,6 +14,69 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "voicefixer>=0.1.3"])
     from voicefixer import VoiceFixer
 
+import shutil
+import folder_paths
+
+def setup_voicefixer_path():
+    """
+    Migrate VoiceFixer models from ~/.cache to ComfyUI/models/voicefixer
+    and set up a symlink so the library finds them.
+    """
+    try:
+        # 1. Target Directory (ComfyUI/models/voicefixer)
+        comfy_models_dir = folder_paths.models_dir
+        target_dir = os.path.join(comfy_models_dir, "voicefixer")
+        
+        # 2. Source Cache Directory (~/.cache/voicefixer)
+        cache_dir = os.path.join(os.path.expanduser('~'), '.cache', 'voicefixer')
+        
+        # If cache_dir is already a symlink pointing to target_dir, we are good.
+        if os.path.islink(cache_dir):
+            if os.readlink(cache_dir) == target_dir:
+                return
+            else:
+                # Wrong symlink? Unlink it.
+                os.unlink(cache_dir)
+
+        # Prepare target directory
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
+            print(f"[AIIA] Created VoiceFixer model directory: {target_dir}")
+
+        # If cache dir exists and is a real folder (contains models downloaded by lib)
+        if os.path.exists(cache_dir) and not os.path.islink(cache_dir):
+            print(f"[AIIA] Migrating VoiceFixer models from {cache_dir} due to user request...")
+            # Move content
+            for item in os.listdir(cache_dir):
+                s = os.path.join(cache_dir, item)
+                d = os.path.join(target_dir, item)
+                if os.path.exists(d):
+                    # Target already exists, assume it's valid or we overwrite?
+                    # Let's keep target if exists, only move if missing.
+                    if os.path.isdir(s): shutil.rmtree(s)
+                    else: os.remove(s)
+                else:
+                    shutil.move(s, d)
+            # Remove empty cache dir
+            try:
+                os.rmdir(cache_dir)
+            except:
+                shutil.rmtree(cache_dir) # Force remove if leftovers
+
+        # Now cache_dir should be gone. Create symlink.
+        # Ensure parent .cache exists
+        os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
+        if not os.path.exists(cache_dir):
+            print(f"[AIIA] Creating symlink: {cache_dir} -> {target_dir}")
+            try:
+                os.symlink(target_dir, cache_dir)
+            except OSError:
+                print(f"[AIIA] Warning: Failed to create symlink. Models will stay in {target_dir} but VoiceFixer might re-download to cache if not manually pointed.")
+                # Fallback: We can't easily fallback without changing lib code.
+                # But for now, let's assume symlink works on Mac/Linux.
+    except Exception as e:
+        print(f"[AIIA] Error setting up model path: {e}")
+
 class AIIA_Audio_Denoise:
     _model_cache = None
 
@@ -41,6 +104,7 @@ class AIIA_Audio_Denoise:
         
         if AIIA_Audio_Denoise._model_cache is None:
             print(f"[AIIA] Loading VoiceFixer model on {device_str}...")
+            setup_voicefixer_path()
             # VoiceFixer(verbose=True, emb_vocoder=True) by default
             # We enforce the device during init if possible, or later during restore
             AIIA_Audio_Denoise._model_cache = VoiceFixer()
