@@ -107,7 +107,21 @@ class AIIA_Audio_Denoise:
             setup_voicefixer_path()
             # VoiceFixer(verbose=True, emb_vocoder=True) by default
             # We enforce the device during init if possible, or later during restore
-            AIIA_Audio_Denoise._model_cache = VoiceFixer()
+            try:
+                AIIA_Audio_Denoise._model_cache = VoiceFixer()
+            except RuntimeError as e:
+                if "PytorchStreamReader" in str(e) or "zip archive" in str(e):
+                    print(f"[AIIA] Error: VoiceFixer model seems corrupted. Purging models to force re-download...")
+                    # Purge target dir
+                    comfy_models_dir = folder_paths.models_dir
+                    target_dir = os.path.join(comfy_models_dir, "voicefixer")
+                    if os.path.exists(target_dir):
+                        shutil.rmtree(target_dir)
+                        os.makedirs(target_dir, exist_ok=True) # Recreate empty dir
+                    
+                    raise RuntimeError("[AIIA] VoiceFixer model file was corrupted and has been deleted. Please RESTART the workflow/ComfyUI to re-download it correctly.") from e
+                else:
+                    raise e
 
         vf = AIIA_Audio_Denoise._model_cache
         
