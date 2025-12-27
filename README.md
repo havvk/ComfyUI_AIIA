@@ -234,6 +234,14 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     -   可自定义背景填充颜色。
 -   **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
 
+#### Audio Post-Process (Resample/Fade/Norm)
+-   **用途**: 音频后期处理“母带”节点。
+-   **功能**:
+    -   **Resample**: 使用高精度算法（sinc_best）将音频上采样至 44.1kHz 或 48kHz，改善听感清晰度。
+    -   **Fade In/Out**: 对音频首尾添加淡入淡出，消除由于切割或拼接可能残留的爆音。
+    -   **Normalize**: 将音量标准化至 -1dB，确保输出响度饱满且不破音。
+-   **场景**: 建议串联在 `Voice Conversion` 节点之后使用。
+
 ---
 
 ### 5. 调试工具 (Debug Tools)

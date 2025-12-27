@@ -91,5 +91,71 @@ class AIIA_Audio_Silence_Splitter:
         
         return (whisper_chunks_data, len(chunks))
 
-NODE_CLASS_MAPPINGS = {"AIIA_Audio_Silence_Splitter": AIIA_Audio_Silence_Splitter}
-NODE_DISPLAY_NAME_MAPPINGS = {"AIIA_Audio_Silence_Splitter": "Audio Smart Chunker (Silence-based)"}
+class AIIA_Audio_PostProcess:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+                "target_rate": (["44100", "48000", "24000", "22050", "Original"], {"default": "44100"}),
+                "fade_length": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 5.0, "step": 0.1, "tooltip": "Fade in/out duration in seconds"}),
+                "normalize": ("BOOLEAN", {"default": True, "tooltip": "Normalize to -1dB"}),
+                "resampling_alg": (["sinc_best", "sinc_fast", "kaiser_best"], {"default": "sinc_best"}),
+            }
+        }
+
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
+    FUNCTION = "process_audio"
+    CATEGORY = "AIIA/Audio"
+
+    def process_audio(self, audio, target_rate, fade_length, normalize, resampling_alg):
+        import torchaudio
+        
+        waveform = audio["waveform"] # [B, C, T] usually
+        original_rate = audio["sample_rate"]
+        
+        if waveform.ndim == 2:
+            waveform = waveform.unsqueeze(0)
+            
+        # 1. Resample
+        if target_rate != "Original":
+            new_rate = int(target_rate)
+            if new_rate != original_rate:
+                resampler = torchaudio.transforms.Resample(
+                    orig_freq=original_rate,
+                    new_freq=new_rate,
+                    resampling_method=resampling_alg,
+                    dtype=waveform.dtype
+                )
+                waveform = resampler(waveform)
+                original_rate = new_rate
+        
+        # 2. Fade In/Out
+        if fade_length > 0:
+            fade_samples = int(fade_length * original_rate)
+            if fade_samples * 2 < waveform.shape[-1]:
+                fade_in = torch.linspace(0, 1, fade_samples, device=waveform.device)
+                fade_out = torch.linspace(1, 0, fade_samples, device=waveform.device)
+                
+                # Apply to last dim (time)
+                waveform[..., :fade_samples] *= fade_in
+                waveform[..., -fade_samples:] *= fade_out
+        
+        # 3. Normalize (to -1dB = 0.891)
+        if normalize:
+            peak = waveform.abs().max()
+            if peak > 0:
+                target_peak = 0.891 # -1.0 dB
+                waveform = waveform * (target_peak / peak)
+            
+        return ({"waveform": waveform, "sample_rate": original_rate},)
+
+NODE_CLASS_MAPPINGS = {
+    "AIIA_Audio_Silence_Splitter": AIIA_Audio_Silence_Splitter,
+    "AIIA_Audio_PostProcess": AIIA_Audio_PostProcess
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIIA_Audio_Silence_Splitter": "Audio Smart Chunker (Silence-based)",
+    "AIIA_Audio_PostProcess": "Audio Post-Process (Resample/Fade/Norm)"
+}
