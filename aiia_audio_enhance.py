@@ -471,11 +471,11 @@ class AIIA_Audio_Enhance:
                 if not hasattr(inference_mod, "original_merge_chunks"):
                     inference_mod.original_merge_chunks = inference_mod.merge_chunks
 
-                def safe_merge_chunks(chunks):
+                def safe_merge_chunks(chunks, *args, **kwargs):
                     # Force all chunks to CPU before merging
                     try:
                         cpu_chunks = [c.cpu() if hasattr(c, 'cpu') else c for c in chunks]
-                        return inference_mod.original_merge_chunks(cpu_chunks)
+                        return inference_mod.original_merge_chunks(cpu_chunks, *args, **kwargs)
                     except RuntimeError as e:
                          print(f"[AIIA ERROR] Merge chunks failed: {e}")
                          # Debug shapes
