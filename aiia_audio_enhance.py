@@ -49,8 +49,16 @@ def _mock_deepspeed():
             pass
 
     sys.meta_path.insert(0, DeepSpeedImportMocker())
-    # Also inject main module just in case
-    sys.modules["deepspeed"] = MagicMock()
+    
+    # Also inject main module just in case, but make it a PACKAGE
+    m = MagicMock()
+    m.__path__ = [] # This makes it a package
+    m.__file__ = "mock_deepspeed_root.py"
+    m.__name__ = "deepspeed"
+    m.__package__ = "deepspeed"
+    m.__spec__ = None
+    
+    sys.modules["deepspeed"] = m
 
 def _install_resemble_if_needed():
     global enhance, denoise
