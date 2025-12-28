@@ -81,6 +81,20 @@
     -   流式模型 (v2.1): `diar_streaming_sortformer_4spk-v2.1.nemo`
 -   将下载的 `.nemo` 文件放入 `ComfyUI/models/nemo_models/` 目录中。
 
+**使用 huggingface-cli 下载 (推荐)**:
+`nvidia/nemo-models` 仓库很大，建议直接下载指定文件：
+```bash
+# 进入 ComfyUI/models 目录
+cd ComfyUI/models
+mkdir -p nemo_models
+
+# 下载基础模型
+hf download nvidia/nemo-models diar_sortformer_4spk-v1.nemo --local-dir nemo_models
+
+# 下载流式模型
+hf download nvidia/nemo-models diar_streaming_sortformer_4spk-v2.1.nemo --local-dir nemo_models
+```
+
 ### 3. 安装本节点套件
 进入 ComfyUI 的自定义节点目录，然后克隆本仓库：
 ```bash
@@ -245,6 +259,15 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
         *   [ModelScope (魔搭社区)](https://www.modelscope.cn/organization/iic) (搜索 CosyVoice)
         *   [HuggingFace - FunAudioLLM](https://huggingface.co/FunAudioLLM)
 
+        **使用 huggingface-cli 下载 (CLI Example)**:
+        ```bash
+        # 进入 ComfyUI/models/cosyvoice 目录
+        cd ComfyUI/models/cosyvoice
+        
+        # 下载 CosyVoice 3.0 (0.5B)
+        hf download FunAudioLLM/Fun-CosyVoice3-0.5B-2512 --local-dir Fun-CosyVoice3-0.5B-2512
+        ```
+
 **2. Voice Conversion (AIIA Unlimited)**
 
 -   **用途**: 增强版语音转换节点，解决了原版 CosyVoice3 只能转换 30 秒内语音的限制。
@@ -296,6 +319,18 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     **下载地址 (Download Links)**:
     *   **vf.ckpt**: [HuggingFace Mirror](https://huggingface.co/Diogodiogod/VoiceFixer-vf.ckpt/resolve/main/vf.ckpt) 或 [Zenodo](https://zenodo.org/record/5600188/files/vf.ckpt?download=1)
     *   **model.ckpt-1490000_trimed.pt**: [HuggingFace Mirror](https://huggingface.co/Diogodiogod/VoiceFixer-model.ckpt-1490000_trimed.pt/resolve/main/model.ckpt-1490000_trimed.pt) 或 [Zenodo](https://zenodo.org/record/5513378/files/model.ckpt-1490000_trimed.pt?download=1)
+
+    **使用 huggingface-cli 下载 (CLI Example)**:
+    ```bash
+    # 进入 ComfyUI/models/voicefixer 目录
+    cd ComfyUI/models/voicefixer
+    
+    # 下载 vf.ckpt (注意路径)
+    hf download Diogodiogod/VoiceFixer-vf.ckpt vf.ckpt --local-dir analysis_module/checkpoints
+    
+    # 下载 model.ckpt (注意路径)
+    hf download Diogodiogod/VoiceFixer-model.ckpt-1490000_trimed.pt model.ckpt-1490000_trimed.pt --local-dir synthesis_module/44100
+    ```
 
 #### 3.6 Audio Post-Process (Resample/Fade/Norm)
 -   **用途**: 音频后期处理“母带”节点。
