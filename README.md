@@ -154,7 +154,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 ### 3. 音频智能处理 (Intelligent Audio Processing)
 
-#### 说话人日志 (Diarization)
+#### 3.1 说话人日志 (Diarization)
 
 这组节点利用 **NeMo Sortformer** E2E 模型，为您的音频提供先进的说话人识别功能。在4090RTX显卡上只需2秒钟就能完成10分钟音频的声纹分割聚类任务。
 
@@ -170,7 +170,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 -   **输出**: 更新后的 `WHISPER_CHUNKS`，其中每个文本块都已被赋予了最匹配的说话人标签。
 -   **工作流**: `(音频) -> Whisper -> (文本Chunks)` + `(音频)  => E2E Diarizer` => **最终带有说话人标签的文本稿**。
 
-#### 说话人隔离与合并 (Speaker Isolation & Merger)
+#### 3.2 说话人隔离与合并 (Speaker Isolation & Merger)
 
 **Audio Speaker Isolator (AIIA)**
 -   **用途**: 根据说话人日志（Diarization）产生的 JSON 数据，从原始音轨中精确提取属于特定说话人的声音。
@@ -196,7 +196,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
         -   `Specified`: 手动指定输出秒数。
         -   `normalize`: 开启后将自动防止音量叠加导致的破音。
 
-#### 智能切片与 CosyVoice (Smart Chunking & Voice Conversion)
+#### 3.3 智能切片与 CosyVoice (Smart Chunking & Voice Conversion)
 
 **Audio Smart Chunker (Silence-based)**
 -   **用途**: 全量扫描长音频，寻找最优切片方案。
@@ -221,35 +221,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     -   `chunk_size`: 目标切片大小（默认 25 秒）。
     -   `overlap_size`: 重叠大小，用于平滑衔接。
 
-#### Audio Post-Process (Resample/Fade/Norm)
--   **用途**: 音频后期处理“母带”节点。
--   **功能**:
-    -   **Resample**: 使用高精度算法（sinc_interp_hann）将音频上采样至 44.1kHz 或 48kHz，改善听感清晰度。
-    -   **LowPass Filter**: 可选的低通滤波器（**默认 11000 Hz**）。采用 **6级级联（Cascaded）** 设计，像“砖墙”一样强力消除由 CosyVoice 带来的高频混叠（Resampling Artifacts）。
-    -   **HighPass Filter**: 可选的高通滤波器（**默认 60 Hz**）。采用 **单级平滑** 设计，在去除低频轰鸣声和直流偏移的同时，完美保留人声的低音厚度。
-    -   **Fade In/Out**: 对音频首尾添加淡入淡出，消除由于切割或拼接可能残留的爆音。
-    -   **Normalize**: 将音量标准化至 -1dB，确保输出响度饱满且不破音。
--   **场景**: 建议串联在 `Voice Conversion` 节点之后使用。
-
----
-
-### 4. 图像工具 (Image Utilities)
-
-#### Image Concatenate (AIIA Utils, Disk)
--   **用途**: 将两个图像序列（来自两个不同的目录）逐帧拼接在一起，非常适合创建**对比视频**或**多面板视频**。
--   **核心亮点 (OOM-Safe)**: 此节点**逐帧读取、处理和保存**，从不将整个图像序列加载到内存中，因此可以处理任意数量的帧。
--   **功能**:
-    -   支持上下左右四个方向的拼接。
-    -   可自动调整其中一个图像序列的尺寸以匹配另一个，并保持宽高比。
-    -   可自定义背景填充颜色。
--   **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
-
-
----
-
-### 5. 调试工具 (Debug Tools)
-
-#### 3.3 Audio AI Denoise (VoiceFixer)
+#### 3.4 智能音频降噪 (VoiceFixer)
 -   **用途**: 使用 AI 模型去除 CosyVoice 等生成式语音中的底噪、电音、混响及破音。
 -   **核心优势**: 相比数学滤波器，它能“听懂”人声，保留人声细节的同时去除背景杂音。
 -   **参数**:
@@ -274,7 +246,17 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     *   **vf.ckpt**: [HuggingFace Mirror](https://huggingface.co/Diogodiogod/VoiceFixer-vf.ckpt/resolve/main/vf.ckpt) 或 [Zenodo](https://zenodo.org/record/5600188/files/vf.ckpt?download=1)
     *   **model.ckpt-1490000_trimed.pt**: [HuggingFace Mirror](https://huggingface.co/Diogodiogod/VoiceFixer-model.ckpt-1490000_trimed.pt/resolve/main/model.ckpt-1490000_trimed.pt) 或 [Zenodo](https://zenodo.org/record/5513378/files/model.ckpt-1490000_trimed.pt?download=1)
 
-#### 3.4 Audio Splice Analyzer (AIIA Debug)
+#### 3.5 Audio Post-Process (Resample/Fade/Norm)
+-   **用途**: 音频后期处理“母带”节点。
+-   **功能**:
+    -   **Resample**: 使用高精度算法（sinc_interp_hann）将音频上采样至 44.1kHz 或 48kHz，改善听感清晰度。
+    -   **LowPass Filter**: 可选的低通滤波器（**默认 11000 Hz**）。采用 **6级级联（Cascaded）** 设计，像“砖墙”一样强力消除由 CosyVoice 带来的高频混叠（Resampling Artifacts）。
+    -   **HighPass Filter**: 可选的高通滤波器（**默认 60 Hz**）。采用 **单级平滑** 设计，在去除低频轰鸣声和直流偏移的同时，完美保留人声的低音厚度。
+    -   **Fade In/Out**: 对音频首尾添加淡入淡出，消除由于切割或拼接可能残留的爆音。
+    -   **Normalize**: 将音量标准化至 -1dB，确保输出响度饱满且不破音。
+-   **场景**: 建议串联在 `Voice Conversion` 节点之后使用。
+
+#### 3.6 Audio Splice Analyzer (AIIA Debug)
 -   **用途**: 可视化验证音频拼接质量。
 -   **功能**: 
     -   生成 Log-Mel 语谱图 (Spectrogram)。
@@ -282,11 +264,20 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     -   帮助用户直观地检查拼接点是否位于静音区，以及是否有明显的频谱断裂。
 -   **依赖**: 需要 `matplotlib` 库。如果未安装，节点会生成一张提示错误的图片，不会导致工作流崩溃。
 
+### 4. 图像工具 (Image Utilities)
+
+#### Image Concatenate (AIIA Utils, Disk)
+-   **用途**: 将两个图像序列（来自两个不同的目录）逐帧拼接在一起，非常适合创建**对比视频**或**多面板视频**。
+-   **核心亮点 (OOM-Safe)**: 此节点**逐帧读取、处理和保存**，从不将整个图像序列加载到内存中，因此可以处理任意数量的帧。
+-   **功能**:
+    -   支持上下左右四个方向的拼接。
+    -   可自动调整其中一个图像序列的尺寸以匹配另一个，并保持宽高比。
+    -   可自定义背景填充颜色。
+-   **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
+
 ---
 
 ## ❓ 故障排查
-
-
 
 -   **错误: "FFmpeg not found" / "NeMo model not found"**
     -   请返回阅读 [安装与先决条件](#-安装与先决条件) 部分，确保所有依赖都已正确安装和放置。
