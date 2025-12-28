@@ -70,7 +70,39 @@ class AIIA_Audio_Splice_Analyzer:
         plt.colorbar(format='%+2.0f dB')
         plt.title('Mel Spectrogram with Splice Points')
         plt.xlabel('Time (frames)')
-        plt.ylabel('Frequency (Mel bin)')
+        plt.ylabel('Frequency (Hz)')
+
+        # Create Custom Y-Ticks for Hz
+        def hz_to_mel_htk(hz):
+            return 2595 * np.log10(1 + hz / 700)
+        
+        def mel_to_hz_htk(mel):
+            return 700 * (10**(mel / 2595) - 1)
+
+        # 1. Determine Freq Range
+        f_min = 0.0
+        f_max = sample_rate / 2.0
+        
+        # 2. Convert boundaries to Mel
+        min_mel = hz_to_mel_htk(f_min)
+        max_mel = hz_to_mel_htk(f_max)
+        
+        # 3. Choose tick locations in Hz
+        # E.g. 0, 500, 1000, 2000, 4000, 8000, 16000...
+        tick_freqs = [0, 500, 1000, 2000, 4000, 8000, 11025, 16000, 22050]
+        tick_freqs = [f for f in tick_freqs if f <= f_max] # filter valid
+        
+        # 4. Convert ticks to Mel Bin Indices
+        # bin = (mel - min_mel) / (max_mel - min_mel) * (n_mels - 1)
+        tick_bins = []
+        tick_labels = []
+        for f in tick_freqs:
+            m = hz_to_mel_htk(f)
+            bin_idx = (m - min_mel) / (max_mel - min_mel) * (n_mels - 1)
+            tick_bins.append(bin_idx)
+            tick_labels.append(str(int(f)))
+            
+        plt.yticks(tick_bins, tick_labels)
 
         # Draw splice lines if info is present
         if splice_info and "splice_points" in splice_info:
