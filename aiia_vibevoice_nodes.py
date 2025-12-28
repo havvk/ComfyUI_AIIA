@@ -77,15 +77,27 @@ class AIIA_VibeVoice_Loader:
         # Strategy: Manually import the model code and register it to AutoConfig/AutoModel
         
         # Fix for "KeyError: vibevoice":
-        # Strategy: Use importlib to load code file directly from path (bypassing import system issues)
+        # Strategy: Load available code (likely from 0.5B repo) and alias it to load 1.5B weights
         
         import importlib.util
         try:
-            config_file_path = os.path.join(load_path, "configuration_vibevoice.py")
-            model_file_path = os.path.join(load_path, "modeling_vibevoice.py")
-            
+            # We look for the files user copied from 'modular' folder
+            # Note: The file names in GitHub repo are specific
+            config_file_path = os.path.join(load_path, "configuration_vibevoice_streaming.py") 
+            # Fallback to configuration_vibevoice.py if streaming one missing (or user renamed it)
+            if not os.path.exists(config_file_path):
+                 config_file_path = os.path.join(load_path, "configuration_vibevoice.py")
+                 
+            # For modeling, we need the inference wrapper
+            model_file_path = os.path.join(load_path, "modeling_vibevoice_streaming_inference.py")
+            if not os.path.exists(model_file_path):
+                 # Fallback: maybe user renamed it to standard modeling_vibevoice.py?
+                 model_file_path = os.path.join(load_path, "modeling_vibevoice.py")
+
             # Helper to load module from file
             def load_module_from_path(module_name, file_path):
+                if not os.path.exists(file_path):
+                     raise FileNotFoundError(f"Required code file not found: {file_path}")
                 spec = importlib.util.spec_from_file_location(module_name, file_path)
                 if spec is None:
                     raise ImportError(f"Could not load spec for {module_name} from {file_path}")
@@ -95,34 +107,62 @@ class AIIA_VibeVoice_Loader:
                 return module
 
             # 1. Load Configuration Code
-            print(f"[AIIA] Loading configuration_vibevoice from {config_file_path}...")
+            print(f"[AIIA] Loading config code from {config_file_path}...")
             config_module = load_module_from_path("configuration_vibevoice", config_file_path)
-            VibeVoiceConfig = config_module.VibeVoiceConfig
             
-            # 2. Register Config (Critical step for AutoConfig to work later)
+            # The config class name might be VibeVoiceStreamingConfig or VibeVoiceConfig
+            if hasattr(config_module, "VibeVoiceStreamingConfig"):
+                VibeVoiceConfig = config_module.VibeVoiceStreamingConfig
+            else:
+                VibeVoiceConfig = config_module.VibeVoiceConfig
+            
+            # 2. Register Config
+            # Note: 1.5B config.json says model_type is "vibevoice", so we register for that key
             AutoConfig.register("vibevoice", VibeVoiceConfig)
             
-            # 3. Load Modeling Code
-            # Modeling usually requires config to be importable or available
-            print(f"[AIIA] Loading modeling_vibevoice from {model_file_path}...")
-            model_module = load_module_from_path("modeling_vibevoice", model_file_path)
-            VibeVoiceForConditionalGeneration = model_module.VibeVoiceForConditionalGeneration
+            # 3. Load Modeling Code (this will likely trigger imports of other files in that dir)
+            # We need to make sure the dir is in sys.path temporarily so internal imports work
+            sys_path_added = False
+            if load_path not in sys.path:
+                sys.path.append(load_path)
+                sys_path_added = True
+                
+            print(f"[AIIA] Loading modeling code from {model_file_path}...")
+            try:
+                model_module = load_module_from_path("modeling_vibevoice_streaming_inference", model_file_path)
+            except Exception as e:
+                # If direct load fails (due to intense relative imports), try standard import since it's in sys.path
+                import modeling_vibevoice_streaming_inference as model_module
             
+            # Identify the correct class
+            if hasattr(model_module, "VibeVoiceStreamingForConditionalGenerationInference"):
+                 VibeVoiceClass = model_module.VibeVoiceStreamingForConditionalGenerationInference
+            elif hasattr(model_module, "VibeVoiceForConditionalGeneration"):
+                 VibeVoiceClass = model_module.VibeVoiceForConditionalGeneration
+            else:
+                 raise ImportError("Could not find VibeVoice model class in loaded file.")
+
             # 4. Register Model
-            AutoModel.register(VibeVoiceConfig, VibeVoiceForConditionalGeneration)
+            AutoModel.register(VibeVoiceConfig, VibeVoiceClass)
             
             # 5. Load
-            print("[AIIA] Loading VibeVoice via manual registration...")
+            print("[AIIA] Loading VibeVoice 1.5B using aliased class...")
+            # We force the config to use the class we found
             config = VibeVoiceConfig.from_pretrained(load_path)
-            model = VibeVoiceForConditionalGeneration.from_pretrained(
+            model = VibeVoiceClass.from_pretrained(
                 load_path,
                 config=config,
                 torch_dtype=dtype,
                 device_map="auto"
             )
+            
+            if sys_path_added:
+                sys.path.remove(load_path)
 
         except Exception as e:
             print(f"[AIIA] Manual import/registration failed: {e}")
+            if 'sys_path_added' in locals() and sys_path_added:
+                 sys.path.remove(load_path)
             raise e
             
         tokenizer = AutoTokenizer.from_pretrained(load_path, trust_remote_code=True)
