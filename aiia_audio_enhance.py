@@ -254,28 +254,96 @@ class AIIA_Audio_Enhance:
                 # It returns (waveform, new_sr)
                 processed_wav, new_sr = denoise(wav_tensor, sample_rate, device)
             else:
-                # FORCE STOP GIT PULL (Aggressive Patch)
+                # 1. FIX CUDA Device Mismatch (Monkey Patch)
+                # The library crashes on 'hwav * abs_max' because abs_max is a CUDA tensor scalar
+                # and PyTorch sometimes dislikes mixing it with model output if types mismatch strictly?
+                # Or simply making it a float is safer.
                 try:
-                    import resemble_enhance.enhancer.download as dl_module
-                    def noop_download(*args, **kwargs):
-                        # Force return local path
-                        return Path(folder_paths.models_dir) / "resemble_enhance" / "model_repo" / "enhancer_stage2"
+                    import resemble_enhance.inference as inference_mod
                     
-                    # ACTUALLY APPLY THE PATCH
-                    if hasattr(dl_module, "download"):
-                        dl_module.download = noop_download
-                    if hasattr(dl_module, "get_dataset_file"):
-                         # Some versions use this
-                         dl_module.get_dataset_file = noop_download
+                    # Store original if not already patched
+                    if not hasattr(inference_mod, "original_inference_chunk"):
+                        inference_mod.original_inference_chunk = inference_mod.inference_chunk
+                        
+                    # Define safe chunk inference
+                    def safe_inference_chunk(model, chunk, sr, device):
+                        # Chunk is [T]
+                        # 1. Calculate abs_max as FLOAT (CPU Scalar)
+                        # This prevents "Expected all tensors to be on same device" when multiplying later
+                        abs_max = float(chunk.abs().max()) + 1e-6
+                        
+                        # 2. Normalize
+                        chunk = chunk / abs_max
+                        
+                        # 3. Call original logic?
+                        # Using original logic but we need to inject the float abs_max handling.
+                        # Since we can't inject into a compiled function, we must reimplement the FEW lines 
+                        # of inference_chunk from source.
+                        # Source:
+                        # def inference_chunk(model, dwav, sr, device):
+                        #     abs_max = dwav.abs().max()
+                        #     dwav = dwav / abs_max  <- we did this
+                        #     dwav = dwav.to(device)
+                        #     t = torch.linspace(0, 1, model.config.nfe + 1, device=device)
+                        #     hwav = model.ode_solve(dwav, t, solver=model.config.solver, tau=model.config.tau)
+                        #     hwav = hwav * abs_max
+                        #     return hwav
+                        
+                        chunk = chunk.to(device)
+                        t = torch.linspace(0, 1, model.config.nfe + 1, device=device)
+                        
+                        # Solver
+                        # Check if model has ode_solve (EnhancerStage2)
+                        if hasattr(model, "ode_solve"):
+                             hwav = model.ode_solve(chunk, t, solver=model.config.solver, tau=model.config.tau)
+                        else:
+                             # Fallback if API changes
+                             hwav = chunk
+                             
+                        # 4. Unnormalize with FLOAT
+                        hwav = hwav * abs_max
+                        return hwav
+
+                    # Apply Patch
+                    inference_mod.inference_chunk = safe_inference_chunk
+                    print("[AIIA] Monkey-patched resemble_enhance.inference_chunk for CUDA safety.")
+                    
                 except ImportError:
                     pass
 
                 global _cached_enhancer
                 if "_cached_enhancer" not in globals() or _cached_enhancer is None:
                      print(f"[AIIA] Loading Enhancer model...")
-                     # Pass local path to be safe
-                     run_dir = Path(folder_paths.models_dir) / "resemble_enhance" / "model_repo" / "enhancer_stage2"
-                     _cached_enhancer = load_enhancer(str(run_dir) if run_dir.exists() else None, device)
+                     
+                     # 2. LOCATE MODEL (to skip download)
+                     # Priority 1: ComfyUI/models/resemble_enhance
+                     paths_to_check = [
+                         Path(folder_paths.models_dir) / "resemble_enhance" / "model_repo" / "enhancer_stage2",
+                     ]
+                     
+                     # Priority 2: site-packages/resemble_enhance/model_repo (Standard Install)
+                     try:
+                         import resemble_enhance
+                         site_pkg_path = Path(resemble_enhance.__file__).parent / "model_repo" / "enhancer_stage2"
+                         paths_to_check.append(site_pkg_path)
+                     except:
+                         pass
+                         
+                     run_dir = None
+                     for p in paths_to_check:
+                         if p.exists():
+                             run_dir = p
+                             print(f"[AIIA] Found Resume Enhance model at: {run_dir}")
+                             break
+                     
+                     # If run_dir is found, load_enhancer(run_dir) skips download.
+                     # If not found, it runs download (which we might have patched to fail/noop, so be careful)
+                     
+                     _cached_enhancer = load_enhancer(str(run_dir) if run_dir else None, device)
+                
+                # Force move to device
+                _cached_enhancer.to(device)
+                _cached_enhancer.eval()
                 
                 # Configure Params
                 if hasattr(_cached_enhancer, "config"):
@@ -283,32 +351,14 @@ class AIIA_Audio_Enhance:
                     _cached_enhancer.config.solver = solver.lower()
                     _cached_enhancer.config.tau = tau
 
-                def run_inference_safe(active_device):
-                    # Force move
-                    _cached_enhancer.to(active_device)
-                    _cached_enhancer.eval()
-                    
-                    # Run
-                    return inference(
-                        model=_cached_enhancer,
-                        dwav=wav_tensor.to(active_device), 
-                        sr=sample_rate, 
-                        device=active_device,
-                    )
-
-                try:
-                    # Try on requested device
-                    processed_wav, new_sr = run_inference_safe(device)
-                except RuntimeError as e:
-                    if "device" in str(e) and device != "cpu":
-                        print(f"[AIIA] Device mismatch error on {device}. Retrying on CPU (fallback)...")
-                        # Clear cache or just move?
-                        try:
-                            processed_wav, new_sr = run_inference_safe("cpu")
-                        except Exception as e2:
-                            raise e2
-                    else:
-                        raise e
+                # Run Inference
+                # Now that inference_chunk is patched, standard inference() should work on CUDA
+                processed_wav, new_sr = inference(
+                    model=_cached_enhancer,
+                    dwav=wav_tensor, 
+                    sr=sample_rate, 
+                    device=device, # Pass actual device
+                )
         except Exception as e:
             print(f"Error in resemble-enhance: {e}")
             raise e
