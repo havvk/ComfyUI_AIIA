@@ -24,6 +24,8 @@ class AIIA_VibeVoice_Loader:
         
         try:
             from transformers import AutoTokenizer, AutoModel, AutoConfig
+            import transformers
+            print(f"[AIIA] Transformers version: {transformers.__version__}")
         except ImportError:
             raise ImportError("Missing dependencies: transformers. Please install it.")
 
@@ -70,9 +72,19 @@ class AIIA_VibeVoice_Loader:
             else:
                  print(f"[AIIA] Model not found locally. Downloading from HuggingFace to cache...")
 
+        # Fix for "KeyError: vibevoice":
+        # We must load config first with trust_remote_code=True to register the custom architecture
+        print(f"[AIIA] Loading AutoConfig from {load_path}...")
+        try:
+            config = AutoConfig.from_pretrained(load_path, trust_remote_code=True)
+        except Exception as e:
+            print(f"[AIIA] AutoConfig load failed: {e}. Trying to proceed with Tokenizer...")
+
+        # Now load Tokenizer and Model
         tokenizer = AutoTokenizer.from_pretrained(load_path, trust_remote_code=True)
         model = AutoModel.from_pretrained(
             load_path, 
+            config=config, # Pass the loaded config
             trust_remote_code=True, 
             torch_dtype=dtype,
             device_map="auto" # Let accelerate handle it if available
