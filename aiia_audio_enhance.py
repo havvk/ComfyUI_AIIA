@@ -354,14 +354,34 @@ class AIIA_Audio_Enhance:
                 _cached_enhancer.config.solver = solver.lower()
                 _cached_enhancer.config.tau = tau
 
-                # Run Inference
-                # Now that inference_chunk is patched, standard inference() should work on CUDA
-                processed_wav, new_sr = inference(
-                    model=_cached_enhancer,
-                    dwav=wav_tensor, 
-                    sr=sample_rate, 
-                    device=device, # Pass actual device
-                )
+                def run_inference_safe(active_device):
+                    # Force move model
+                    _cached_enhancer.to(active_device)
+                    _cached_enhancer.eval()
+                    
+                    # Fix: Move global mel_fn if it exists (fixes 'stft input and window' error)
+                    # The library uses a global mel_fn for chunk merging, which stays on CPU by default.
+                    try:
+                        import resemble_enhance.inference as inference_mod_inner
+                        if hasattr(inference_mod_inner, "mel_fn") and hasattr(inference_mod_inner.mel_fn, "to"):
+                            inference_mod_inner.mel_fn.to(active_device)
+                    except:
+                        pass
+                        
+                    try:
+                        import resemble_enhance.audio as audio_mod
+                        if hasattr(audio_mod, "mel_fn") and hasattr(audio_mod.mel_fn, "to"):
+                             audio_mod.mel_fn.to(active_device)
+                    except:
+                        pass
+                    
+                    # Run
+                    return inference(
+                        model=_cached_enhancer,
+                        dwav=wav_tensor.to(active_device), 
+                        sr=sample_rate, 
+                        device=active_device,
+                    )
         except Exception as e:
             print(f"Error in resemble-enhance: {e}")
             raise e
