@@ -43,6 +43,14 @@ def _install_resemble_if_needed():
         # 2. Check critical deps
         #    resemble-enhance needs: scipy, torchaudio(present), torch(present), numpy(present), tqdm, etc.
         pass_packages = ["torch", "torchaudio", "torchvision", "numpy", "scipy", "tqdm"] 
+        
+        # MOCK DEEPSPEED to prevent import error (we only need inference)
+        import sys
+        from unittest.mock import MagicMock
+        if "deepspeed" not in sys.modules:
+            print("[AIIA] Mocking DeepSpeed to bypass dependency check...")
+            sys.modules["deepspeed"] = MagicMock()
+            
         try:
             import hjson
         except ImportError:

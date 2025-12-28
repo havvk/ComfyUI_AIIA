@@ -26,7 +26,8 @@ def _install_cosyvoice_if_needed():
     except ImportError:
         pass
     
-    print("[AIIA] CosyVoice invalid or missing. Attempting robust installation...")
+    # Only print if we are actually about to do work
+    # print("[AIIA] CosyVoice invalid or missing. Attempting robust installation...")
     try:
         # Define local libs path
         libs_dir = os.path.join(os.path.dirname(__file__), "libs")
