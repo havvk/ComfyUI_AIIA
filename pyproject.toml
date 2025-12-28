@@ -1,7 +1,7 @@
 [project]
 name = "aiia"
 description = "A suite of powerful, intuitive, and highly customizable nodes for ComfyUI, featuring a high-performance Media Browser and OOM-safe video tools."
-version = "1.4.28"
+version = "1.4.29"
 license = {file = "LICENSE"}
 readme = "README.md"
 authors = [

@@ -7,6 +7,7 @@ import soundfile as sf
 from typing import Dict, Any, Tuple, List
 import sys
 import subprocess
+import folder_paths
 from huggingface_hub import snapshot_download
 
 # Lazy-loaded global variable
@@ -66,7 +67,13 @@ def _install_cosyvoice_if_needed():
         reqs = ["modelscope", "hyperpyyaml", "onnxruntime", "hjson", "openai-whisper", "webrtcvad", "pydub"]
         for r in reqs:
             try:
-                __import__(r.replace("-", "_")) # Handle module names like openai-whisper -> openai
+                # Handle special import names
+                if r == "openai-whisper":
+                    import_name = "whisper"
+                else:
+                    import_name = r.replace("-", "_")
+                
+                __import__(import_name)
             except ImportError:
                  print(f"[AIIA] Installing missing dependency: {r}")
                  subprocess.check_call([sys.executable, "-m", "pip", "install", r], env=os.environ)
