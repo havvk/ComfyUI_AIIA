@@ -195,13 +195,13 @@ class AIIA_Audio_Enhance:
             "required": {
                 "audio": ("AUDIO",),
                 "mode": (["Enhance (Denoise + Bandwidth Ext)", "Denoise Only"], {"default": "Enhance (Denoise + Bandwidth Ext)"}),
-                "solver": (["Midpoint", "RK4", "Euler"], {"default": "Midpoint"}),
-                "nfe": ("INT", {"default": 64, "min": 1, "max": 128}),
+                "solver": (["Midpoint", "RK4", "Euler"],),
+                "nfe": ("INT", {"default": 32, "min": 1, "max": 128, "step": 1}),
                 "tau": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "denoising": ("BOOLEAN", {"default": True}),
-                "use_cuda": ("BOOLEAN", {"default": True}),
-            },
-             "optional": {
+                "denoise_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "0.0 = Keep Original Noise, 1.0 = Full Denoise. Increase to remove artifacts/hum."}),
+                "chunk_seconds": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 60.0, "step": 1.0}),
+                "overlap_seconds": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 5.0, "step": 0.1}),
+            }, "optional": {
                 "splice_info": ("SPLICE_INFO",),
             }
         }
@@ -211,7 +211,7 @@ class AIIA_Audio_Enhance:
     FUNCTION = "process_audio"
     CATEGORY = "AIIA/Audio"
 
-    def process_audio(self, audio, mode, solver, nfe, tau, denoising, use_cuda, splice_info=None):
+    def process_audio(self, audio, mode, solver, nfe, tau, denoise_strength, chunk_seconds, overlap_seconds, use_cuda, splice_info=None):
         _install_resemble_if_needed()
         if enhance is None:
              raise ImportError("resemble-enhance library is not available.")
@@ -404,8 +404,8 @@ class AIIA_Audio_Enhance:
                          # For now, I'll set lambd=0.5 (default) or 1.0?
                          # The library default is 0.5.
                          
-                         _cached_enhancer.configurate_(nfe=nfe, solver=solver.lower(), lambd=0.5, tau=tau)
-                         print(f"[AIIA DEBUG] Configured model: nfe={nfe}, solver={solver.lower()}, tau={tau}")
+                         _cached_enhancer.configurate_(nfe=nfe, solver=solver.lower(), lambd=denoise_strength, tau=tau)
+                         print(f"[AIIA DEBUG] Configured model: nfe={nfe}, solver={solver.lower()}, lambd={denoise_strength}, tau={tau}")
                     except Exception as e:
                          print(f"[AIIA WARNING] configurate_ failed: {e}")
                 else:
