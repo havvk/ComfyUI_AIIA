@@ -27,26 +27,45 @@ def _install_cosyvoice_if_needed():
     
     print("[AIIA] CosyVoice invalid or missing. Attempting robust installation...")
     try:
-        print("[AIIA] Installing CosyVoice from GitHub (latest) to ensure v3 support...")
-        # Use --no-deps to avoid overriding torch, but install git package
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "git+https://github.com/FunAudioLLM/CosyVoice.git", "--no-deps", "--force-reinstall"], env=os.environ)
+        # Define local libs path
+        libs_dir = os.path.join(os.path.dirname(__file__), "libs")
+        cosyvoice_dir = os.path.join(libs_dir, "CosyVoice")
+        matcha_dir = os.path.join(cosyvoice_dir, "third_party", "Matcha-TTS")
 
-        # Check and install critical sub-dependencies
-        reqs = ["modelscope", "hyperpyyaml", "onnxruntime", "hjson"]
+        if not os.path.exists(libs_dir):
+            os.makedirs(libs_dir, exist_ok=True)
+
+        # 1. Clone if not exists
+        if not os.path.exists(cosyvoice_dir):
+            print("[AIIA] Cloning CosyVoice from GitHub...")
+            subprocess.check_call(["git", "clone", "--recursive", "https://github.com/FunAudioLLM/CosyVoice.git", cosyvoice_dir])
+        else:
+            # Optional: Check if we need to pull? For stability, maybe not auto-pull every time.
+            pass
+
+        # 2. Add to sys.path
+        if cosyvoice_dir not in sys.path:
+            sys.path.append(cosyvoice_dir)
+        if matcha_dir not in sys.path:
+            sys.path.append(matcha_dir)
+
+        # 3. Install Requirements
+        # Critical dependencies from requirements.txt
+        reqs = ["modelscope", "hyperpyyaml", "onnxruntime", "hjson", "openai-whisper", "webrtcvad", "pydub"]
         for r in reqs:
             try:
-                __import__(r)
+                __import__(r.replace("-", "_")) # Handle module names like openai-whisper -> openai
             except ImportError:
-                  print(f"[AIIA] Installing missing dependency: {r}")
-                  subprocess.check_call([sys.executable, "-m", "pip", "install", r], env=os.environ)
-        
-        # Retry import
+                 print(f"[AIIA] Installing missing dependency: {r}")
+                 subprocess.check_call([sys.executable, "-m", "pip", "install", r], env=os.environ)
+
+        # 4. Retry import
         from cosyvoice.cli.cosyvoice import CosyVoice as CV
         CosyVoice = CV
 
     except Exception as e:
-        print(f"Failed to install cosyvoice: {e}")
-        print("Please manually install CosyVoice: 'pip install git+https://github.com/FunAudioLLM/CosyVoice.git --no-deps'")
+        print(f"[AIIA] Failed to install cosyvoice via cloning: {e}")
+        print("Please manually clone CosyVoice into 'ComfyUI/custom_nodes/ComfyUI_AIIA/libs/CosyVoice' and install requirements.")
  
 
 class AIIA_CosyVoice_ModelLoader:
@@ -74,6 +93,16 @@ class AIIA_CosyVoice_ModelLoader:
     def load_model(self, model_name, use_fp16):
         _install_cosyvoice_if_needed()
         
+        # Ensure paths are in sys.path even if installed previously (e.g. reload)
+        libs_dir = os.path.join(os.path.dirname(__file__), "libs")
+        cosyvoice_dir = os.path.join(libs_dir, "CosyVoice")
+        matcha_dir = os.path.join(cosyvoice_dir, "third_party", "Matcha-TTS")
+        
+        if os.path.exists(cosyvoice_dir) and cosyvoice_dir not in sys.path:
+            sys.path.append(cosyvoice_dir)
+        if os.path.exists(matcha_dir) and matcha_dir not in sys.path:
+            sys.path.append(matcha_dir)
+            
         if CosyVoice is None:
             raise ImportError("CosyVoice package is not installed. Please install it manually.")
 
