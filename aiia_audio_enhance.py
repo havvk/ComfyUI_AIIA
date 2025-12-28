@@ -354,28 +354,9 @@ class AIIA_Audio_Enhance:
                     _cached_enhancer.to(active_device)
                     _cached_enhancer.eval()
                     
-                    # Fix: Move global mel_fn if it exists (fixes 'stft input and window' error)
-                    # The library uses a global mel_fn for chunk merging, which stays on CPU by default.
-                    
-                    # METHOD A: Direct Import
-                    try:
-                        import resemble_enhance.inference as inference_mod_inner
-                        if hasattr(inference_mod_inner, "mel_fn") and hasattr(inference_mod_inner.mel_fn, "to"):
-                            inference_mod_inner.mel_fn.to(active_device)
-                    except:
-                        pass
-                        
-                    # METHOD B: Sys Modules (Stronger)
-                    try:
-                        import sys
-                        if "resemble_enhance.audio" in sys.modules:
-                             mod = sys.modules["resemble_enhance.audio"]
-                             if hasattr(mod, "mel_fn"):
-                                 mod.mel_fn.to(active_device)
-                    except:
-                        pass
-                    
                     # Run
+                    # Note: We do NOT move global mel_fn to device anymore.
+                    # safe_inference_chunk returns CPU tensor, so merge_chunks (CPU) + mel_fn (CPU) is safe.
                     return inference(
                         model=_cached_enhancer,
                         dwav=wav_tensor.to(active_device), 
