@@ -274,6 +274,7 @@ class AIIA_VibeVoice_TTS:
                 output_wav = model.generate(
                     input_ids=inputs["input_ids"],
                     prompt_speech_16k=prompt_speech if prompt_speech is not None else None, 
+                    tokenizer=tokenizer,
                 )
              
              # Format output
