@@ -563,25 +563,28 @@ class AIIA_Audio_Enhance:
 
                 try:
                     # Try on requested device
-                    # 0. Pre-process: High Pass Filter (Remove Low Freq Rumble/Hum)
-            try:
-                if high_pass_hz > 0:
-                    import torchaudio.functional as F_audio
-                    # highpass_biquad expects (channel, time), audio['waveform'] is (batch, channel, time)
-                    # We iterate over batch
-                    # original_waveform: (B, C, T)
-                    filtered_list = []
-                    for b in range(original_waveform.shape[0]):
-                        wav_b = original_waveform[b]
-                        wav_b_filtered = F_audio.highpass_biquad(wav_b, original_sr, cutoff_freq=high_pass_hz)
-                        filtered_list.append(wav_b_filtered)
-                    original_waveform = torch.stack(filtered_list)
-                    print(f"[AIIA] Applied High Pass Filter at {high_pass_hz}Hz")
-            except Exception as e:
-                print(f"[AIIA WARNING] High Pass Filter failed: {e}")
+                    
+                    # 0. Pre-process: High Pass Filter
+                    try:
+                        if high_pass_hz > 0:
+                            import torchaudio.functional as F_audio
+                            # highpass_biquad expects (channel, time) or (time). 
+                            # wav_tensor is either (time) or (channels, time) based on previous logic.
+                            # Torchaudio supports arbitrary leading batch dims.
+                            
+                            # Ensure tensor is on CPU for filtering to save VRAM or keep on device?
+                            # Torchaudio filtering works on CUDA.
+                            
+                            # wav_tensor could be 1D [T] or 2D [C, T].
+                            # sample_rate is int.
+                            
+                            wav_tensor = F_audio.highpass_biquad(wav_tensor, sample_rate, cutoff_freq=high_pass_hz)
+                            print(f"[AIIA] Applied High Pass Filter at {high_pass_hz}Hz")
+                    except Exception as e:
+                        print(f"[AIIA WARNING] High Pass Filter failed: {e}")
 
-            # 1. Run Inference
-            processed_wav, new_sr = run_inference_safe(device)
+                    # 1. Run Inference
+                    processed_wav, new_sr = run_inference_safe(device)
                 except RuntimeError as e:
                     if "device" in str(e) and device != "cpu":
                         print(f"[AIIA] Device mismatch error on {device}. Retrying on CPU (fallback)...")
