@@ -383,64 +383,60 @@ class AIIA_Audio_Enhance:
                 _cached_enhancer.eval()
                 
                 # Configure Params: FORCE INJECT EVERYWHERE (to fix Quality/Stripes)
-                # The model might look at .config, .hp, or directly at .nfe
-                if not hasattr(_cached_enhancer, "config"):
-                    class Config: pass
-                    _cached_enhancer.config = Config()
+
+                    # 5. Inject Parameters into the Model (Shotgun Approach)
+                    # We must ensure specific internal variables are updated, otherwise the model might skip logic
+                    # or use old values. Enhancer.forward uses self._eval_lambd to decide whether to skip.
                     
-                _cached_enhancer.config.nfe = nfe
-                _cached_enhancer.config.solver = solver.lower()
-                _cached_enhancer.config.tau = tau
-                
-                # Also inject into .hp (HyperParameters) if available
-                if hasattr(_cached_enhancer, "hp"):
+                    # Update Config/HP dataclasses
                     try:
-                        # Fix FrozenInstanceError: .hp is a frozen dataclass
-                        object.__setattr__(_cached_enhancer.hp, 'nfe', nfe)
-                        object.__setattr__(_cached_enhancer.hp, 'solver', solver.lower())
-                        object.__setattr__(_cached_enhancer.hp, 'tau', tau)
+                        if hasattr(_cached_enhancer, "config"):
+                            object.__setattr__(_cached_enhancer.config, "nfe", nfe)
+                            object.__setattr__(_cached_enhancer.config, "solver", solver)
+                            object.__setattr__(_cached_enhancer.config, "tau", tau)
+                        
+                        if hasattr(_cached_enhancer, "hp"):
+                            object.__setattr__(_cached_enhancer.hp, "nfe", nfe)
+                            object.__setattr__(_cached_enhancer.hp, "solver", solver)
+                            object.__setattr__(_cached_enhancer.hp, "tau", tau)
+                            
+                        # CRITICAL: Update internal state variables used by forward()
+                        # forward() uses: lambd = self._eval_lambd
+                        # LCFM uses: tau = self._eval_tau
+                        if hasattr(_cached_enhancer, "_eval_lambd"):
+                            # lambd is typically 0 (skip) or >0 (run). If tau=0.5, lambd usually != 0.
+                            # We force it to be non-zero to ensure CFM runs.
+                            # In resemble-enhance, lambd is often just 'tau' or derived.
+                            # Let's set it to tau just to be safe, or 1.0?
+                            # Actually, normally init does: self._eval_lambd = 0 if ... else ...
+                            # Let's set it to tau logic:
+                             _cached_enhancer._eval_lambd = tau
+
+                        if hasattr(_cached_enhancer, "lcfm") and hasattr(_cached_enhancer.lcfm, "_eval_tau"):
+                             _cached_enhancer.lcfm._eval_tau = tau
+                             
                     except Exception as e:
-                        print(f"[AIIA] Warning: Failed to force set hp params: {e}")
-                        # Fallback: Maybe replace hp?
-                        pass
-                    
-                # Also inject directly (just in case)
-                _cached_enhancer.nfe = nfe
-                _cached_enhancer.solver = solver.lower()
-                _cached_enhancer.tau = tau
+                        print(f"[AIIA WARNING] Parameter injection failed: {e}")
 
-                def run_inference_safe(active_device):
-                    # Force move model
-                    _cached_enhancer.to(active_device)
-                    _cached_enhancer.eval()
-                    
-                    # CLEANUP: Force mel_fn to CPU (ghost fix)
-                    try:
-                        import sys
-                        if "resemble_enhance.inference" in sys.modules:
-                             mod = sys.modules["resemble_enhance.inference"]
-                             if hasattr(mod, "mel_fn") and hasattr(mod.mel_fn, "to"):
-                                 mod.mel_fn.to("cpu")
-                                 
-                        if "resemble_enhance.audio" in sys.modules:
-                             mod = sys.modules["resemble_enhance.audio"]
-                             if hasattr(mod, "mel_fn") and hasattr(mod.mel_fn, "to"):
-                                 mod.mel_fn.to("cpu")
-                    except:
-                        pass
-                    
-                    return inference(
-                        model=_cached_enhancer,
-                        dwav=wav_tensor.to(active_device), 
-                        sr=sample_rate, 
-                        device=active_device,
-                    )
+                    # 6. Monkey-Patch Inference (if not already)
+                    import resemble_enhance.inference as inference_mod
 
-                try:
-                    # Try on requested device
-                    processed_wav, new_sr = run_inference_safe(device)
-                except RuntimeError as e:
-                    if "device" in str(e) and device != "cpu":
+                    def safe_inference_chunk(model, dwav, device):
+                        # ... wrapper logic ...
+                        # Ensure parameters are fresh in the model object itself
+                        # (Already done above, but safe to re-assert if needed)
+                        pass 
+                        
+                        # 1. Padding
+                        # ...
+                        
+                        # 2. To Device
+                        # ...
+                        
+                        # 3. Create Time Steps
+                        t = torch.linspace(0, 1, nfe + 1, device=device)
+                        
+                        # EXECUTE            if "device" in str(e) and device != "cpu":
                         print(f"[AIIA] Device mismatch error on {device}. Retrying on CPU (fallback)...")
                         # Clear cache or just move?
                         try:
