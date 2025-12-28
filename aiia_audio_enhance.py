@@ -418,6 +418,10 @@ class AIIA_Audio_Enhance:
                 import resemble_enhance.inference as inference_mod
 
                 def safe_inference_chunk(model, dwav, sr, device):
+                    # 0. Normalization (Required for correct enhancement)
+                    abs_max = dwav.abs().max()
+                    dwav = dwav / (abs_max + 1e-8)
+
                     # 1. Padding
                     # PAD to be divisible by 64 (or whatever the model needs)
                     n_fft = 1024
