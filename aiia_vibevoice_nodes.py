@@ -186,6 +186,10 @@ class AIIA_VibeVoice_Loader:
             else:
                 VibeVoiceConfig = config_module.VibeVoiceConfig
             
+            # PATCH: Force model_type to match "vibevoice" (as in 1.5B config.json)
+            # The code from GitHub (0.5B default) has "vibevoice_streaming"
+            VibeVoiceConfig.model_type = "vibevoice"
+
             # 2. Register Config
             # Note: 1.5B config.json says model_type is "vibevoice", so we register for that key
             AutoConfig.register("vibevoice", VibeVoiceConfig)
