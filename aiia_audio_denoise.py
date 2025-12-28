@@ -89,15 +89,18 @@ class AIIA_Audio_Denoise:
                           "Denoise + DeReverb (Mode 1)", 
                           "Denoise Only (Mode 2)"], {"default": "Denoise Only (Mode 2)"}),
                 "use_cuda": ("BOOLEAN", {"default": True}),
+            },
+            "optional": {
+                "splice_info": ("SPLICE_INFO",),
             }
         }
 
-    RETURN_TYPES = ("AUDIO",)
-    RETURN_NAMES = ("audio",)
+    RETURN_TYPES = ("AUDIO", "SPLICE_INFO")
+    RETURN_NAMES = ("audio", "splice_info")
     FUNCTION = "denoise_audio"
     CATEGORY = "AIIA/Audio"
 
-    def denoise_audio(self, audio, mode, use_cuda):
+    def denoise_audio(self, audio, mode, use_cuda, splice_info=None):
         # 1. Initialize Model (Singleton)
         cuda_available = torch.cuda.is_available() and use_cuda
         device_str = "cuda" if cuda_available else "cpu"
@@ -203,7 +206,29 @@ class AIIA_Audio_Denoise:
             except:
                 pass
 
-        return ({"waveform": result_waveform, "sample_rate": result_sr},)
+        # 6. Correct Splice Info (if provided) due to Resampling
+        new_splice_info = None
+        if splice_info is not None:
+             import copy
+             new_splice_info = copy.deepcopy(splice_info)
+             
+             old_rate = splice_info.get("sample_rate", sample_rate)
+             new_rate = result_sr
+             
+             if old_rate != new_rate:
+                 scale_factor = new_rate / old_rate
+                 print(f"[AIIA] Scaling splice points by {scale_factor:.4f} (Original SR: {old_rate}, New SR: {new_rate})")
+                 
+                 new_points = []
+                 for p in new_splice_info.get("splice_points", []):
+                     new_points.append(int(p * scale_factor))
+                 new_splice_info["splice_points"] = new_points
+                 new_splice_info["sample_rate"] = new_rate # Update stored rate
+                 
+                 # Store scale factor for debugging if needed
+                 new_splice_info["scale_factor"] = scale_factor
+
+        return ({"waveform": result_waveform, "sample_rate": result_sr}, new_splice_info)
 
 NODE_CLASS_MAPPINGS = {
     "AIIA_Audio_Denoise": AIIA_Audio_Denoise

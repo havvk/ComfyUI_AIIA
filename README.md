@@ -111,6 +111,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 ![video_combine_node_ui](https://github.com/user-attachments/assets/4185c2a7-e1a6-4980-ac8a-3d326bff4b87)
 
 **核心亮点**:
+
 -   **内存高效**: 通过 `frames_directory` 输入，可以处理几乎无限数量的图像帧，完美解决了 OOM 问题。
 -   **直接张量输入**: 接受上游节点的 `IMAGE` 张量，方便快速迭代和测试。
 -   **全面的音频控制**: 支持 `AUDIO` 张量和外部文件，并提供对编解码器和码率的精细控制。
@@ -121,12 +122,14 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 这组节点封装了先进的 **FLOAT** 模型，能够根据参考图像和音频生成高质量的口型同步影片。我们提供了两种模式，以应对不同长度的生成需求。
 
 **1. Float Process (AIIA In-Memory)**
+
 -   **用途**: 用于生成**短片**、快速预览或直接与其他内存节点（如视频合并的 `images` 输入）连接。
 -   **输出**: `IMAGE` 张量。
 -   **优势**: 速度快，流程无缝。
 -   **限制**: 受限于您的 VRAM 和系统内存大小，不适合生成长视频。
 
 **2. Float Process (AIIA To-Disk for Long Audio)**
+
 -   **用途**: 专门用于**长音频**的影片生成，是**解决OOM问题的关键**。
 -   **输出**: `STRING` (包含所有生成帧的目录路径) 和 `INT` (帧总数)。
 -   **优势**: 在解码过程中，节点以小批量方式处理帧并**逐帧保存到磁盘**，内存占用极低，可以处理任意长度的音频。
@@ -159,12 +162,14 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 这组节点利用 **NeMo Sortformer** E2E 模型，为您的音频提供先进的说话人识别功能。在4090RTX显卡上只需2秒钟就能完成10分钟音频的声纹分割聚类任务。
 
 **1. AIIA Generate Speaker Segments**
+
 -   **用途**: 对一段音频进行分析，找出“**谁在什么时候说话**”。
 -   **输入**: `AUDIO` 张量。
 -   **输出**: `WHISPER_CHUNKS` (一个结构化的数据，包含一系列带有说话人标签的时间片段，如 `SPEAKER_00`, `SPEAKER_01` 等)。
 -   **亮点**: 提供多种**后处理配置**（从宽松到严格），让您可以微调分割的灵敏度，以适应不同质量的音频。
 
 **2. AIIA E2E Speaker Diarization**
+
 -   **用途**: 将 `Generate Speaker Segments` 的识别结果**精确地应用**到由 Whisper 等工具生成的、带有文本的 `WHISPER_CHUNKS` 上。
 -   **输入**: `WHISPER_CHUNKS` (来自文本转录节点) 和 `AUDIO` 张量。
 -   **输出**: 更新后的 `WHISPER_CHUNKS`，其中每个文本块都已被赋予了最匹配的说话人标签。
@@ -173,6 +178,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 #### 3.2 说话人隔离与合并 (Speaker Isolation & Merger)
 
 **Audio Speaker Isolator (AIIA)**
+
 -   **用途**: 根据说话人日志（Diarization）产生的 JSON 数据，从原始音轨中精确提取属于特定说话人的声音。
 -   **输入**:
     -   `audio`: 原始音频张量。
@@ -186,6 +192,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
         - **时间对齐**: 专门针对 AIIA 视频节点套件优化，保证音画同步。
 
 **Audio Speaker Merger (AIIA)**
+
 -   **用途**: 将两段不同的音频流合并为一条。通常用于在分别对不同说话人进行视频驱动后，将各自的音轨重新混缩。
 -   **输入**:
     -   `audio_1`, `audio_2`: 待合并的两段音频。
@@ -199,6 +206,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 #### 3.3 智能切片 (Smart Chunking)
 
 **Audio Smart Chunker (Silence-based)**
+
 -   **用途**: 全量扫描长音频，寻找最优切片方案。
 -   **机制**: 
     -   **全局静音扫描**: 自动识别音频中的天然停顿区间。
@@ -209,6 +217,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 #### 3.4 Voice Conversion (AIIA Unlimited) (CosyVoice 增强)
 
 **1. CosyVoice Model Loader (AIIA)**
+
 -   **用途**: 不需要安装任何其他第三方节点，直接加载 CosyVoice 模型。
 -   **功能**:
     -   **自动安装依赖**: 首次运行时会自动安装 `cosyvoice` 及其依赖环境。
@@ -220,6 +229,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 -   **输出**: `COSYVOICE_MODEL` (专为 AIIA Voice Conversion 节点优化)。
 
 **2. Voice Conversion (AIIA Unlimited)**
+
 -   **用途**: 增强版语音转换节点，解决了原版 CosyVoice3 只能转换 30 秒内语音的限制。
 -   **🔥 核心突破**: **全球首个突破时长限制的 ComfyUI 节点**。通过创新的静音点智能切片技术，本节点彻底突破了 CosyVoice 3 官方模型“建议 20 秒、最长 60 秒”的生成限制。它实现了**真正无限时长的音色克隆**，且拼接处自然无痕，完美满足长篇教学视频、有声书等专业制作需求。
 -   **创新设计 (创新亮点)**:
