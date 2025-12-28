@@ -12,12 +12,58 @@ from pathlib import Path
 enhance = None
 denoise = None
 
+def _mock_deepspeed():
+    """
+    Mock DeepSpeed via sys.meta_path to prevent import errors.
+    DeepSpeed is a heavy training dependency that is hard to install.
+    We use a custom Importer to intercept ALL deepspeed submodules dynamically.
+    """
+    if "deepspeed" in sys.modules:
+        return
+
+    # Check if we already registered the finder
+    import sys
+    # We can check sys.meta_path, but it's hard to identify our specific instance class properly if we reload.
+    # We'll just define the class and check if any instance of it is in meta_path? 
+    # Or simpler: just proceed.
+    
+    print("[AIIA] Mocking DeepSpeed via sys.meta_path...")
+    from importlib.abc import MetaPathFinder, Loader
+    from importlib.machinery import ModuleSpec
+    from unittest.mock import MagicMock
+
+    class DeepSpeedImportMocker(MetaPathFinder, Loader):
+        def find_spec(self, fullname, path, target=None):
+            if fullname.startswith("deepspeed"):
+                return ModuleSpec(fullname, self)
+            return None
+
+        def create_module(self, spec):
+            m = MagicMock()
+            m.__path__ = []
+            m.__file__ = "mock_deepspeed_dynamic.py"
+            m.__loader__ = self
+            m.__spec__ = spec
+            return m
+
+        def exec_module(self, module):
+            pass
+
+    sys.meta_path.insert(0, DeepSpeedImportMocker())
+    # Also inject main module just in case
+    sys.modules["deepspeed"] = MagicMock()
+
 def _install_resemble_if_needed():
     global enhance, denoise
     if enhance is not None:
         return
 
-    # Try import first
+    # 1. Pre-emptively mock DeepSpeed
+    # This ensures that if the library is installed, the import succeeds immediately
+    # avoiding the "Not Found" -> "Install" -> "Mock" -> "Retry" loop.
+    _mock_deepspeed()
+
+    # 2. Try import first
     try:
         from resemble_enhance.enhancer.inference import enhance as eh, denoise as dn
         enhance = eh
@@ -35,53 +81,20 @@ def _install_resemble_if_needed():
     except ImportError:
         pass
 
-    print("[AIIA] resemble-enhance not found. Installing without dependencies to protect environment...")
+    print("[AIIA] resemble-enhance not found (or broken). Installing without dependencies to protect environment...")
     try:
-        # 1. Install resemble-enhance without dependencies
+        # 3. Install resemble-enhance without dependencies
         subprocess.check_call([sys.executable, "-m", "pip", "install", "resemble-enhance", "--no-deps"])
         
-        # 2. Check critical deps
-        #    resemble-enhance needs: scipy, torchaudio(present), torch(present), numpy(present), tqdm, etc.
-        pass_packages = ["torch", "torchaudio", "torchvision", "numpy", "scipy", "tqdm"] 
-        
-        # MOCK DEEPSPEED to prevent import error (we only need inference)
-        # DeepSpeed is a heavy training dependency that is hard to install.
-        # We use a custom Importer to intercept ALL deepspeed submodules dynamically.
-        if "deepspeed" not in sys.modules:
-            print("[AIIA] Mocking DeepSpeed via sys.meta_path...")
-            from importlib.abc import MetaPathFinder, Loader
-            from importlib.machinery import ModuleSpec
-            from unittest.mock import MagicMock
-
-            class DeepSpeedImportMocker(MetaPathFinder, Loader):
-                def find_spec(self, fullname, path, target=None):
-                    if fullname.startswith("deepspeed"):
-                        return ModuleSpec(fullname, self)
-                    return None
-
-                def create_module(self, spec):
-                    m = MagicMock()
-                    m.__path__ = []
-                    m.__file__ = "mock_deepspeed_dynamic.py"
-                    m.__loader__ = self
-                    m.__spec__ = spec
-                    # Allow attribute access to return new mocks (default MagicMock behavior)
-                    return m
-
-                def exec_module(self, module):
-                    pass
-
-            # Register globally
-            sys.meta_path.insert(0, DeepSpeedImportMocker())
-            
+        # 4. Check critical deps
         try:
             import hjson
         except ImportError:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "hjson"])
+             subprocess.check_call([sys.executable, "-m", "pip", "install", "hjson"])
             
         print("[AIIA] resemble-enhance installed.")
         
-        # Retry import
+        # 5. Retry import
         try:
             from resemble_enhance.enhancer.inference import enhance as eh, denoise as dn
             enhance = eh
@@ -234,7 +247,7 @@ class AIIA_Audio_Enhance:
                     sample_rate, 
                     device, 
                     nfe=nfe, 
-                    solver=solver, 
+                    solver=solver.lower(), 
                     tau=tau,
                     lambd=0.9 if denoising else 0.1 # Approximate control, usually high lambd = more denoising focus?
                     # Actually standard usage just calls clean, enhanced = enhance(...)
