@@ -106,6 +106,9 @@ else:
     # 14. 处理 aiia_audio_info.py (新增元数据查看)
     _load_nodes_from_module(".aiia_audio_info", "aiia_audio_info")
 
+    # 15. 处理 aiia_vibevoice_nodes.py (新增 VibeVoice 支持)
+    _load_nodes_from_module(".aiia_vibevoice_nodes", "aiia_vibevoice_nodes")
+
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
 
