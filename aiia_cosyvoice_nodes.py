@@ -106,6 +106,7 @@ class AIIA_CosyVoice_ModelLoader:
                     "CosyVoice-ttsfrd"
                 ],),
                 "use_fp16": ("BOOLEAN", {"default": True}),
+                "use_rl_model": ("BOOLEAN", {"default": False, "tooltip": "Use llm.rl.pt (Reinforcement Learning optimized) if available. Only for V3/V2 models."}),
             }
         }
 
@@ -114,7 +115,7 @@ class AIIA_CosyVoice_ModelLoader:
     FUNCTION = "load_model"
     CATEGORY = "AIIA/Loaders"
 
-    def load_model(self, model_name, use_fp16):
+    def load_model(self, model_name, use_fp16, use_rl_model=False):
         _install_cosyvoice_if_needed()
         
         # Ensure paths are in sys.path even if installed previously (e.g. reload)
@@ -178,6 +179,51 @@ class AIIA_CosyVoice_ModelLoader:
                 shutil.copy2(yaml3_path, yaml_path)
             except Exception as e:
                 print(f"[AIIA] Warning: Failed to copy config file: {e}")
+
+        # --- RL Model Switching Logic ---
+        llm_pt = os.path.join(model_dir, "llm.pt")
+        llm_rl = os.path.join(model_dir, "llm.rl.pt")
+        llm_base = os.path.join(model_dir, "llm.base.pt")
+
+        if use_rl_model:
+            if os.path.exists(llm_rl):
+                print(f"[AIIA] Switch: RL Model Requested.")
+                if not os.path.exists(llm_base):
+                    if os.path.exists(llm_pt):
+                        # Assuming current llm.pt is the base, backup it
+                        print(f"[AIIA] Backing up Base LLM to {llm_base}")
+                        os.rename(llm_pt, llm_base)
+                
+                # Create symlink/copy for RL
+                # Check if current llm.pt is already RL? (Hard to check symlink validity in py cross platform easily, blindly relinking is safer)
+                if os.path.exists(llm_pt):
+                    os.remove(llm_pt)
+                
+                print(f"[AIIA] Linking RL Model -> llm.pt")
+                try:
+                    os.symlink(llm_rl, llm_pt)
+                except OSError:
+                    import shutil
+                    shutil.copy2(llm_rl, llm_pt)
+            else:
+                print(f"[AIIA] Warning: RL Mode requested but {llm_rl} not found. Using default LLM.")
+        else:
+            # Revert to Base if backed up
+            if os.path.exists(llm_base):
+                print(f"[AIIA] Switch: Base Model Requested. Restoring...")
+                if os.path.exists(llm_pt):
+                    os.remove(llm_pt)
+                
+                print(f"[AIIA] Linking Base Model -> llm.pt")
+                try:
+                    os.symlink(llm_base, llm_pt)
+                except OSError:
+                    import shutil
+                    shutil.copy2(llm_base, llm_pt)
+            else:
+                # No backup, means current llm.pt is likely base or RL is missing. Do nothing.
+                pass
+        # -------------------------------
 
         # Load Model
         print(f"Loading CosyVoice model from {model_dir}...")
