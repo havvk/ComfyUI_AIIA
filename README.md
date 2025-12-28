@@ -208,6 +208,18 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 #### 3.4 Voice Conversion (AIIA Unlimited) (CosyVoice 增强)
 
+**1. CosyVoice Model Loader (AIIA)**
+-   **用途**: 不需要安装任何其他第三方节点，直接加载 CosyVoice 模型。
+-   **功能**:
+    -   **自动安装依赖**: 首次运行时会自动安装 `cosyvoice` 及其依赖环境。
+    -   **自动下载模型**: 选择模型后，首次运行会自动从 HuggingFace 下载模型权重。
+    -   **支持模型**:
+        -   `Fun-CosyVoice3-0.5B-2512` (最新 CosyVoice 3.0, **推荐**)
+        -   `CosyVoice2-0.5B` (CosyVoice 2.0)
+        -   `CosyVoice-300M` 系列 (SFT, Instruct, TTSFRD)
+-   **输出**: `COSYVOICE_MODEL` (专为 AIIA Voice Conversion 节点优化)。
+
+**2. Voice Conversion (AIIA Unlimited)**
 -   **用途**: 增强版语音转换节点，解决了原版 CosyVoice3 只能转换 30 秒内语音的限制。
 -   **🔥 核心突破**: **全球首个突破时长限制的 ComfyUI 节点**。通过创新的静音点智能切片技术，本节点彻底突破了 CosyVoice 3 官方模型“建议 20 秒、最长 60 秒”的生成限制。它实现了**真正无限时长的音色克隆**，且拼接处自然无痕，完美满足长篇教学视频、有声书等专业制作需求。
 -   **创新设计 (创新亮点)**:
@@ -215,7 +227,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     -   **牺牲上下文无缝拼接 (Sacrificial Context Stitching)**: 针对生成式模型在重叠区域的相位不稳定性，我们在拼接时采用“牺牲上下文”策略。即利用重叠区域作为生成引导，但在最终拼接时丢弃前一片段的“尾部”，仅保留极短的 Cross-fade（约 50ms），从而彻底消除长音频拼接处的“发虚”和回声感。
     -   **双层寻点算法**: 在语义缝隙确定的候选范围内，算法会自动进行微秒级的**物理静音探测**（基于能量平滑曲线），确保切点处于绝对静默状态。
 -   **输入**:
-    -   `model`: 连接 `FL-CosyVoice3` 的模型加载器。
+    -   `model`: 连接 `CosyVoice Model Loader (AIIA)` 的输出。
     -   `source_audio`: 待转换的源音频（支持任意时长）。
     -   `whisper_chunks` (可选): 接入 Diarization 节点数据，开启语义感知切片。
     -   `target_audio`: 目标音色参考音频（自动截取前 30 秒）。
