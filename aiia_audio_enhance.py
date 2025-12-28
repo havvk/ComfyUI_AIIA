@@ -36,13 +36,16 @@ except ImportError:
 
 # We need to import these AFTER install
 try:
+    # Try updated import structure
     from resemble_enhance.enhancer.inference import enhance, denoise
-    from resemble_enhance.enhancer.download import download_model
 except ImportError:
-    print("[AIIA] Failed to import resemble_enhance. Please install it manually.")
-    enhance = None
-    denoise = None
-    download_model = None
+    try:
+        # Fallback for older versions or different structure
+        from resemble_enhance.inference import enhance, denoise
+    except ImportError:
+         print("[AIIA] Failed to import resemble_enhance. Please install it manually.")
+         enhance = None
+         denoise = None
 
 def setup_resemble_model_path():
     """

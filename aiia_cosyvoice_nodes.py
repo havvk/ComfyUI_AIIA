@@ -12,20 +12,27 @@ from huggingface_hub import snapshot_download
 def _install_cosyvoice():
     target_install = False
     try:
+        # Check if we can import the class we need
         from cosyvoice.cli.cosyvoice import CosyVoice
         return
     except ImportError:
         target_install = True
-        print("[AIIA] CosyVoice not found or incomplete. Installing options...")
+        print("[AIIA] CosyVoice invalid or missing. Attempting robust installation...")
 
     if target_install:
         try:
-            # 1. Install 'cosyvoice' WITHOUT dependencies to protect Torch/CUDA
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "cosyvoice", "--no-deps", "--upgrade"], env=os.environ)
+            # 1. Try pip install from specific git commit or HEAD if PyPI is broken/outdated
+            #    The pypi 'cosyvoice' seems to be old (0.0.8) and missing 'cli'. 
+            #    We need to install from git.
             
-            # 2. Check and install critical sub-dependencies if missing
-            #    We skip torch/torchaudio/numpy/tqdm as they are standard ComfyUI.
-            #    We check specifically for: modelscope, hyperpyyaml, onnxruntime
+            #    Since user just fixed their torch, we MUST use --no-deps to avoid overriding torch.
+            #    But git install often triggers build which needs deps. 
+            #    We try to install from github repo directly with --no-deps
+            
+            print("[AIIA] Installing CosyVoice from GitHub (latest) to ensure v3 support...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "git+https://github.com/FunAudioLLM/CosyVoice.git", "--no-deps", "--force-reinstall"], env=os.environ)
+
+            # 2. Check and install critical sub-dependencies
             reqs = ["modelscope", "hyperpyyaml", "onnxruntime", "hjson"]
             for r in reqs:
                 try:
@@ -36,7 +43,7 @@ def _install_cosyvoice():
 
         except Exception as e:
             print(f"Failed to install cosyvoice: {e}")
-            print("Please manually install 'cosyvoice' into your python environment.")
+            print("Please manually install CosyVoice: 'pip install git+https://github.com/FunAudioLLM/CosyVoice.git --no-deps'")
 
 _install_cosyvoice()
 
