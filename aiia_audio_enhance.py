@@ -300,41 +300,21 @@ class AIIA_Audio_Enhance:
                         hwav = hwav * abs_max
                         
                         # DEBUG: Verify device
-                        print(f"[AIIA DEBUG] Chunk computed. Device before return: {hwav.device}")
+                        # print(f"[AIIA DEBUG] Chunk computed. Device before return: {hwav.device}")
                         
                         return hwav.cpu()
 
                     # Apply Patch 1: Inference Chunk
                     inference_mod.inference_chunk = safe_inference_chunk
-                    print("[AIIA] Monkey-patched inference_chunk for CUDA safety (v3).")
+                    print("[AIIA] Monkey-patched inference_chunk for CUDA safety (v4).")
                     
-                    # Apply Patch 2: Merge Chunks (Safety Net + Debug)
+                    # Apply Patch 2: Merge Chunks (Safety Net)
                     if not hasattr(inference_mod, "original_merge_chunks"):
                         inference_mod.original_merge_chunks = inference_mod.merge_chunks
                         
                     def safe_merge_chunks(chunks, *args, **kwargs):
                         # Force CPU
                         cpu_chunks = [c.cpu() for c in chunks]
-                        
-                        # DIAGNOSTICS
-                        try:
-                             print(f"[AIIA DEBUG] safe_merge_chunks called with {len(chunks)} chunks.")
-                             if len(chunks) > 0:
-                                 print(f"[AIIA DEBUG] Chunk[0] device: {chunks[0].device} -> Forced to: {cpu_chunks[0].device}")
-                                 
-                             # Check MelFn Device
-                             if hasattr(inference_mod, "mel_fn"):
-                                 # mel_fn is a torch.nn.Module or partial?
-                                 if hasattr(inference_mod.mel_fn, "device"):
-                                      print(f"[AIIA DEBUG] inference.mel_fn.device: {inference_mod.mel_fn.device}")
-                                 elif hasattr(inference_mod.mel_fn, "parameters"):
-                                      p = next(inference_mod.mel_fn.parameters(), None)
-                                      if p is not None:
-                                           print(f"[AIIA DEBUG] inference.mel_fn param device: {p.device}")
-                                           
-                        except Exception as e:
-                             print(f"[AIIA DEBUG] Diagnostics failed: {e}")
-
                         return inference_mod.original_merge_chunks(cpu_chunks, *args, **kwargs)
                         
                     inference_mod.merge_chunks = safe_merge_chunks
@@ -375,7 +355,8 @@ class AIIA_Audio_Enhance:
                 _cached_enhancer.to(device)
                 _cached_enhancer.eval()
                 
-                # Configure Params: FORCE INJECT Config if missing
+                # Configure Params: FORCE INJECT EVERYWHERE (to fix Quality/Stripes)
+                # The model might look at .config, .hp, or directly at .nfe
                 if not hasattr(_cached_enhancer, "config"):
                     class Config: pass
                     _cached_enhancer.config = Config()
@@ -383,19 +364,24 @@ class AIIA_Audio_Enhance:
                 _cached_enhancer.config.nfe = nfe
                 _cached_enhancer.config.solver = solver.lower()
                 _cached_enhancer.config.tau = tau
+                
+                # Also inject into .hp (HyperParameters) if available
+                if hasattr(_cached_enhancer, "hp"):
+                    _cached_enhancer.hp.nfe = nfe
+                    _cached_enhancer.hp.solver = solver.lower()
+                    _cached_enhancer.hp.tau = tau
+                    
+                # Also inject directly (just in case)
+                _cached_enhancer.nfe = nfe
+                _cached_enhancer.solver = solver.lower()
+                _cached_enhancer.tau = tau
 
                 def run_inference_safe(active_device):
                     # Force move model
                     _cached_enhancer.to(active_device)
                     _cached_enhancer.eval()
                     
-                    # Run
-                    # Note: We do NOT move global mel_fn to device anymore.
-                    # safe_inference_chunk returns CPU tensor, so merge_chunks (CPU) + mel_fn (CPU) is safe.
-                    
-                    # CLEANUP: In previous versions (1.4.56-60), we moved global mel_fn to CUDA.
-                    # If the ComfyUI process hasn't restarted, it might still be on CUDA!
-                    # We must FORCE it back to CPU to match our new strategy.
+                    # CLEANUP: Force mel_fn to CPU (ghost fix)
                     try:
                         import sys
                         if "resemble_enhance.inference" in sys.modules:
