@@ -359,8 +359,16 @@ class AIIA_Audio_Enhance:
                     _cached_enhancer.to(active_device)
                     _cached_enhancer.eval()
                     
+                    # DEBUG: Check model structure
+                    if not hasattr(_cached_enhancer, "ode_solve"):
+                        print(f"[AIIA DEBUG] Model type: {type(_cached_enhancer)}")
+                        print(f"[AIIA DEBUG] Model dir: {dir(_cached_enhancer)}")
+                        # Check submodules?
+                    
                     # Fix: Move global mel_fn if it exists (fixes 'stft input and window' error)
                     # The library uses a global mel_fn for chunk merging, which stays on CPU by default.
+                    
+                    # METHOD A: Direct Import
                     try:
                         import resemble_enhance.inference as inference_mod_inner
                         if hasattr(inference_mod_inner, "mel_fn") and hasattr(inference_mod_inner.mel_fn, "to"):
@@ -368,10 +376,13 @@ class AIIA_Audio_Enhance:
                     except:
                         pass
                         
+                    # METHOD B: Sys Modules (Stronger)
                     try:
-                        import resemble_enhance.audio as audio_mod
-                        if hasattr(audio_mod, "mel_fn") and hasattr(audio_mod.mel_fn, "to"):
-                             audio_mod.mel_fn.to(active_device)
+                        import sys
+                        if "resemble_enhance.audio" in sys.modules:
+                             mod = sys.modules["resemble_enhance.audio"]
+                             if hasattr(mod, "mel_fn"):
+                                 mod.mel_fn.to(active_device)
                     except:
                         pass
                     
