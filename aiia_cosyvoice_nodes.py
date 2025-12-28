@@ -12,11 +12,14 @@ from huggingface_hub import snapshot_download
 def _install_cosyvoice():
     try:
         import cosyvoice
+        # TODO: simple check if it supports v3? For now we just ensure it is installed.
+        # User might need to force update if they have old version.
         return
     except ImportError:
         print("Installing cosyvoice...")
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "cosyvoice", "modelscope", "torchaudio", "hyperpyyaml", "onnxruntime"], env=os.environ)
+            # We add --upgrade to ensure we get the latest version supporting CosyVoice3
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "cosyvoice", "modelscope", "torchaudio", "hyperpyyaml", "onnxruntime"], env=os.environ)
         except Exception as e:
             print(f"Failed to install cosyvoice: {e}")
             print("Please manually install 'cosyvoice' into your python environment.")
@@ -26,7 +29,7 @@ _install_cosyvoice()
 try:
     from cosyvoice.cli.cosyvoice import CosyVoice
 except ImportError:
-    CosyVoice = None # Handle missing import gracefully during node definition
+    CosyVoice = None 
 
 class AIIA_CosyVoice_ModelLoader:
     @classmethod
@@ -34,9 +37,11 @@ class AIIA_CosyVoice_ModelLoader:
         return {
             "required": {
                 "model_name": ([
+                    "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+                    "FunAudioLLM/CosyVoice2-0.5B",
                     "CosyVoice-300M",
-                    "CosyVoice-300M-SFT",
-                    "CosyVoice-300M-Instruct", 
+                    "CosyVoice-300M-SFT", 
+                    "CosyVoice-300M-Instruct",
                     "CosyVoice-ttsfrd"
                 ],),
                 "use_fp16": ("BOOLEAN", {"default": True}),
@@ -50,22 +55,31 @@ class AIIA_CosyVoice_ModelLoader:
 
     def load_model(self, model_name, use_fp16):
         if CosyVoice is None:
-            raise ImportError("CosyVoice package is not installed. Please install it manually or check internet connection for auto-install.")
+            raise ImportError("CosyVoice package is not installed. Please install it manually.")
 
         # Setup paths
         base_path = folder_paths.models_dir
         cosyvoice_path = os.path.join(base_path, "cosyvoice")
-        model_dir = os.path.join(cosyvoice_path, model_name)
+        
+        # Handle different naming conventions
+        if "/" in model_name:
+             # e.g. FunAudioLLM/Fun-CosyVoice3-0.5B-2512 -> local_dir: Fun-CosyVoice3-0.5B-2512
+             local_name = model_name.split("/")[-1]
+             repo_id = model_name
+        else:
+             # Legacy mapping for v1
+             local_name = model_name
+             repo_id = f"FunAudioLLM/{model_name}"
+
+        model_dir = os.path.join(cosyvoice_path, local_name)
         
         # Download if missing
         if not os.path.exists(model_dir):
-            print(f"Downloading {model_name} to {model_dir}...")
-            repo_id = f"FunAudioLLM/{model_name}"
-            # Trying huggingface first
+            print(f"[AIIA] Downloading {model_name} to {model_dir}...")
             try:
                 snapshot_download(repo_id=repo_id, local_dir=model_dir)
             except Exception as e:
-                print(f"Failed to download from HF: {e}. Trying ModelScope is typically handled by CosyVoice internal, but we need the files locally.")
+                print(f"Failed to download from HF: {e}. Checking if ModelScope works...")
                 raise e
 
         # Load Model
