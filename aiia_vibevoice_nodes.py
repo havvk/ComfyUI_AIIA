@@ -1,5 +1,6 @@
 
 import os
+import sys
 import torch
 import folder_paths
 import torchaudio
@@ -73,37 +74,52 @@ class AIIA_VibeVoice_Loader:
                  print(f"[AIIA] Model not found locally. Downloading from HuggingFace to cache...")
 
         # Fix for "KeyError: vibevoice":
-        # Debugging: List files to ensure remote code is present
-        print(f"[AIIA] Inspecting model dir: {load_path}")
+        # Strategy: Manually import the model code and register it to AutoConfig/AutoModel
+        
+        sys_path_added = False
         try:
-            files_in_dir = os.listdir(load_path)
-            print(f"[AIIA] Files found: {files_in_dir}")
+            # 1. Add model dir to sys.path so we can import 'configuration_vibevoice'
+            if load_path not in sys.path:
+                sys.path.append(load_path)
+                sys_path_added = True
             
-            config_file = os.path.join(load_path, "config.json")
-            if os.path.exists(config_file):
-                with open(config_file, "r") as f:
-                    print(f"[AIIA] config.json content partial: {f.read(500)}")
-            else:
-                 print(f"[AIIA] CRITICAL: config.json not found in {load_path}")
-                 
-        except Exception as e:
-            print(f"[AIIA] File inspection failed: {e}")
+            # 2. Dynamic Import
+            print(f"[AIIA] Manually importing VibeVoice code from {load_path}...")
+            import configuration_vibevoice
+            import modeling_vibevoice
+            
+            # 3. Get Classes
+            VibeVoiceConfig = configuration_vibevoice.VibeVoiceConfig
+            VibeVoiceForConditionalGeneration = modeling_vibevoice.VibeVoiceForConditionalGeneration
+            
+            # 4. Register to Transformers
+            print(f"[AIIA] Registering 'vibevoice' architecture manually...")
+            AutoConfig.register("vibevoice", VibeVoiceConfig)
+            AutoModel.register(VibeVoiceConfig, VibeVoiceForConditionalGeneration)
+            
+            # 5. Load Config & Model
+            print("[AIIA] Loading VibeVoice via manual registration...")
+            config = VibeVoiceConfig.from_pretrained(load_path)
+            model = VibeVoiceForConditionalGeneration.from_pretrained(
+                load_path,
+                config=config,
+                torch_dtype=dtype,
+                device_map="auto"
+            )
+            
+            # Cleanup sys.path to avoid pollution
+            if sys_path_added:
+                sys.path.remove(load_path)
 
-        print(f"[AIIA] Loading AutoConfig from {load_path}...")
-        try:
-            config = AutoConfig.from_pretrained(load_path, trust_remote_code=True)
         except Exception as e:
-            print(f"[AIIA] AutoConfig load failed: {e}. Trying to proceed with Tokenizer...")
-
-        # Now load Tokenizer and Model
+            print(f"[AIIA] Manual registration failed: {e}")
+            if sys_path_added:
+                sys.path.remove(load_path)
+            raise e
+            
         tokenizer = AutoTokenizer.from_pretrained(load_path, trust_remote_code=True)
-        model = AutoModel.from_pretrained(
-            load_path, 
-            config=config, # Pass the loaded config
-            trust_remote_code=True, 
-            torch_dtype=dtype,
-            device_map="auto" # Let accelerate handle it if available
-        )
+        # Note: model is already loaded above manually
+
         
         # VibeVoice specific checks?
         # It's a TTS model, usually has a generate() method.
