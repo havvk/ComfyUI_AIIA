@@ -276,25 +276,40 @@ class AIIA_Audio_Enhance:
                         # 3. Valid Padding (from original source)
                         dwav = F.pad(dwav, (0, npad))
                         
-                        # 4. Run Model (using forward/__call__ as seen in source)
-                        # Original: hwav = model(dwav[None])[0].cpu()
-                        # We keep it on GPU if possible? 
-                        # Result of model(...) is likely on GPU.
-                        # The original source forces .cpu() immediately?
-                        # "hwav = model(dwav[None])[0].cpu()"
-                        # If we want to stay on GPU, we should remove .cpu()
+                        # 4. Run Model
+                        # We need to reconstruct the ODE solver call manually because we are bypassing the library's chunk runner.
+                        # The library does: hwav = model.ode_solve(dwav, t, solver=..., tau=...)
                         
-                        with torch.no_grad():
-                             # Input [1, T]
+                        # Retrieve parameters
+                        # Priority: 1. model.hp (if we injected it), 2. model.config, 3. Defaults
+                        nfe = 64
+                        solver = "midpoint"
+                        tau = 0.5
+                        
+                        if hasattr(model, "hp"):
+                             nfe = getattr(model.hp, "nfe", nfe)
+                             solver = getattr(model.hp, "solver", solver)
+                             tau = getattr(model.hp, "tau", tau)
+                        elif hasattr(model, "config"):
+                             nfe = getattr(model.config, "nfe", nfe)
+                             solver = getattr(model.config, "solver", solver)
+                             tau = getattr(model.config, "tau", tau)
+                             
+                        # DEBUG: Trace Execution
+                        print(f"[AIIA DEBUG] safe_inference_chunk: NFE={nfe}, Solver={solver}, Tau={tau}")
+                        
+                        t = torch.linspace(0, 1, nfe + 1, device=device)
+                        
+                        # EXECUTE
+                        if hasattr(model, "ode_solve"):
+                             hwav = model.ode_solve(dwav, t, solver=solver, tau=tau)
+                        else:
+                             # Fallback (Should not happen for EnhancerStage2)
+                             print("[AIIA DEBUG] WARNING: model has no ode_solve! Running forward pass only.")
                              out = model(dwav.unsqueeze(0))
-                             # Output [1, T]?
                              if isinstance(out, tuple): out = out[0]
                              hwav = out[0]
-                        
-                        # 5. Trim padding
-                        length = dwav.shape[-1] - npad
-                        hwav = hwav[:length]
-                        
+
                         # 6. Unnormalize with FLOAT
                         # hwav is on GPU (if we didn't force cpu), abs_max is float. Safe.
                         hwav = hwav * abs_max
