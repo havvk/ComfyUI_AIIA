@@ -491,10 +491,7 @@ class AIIA_Audio_Enhance:
                              hwav = hwav[..., :original_len]
                     
                     return hwav.cpu()
-                    elif hwav.shape[-1] < target_length:
-                         hwav = F.pad(hwav, (0, target_length - hwav.shape[-1]))
-                    
-                    return hwav.cpu()
+
 
                 # Apply Patch 1: Inference Chunk
                 inference_mod.inference_chunk = safe_inference_chunk
