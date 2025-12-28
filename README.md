@@ -426,6 +426,23 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `duration`: 时长秒数 (FLOAT)。
   - `channels`: 通道数 (INT)。
 
+#### 3.10 Microsoft VibeVoice (Beta)
+
+- **用途**: 微软最新的 1.5B TTS/音色克隆模型。音质非常惊人，但对环境要求较高。
+- **环境要求**:
+  - **Flash Attention 2**: 必须安装。
+  - **Wrappers**: `transformers >= 4.51`。
+- **节点**:
+  - `VibeVoice Loader`: 自动下载并加载 `microsoft/VibeVoice-1.5B`。
+  - `VibeVoice TTS`: 支持 Zero-shot 音色克隆（输入 `reference_audio` 即可）。
+- **手动下载 (Manual Download)**:
+  如果不希望节点自动下载，可以使用 hf 命令行手动下载到指定目录：
+  ```bash
+  # 推荐目录结构: ComfyUI/models/vibevoice/microsoft/VibeVoice-1.5B
+  hf download microsoft/VibeVoice-1.5B --local-dir models/vibevoice/microsoft/VibeVoice-1.5B
+  ```
+- **注意**: 由于官方 API 变动频繁，此功能目前标记为 Beta，若遇到环境报错请优先检查 `requirements.txt`。
+
 ### 4. 图像工具 (Image Utilities)
 
 #### Image Concatenate (AIIA Utils, Disk)
@@ -433,22 +450,12 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **用途**: 将两个图像序列（来自两个不同的目录）逐帧拼接在一起，非常适合创建**对比视频**或**多面板视频**。
 - **核心亮点 (OOM-Safe)**: 此节点**逐帧读取、处理和保存**，从不将整个图像序列加载到内存中，因此可以处理任意数量的帧。
 - **功能**:
+
   - 支持上下左右四个方向的拼接。
   - 可自动调整其中一个图像序列的尺寸以匹配另一个，并保持宽高比。
   - 可自定义背景填充颜色。
 - **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
-
 - **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
-
-#### 3.10 Microsoft VibeVoice (Beta)
-- **用途**: 微软最新的 1.5B TTS/音色克隆模型。音质非常惊人，但对环境要求较高。
-- **环境要求**:
-    - **Flash Attention 2**: 必须安装。
-    - **Wrappers**: `transformers >= 4.51`。
-- **节点**:
-    - `VibeVoice Loader`: 自动下载并加载 `microsoft/VibeVoice-1.5B`。
-    - `VibeVoice TTS`: 支持 Zero-shot 音色克隆（输入 `reference_audio` 即可）。
-- **注意**: 由于官方 API 变动频繁，此功能目前标记为 Beta，若遇到环境报错请优先检查 `requirements.txt`。
 
 ---
 
