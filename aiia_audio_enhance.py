@@ -384,35 +384,51 @@ class AIIA_Audio_Enhance:
                 
                 # Configure Params: FORCE INJECT EVERYWHERE (to fix Quality/Stripes)
 
-                # 5. Inject Parameters into the Model (Shotgun Approach)
-                # We must ensure specific internal variables are updated, otherwise the model might skip logic
-                # or use old values. Enhancer.forward uses self._eval_lambd to decide whether to skip.
-                
-                # Update Config/HP dataclasses
-                try:
-                    if hasattr(_cached_enhancer, "config"):
-                        object.__setattr__(_cached_enhancer.config, "nfe", nfe)
-                        object.__setattr__(_cached_enhancer.config, "solver", solver)
-                        object.__setattr__(_cached_enhancer.config, "tau", tau)
-                    
-                    if hasattr(_cached_enhancer, "hp"):
-                        object.__setattr__(_cached_enhancer.hp, "nfe", nfe)
-                        object.__setattr__(_cached_enhancer.hp, "solver", solver)
-                        object.__setattr__(_cached_enhancer.hp, "tau", tau)
-                        
-                    # CRITICAL: Update internal state variables used by forward()
-                    # forward() uses: lambd = self._eval_lambd
-                    # LCFM uses: tau = self._eval_tau
-                    if hasattr(_cached_enhancer, "_eval_lambd"):
-                        # lambd is typically 0 (skip) or >0 (run). If tau=0.5, lambd usually != 0.
-                        # We force it to be non-zero to ensure CFM runs.
-                         _cached_enhancer._eval_lambd = tau
-
-                    if hasattr(_cached_enhancer, "lcfm") and hasattr(_cached_enhancer.lcfm, "_eval_tau"):
-                         _cached_enhancer.lcfm._eval_tau = tau
+                # 5. Inject Parameters into the Model (Official Method)
+                # Found 'configurate_' in Enhancer source. Much cleaner than manual attribute hacking.
+                if hasattr(_cached_enhancer, "configurate_"):
+                    try:
+                         # lambd defaults to 0.5 in 'enhance' function, but we use tau for flow matching guidance.
+                         # The enhance function uses lambd=0.5, tau=0.5.
+                         # We passed 'tau' in argument. Using it for both if consistent?
+                         # Actually, 'lambd' controls denoiser strength (0-1).
+                         # 'tau' controls CFM prior temperature (0-1).
+                         # The node inputs say 'tau' (CFM). 
+                         # Let's set lambd to a reasonable default or expose it? 
+                         # The user node implementation doesn't seem to expose 'lambd' (denoise strength) separately?
+                         # Wait, the node HAS 'denoise' input? No, only 'nfe', 'solver', 'tau', 'chunk_seconds'...
+                         # Let's check INPUT_TYPES.
+                         # Ah, wait. If I look at my previous analysis, `lambd` is used for "denoiser strength".
+                         # If `lambd=0`, denoiser is skipped.
+                         # Generally we want denoiser + enhancer.
+                         # For now, I'll set lambd=0.5 (default) or 1.0?
+                         # The library default is 0.5.
                          
-                except Exception as e:
-                    print(f"[AIIA WARNING] Parameter injection failed: {e}")
+                         _cached_enhancer.configurate_(nfe=nfe, solver=solver, lambd=0.5, tau=tau)
+                         print(f"[AIIA DEBUG] Configured model: nfe={nfe}, solver={solver}, tau={tau}")
+                    except Exception as e:
+                         print(f"[AIIA WARNING] configurate_ failed: {e}")
+                else:
+                     print("[AIIA WARNING] Model has no configurate_ method. Using fallback injection.")
+                     try:
+                         if hasattr(_cached_enhancer, "config"):
+                             object.__setattr__(_cached_enhancer.config, "nfe", nfe)
+                             object.__setattr__(_cached_enhancer.config, "solver", solver)
+                             object.__setattr__(_cached_enhancer.config, "tau", tau)
+                         
+                         if hasattr(_cached_enhancer, "hp"):
+                             object.__setattr__(_cached_enhancer.hp, "nfe", nfe)
+                             object.__setattr__(_cached_enhancer.hp, "solver", solver)
+                             object.__setattr__(_cached_enhancer.hp, "tau", tau)
+                             
+                         # CRITICAL: Update internal state variables used by forward()
+                         if hasattr(_cached_enhancer, "_eval_lambd"):
+                              _cached_enhancer._eval_lambd = tau # Fallback behavior
+    
+                         if hasattr(_cached_enhancer, "lcfm") and hasattr(_cached_enhancer.lcfm, "_eval_tau"):
+                              _cached_enhancer.lcfm._eval_tau = tau
+                     except Exception as e:
+                         print(f"[AIIA WARNING] Parameter injection failed: {e}")
 
                 # 6. Monkey-Patch Inference (if not already)
                 import resemble_enhance.inference as inference_mod
