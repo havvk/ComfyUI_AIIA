@@ -146,13 +146,22 @@ class AIIA_CosyVoice_ModelLoader:
 
         model_dir = os.path.join(cosyvoice_path, local_name)
         
-        # Validation: Check if critical files exist
+        # Validation logic for V1/V2 vs V3
         yaml_path = os.path.join(model_dir, "cosyvoice.yaml")
+        yaml3_path = os.path.join(model_dir, "cosyvoice3.yaml")
         model_pt_path = os.path.join(model_dir, "model.pt")
         
+        # Check V3 specific files (flow.pt, llm.pt, hift.pt)
+        is_v3 = False
+        if os.path.exists(yaml3_path) or os.path.exists(os.path.join(model_dir, "flow.pt")):
+            is_v3 = True
+            
+        has_valid_model_file = os.path.exists(model_pt_path) or (os.path.exists(os.path.join(model_dir, "flow.pt")) and os.path.exists(os.path.join(model_dir, "llm.pt")))
+        has_valid_config = os.path.exists(yaml_path) or os.path.exists(yaml3_path)
+
         # Download if missing or incomplete
-        if not os.path.exists(model_dir) or not os.path.exists(yaml_path) or not os.path.exists(model_pt_path):
-            print(f"[AIIA] Model missing or incomplete (checked for cosyvoice.yaml and model.pt). Downloading {model_name} to {model_dir}...")
+        if not os.path.exists(model_dir) or not has_valid_config or not has_valid_model_file:
+            print(f"[AIIA] Model missing or incomplete. Downloading {model_name} to {model_dir}...")
             try:
                 snapshot_download(repo_id=repo_id, local_dir=model_dir)
             except Exception as e:
@@ -160,6 +169,15 @@ class AIIA_CosyVoice_ModelLoader:
                 raise e
         else:
              print(f"[AIIA] Model verified at {model_dir}")
+             
+        # Handling V3 Shim: CosyVoice class expects 'cosyvoice.yaml' hardcodedly
+        if os.path.exists(yaml3_path) and not os.path.exists(yaml_path):
+            import shutil
+            print(f"[AIIA] V3 Model detected. Creating shim: cosyvoice3.yaml -> cosyvoice.yaml")
+            try:
+                shutil.copy2(yaml3_path, yaml_path)
+            except Exception as e:
+                print(f"[AIIA] Warning: Failed to copy config file: {e}")
 
         # Load Model
         print(f"Loading CosyVoice model from {model_dir}...")
