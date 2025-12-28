@@ -60,8 +60,10 @@ def _install_resemble_if_needed():
                 from resemble_enhance.inference import enhance as eh, denoise as dn
                 enhance = eh
                 denoise = dn
-             except ImportError:
-                 print("[AIIA] Failed to import resemble_enhance even after install.")
+             except ImportError as e:
+                 print(f"[AIIA] Failed to import resemble_enhance even after install. Error: {e}")
+                 import traceback
+                 traceback.print_exc()
                  enhance = None
                  denoise = None
 
