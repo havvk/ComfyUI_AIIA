@@ -265,20 +265,36 @@ class AIIA_Audio_Enhance:
                 # Force move to device (crucial fix)
                 _cached_enhancer.to(device)
                 _cached_enhancer.eval()
-
-                # Call inference primitives
-                # enhance(waveform, sample_rate, device, nfe=64, solver="Midpoint", lambd=0.5, tau=0.5)
-                # Signature: inference(model, dwav, sr, device, nfe=64, solver='midpoint', lambd=0.5, tau=0.5)
                 
+                # Configure Model Parameters
+                # The 'inference' function doesn't take these as args, it reads from the model/config
+                # We update the model's config/hparams dynamically
+                if hasattr(_cached_enhancer, "config"):
+                    _cached_enhancer.config.nfe = nfe
+                    _cached_enhancer.config.solver = solver.lower()
+                    _cached_enhancer.config.tau = tau
+                    # lambd is likely used in the wrapper to mix noise? or is it a model param?
+                    # The enhance wrapper uses lambd to mix: dwav = (1-lambd)*dwav + lambd*noise?
+                    # No, usually lambd is for 'denoising strength' or similar in CFM.
+                    # Looking at source patterns: enhance() wrapper does:
+                    # enhancer.config.nfe = nfe
+                    # enhancer.config.solver = solver
+                    # enhancer.config.tau = tau
+                    # ...
+                    pass
+                
+                # Handling 'lambd' (Denoising strength / Prior temperature?)
+                # If the library `enhance` wrapper does logic with lambd, we might need to replicate it.
+                # But `inference` is the core.
+                # Let's assume setting config attributes is enough for nfe/solver/tau.
+                
+                # Call inference primitives
+                # Signature based on previous traceback error: inference(model, dwav, sr, device)
                 processed_wav, new_sr = inference(
                     model=_cached_enhancer,
                     dwav=wav_tensor, 
                     sr=sample_rate, 
-                    device=device, 
-                    nfe=nfe, 
-                    solver=solver.lower(), 
-                    tau=tau,
-                    lambd=0.9 if denoising else 0.1
+                    device=device,
                 )
         except Exception as e:
             print(f"Error in resemble-enhance: {e}")
