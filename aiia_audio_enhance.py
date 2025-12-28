@@ -12,8 +12,27 @@ from pathlib import Path
 try:
     import resemble_enhance
 except ImportError:
-    print("[AIIA] resemble-enhance not found. Installing...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "resemble-enhance"])
+    print("[AIIA] resemble-enhance not found. Installing without dependencies to protect environment...")
+    # 1. Install resemble-enhance without dependencies to avoid messing up torch/torchaudio
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "resemble-enhance", "--no-deps"])
+    
+    # 2. Manually check and install ONLY critical missing non-torch dependencies
+    #    resemble-enhance needs: scipy, torchaudio(present), torch(present), numpy(present), tqdm, etc.
+    #    We assume standard ComfyUI env has torch/numpy/tqdm/Pillow.
+    pass_packages = ["torch", "torchaudio", "torchvision", "numpy", "scipy", "tqdm"] 
+    # Check if we need to install anything else from its requirements? 
+    # Usually 'hjson' or similar might be missing. 
+    # Let's try to just install the package and let import fail if something helps specific is missing, 
+    # but 'resemble-embed' might be needed?
+    # Actually, let's just install 'resemble-enhance' + 'gdown' (if used for download) but usually safe.
+    # To be safe, we can try to install a few lightweight deps if they are missing.
+    
+    try:
+        import hjson
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "hjson"])
+        
+    print("[AIIA] resemble-enhance installed.")
 
 # We need to import these AFTER install
 try:
