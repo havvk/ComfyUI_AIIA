@@ -228,9 +228,12 @@ class AIIA_Audio_Enhance:
         
         # Convert to mono if needed?
         # The library seems to handle it, but typically it expects [1, T] or [T]
+        # ERROR FIXED: Library expects [T] (1D), got 2D.
         if wav_tensor.shape[0] > 1:
             # Simple mixdown for enhancement stability
-             wav_tensor = torch.mean(wav_tensor, dim=0, keepdim=True)
+             wav_tensor = torch.mean(wav_tensor, dim=0, keepdim=False)
+        elif wav_tensor.dim() == 2 and wav_tensor.shape[0] == 1:
+             wav_tensor = wav_tensor.squeeze(0)
         
         wav_tensor = wav_tensor.to(device)
         
