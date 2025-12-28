@@ -301,15 +301,15 @@ class AIIA_Audio_Enhance:
                         t = torch.linspace(0, 1, nfe + 1, device=device)
                         
                         # EXECUTE
+                        # Note: Inspection confirms this model uses .forward() which internally calls ode_solve
+                        # with the injected parameters (nfe, solver, tau).
+                        
                         if hasattr(model, "ode_solve"):
+                             # If explicitly present, use it.
                              hwav = model.ode_solve(dwav, t, solver=solver, tau=tau)
-                        elif hasattr(model, "lcfm") and hasattr(model.lcfm, "ode_solve"):
-                             # EnhancerStage2 typically has ode_solve, but maybe it's nested?
-                             print("[AIIA DEBUG] Found ode_solve in model.lcfm")
-                             hwav = model.lcfm.ode_solve(dwav, t, solver=solver, tau=tau)
                         else:
-                             # Fallback (Should not happen for EnhancerStage2)
-                             print("[AIIA DEBUG] WARNING: model has no ode_solve! Running forward pass only.")
+                             # Standard Path for EnhancerStage2
+                             print(f"[AIIA DEBUG] Running model forward pass (NFE={nfe})...")
                              out = model(dwav.unsqueeze(0))
                              if isinstance(out, tuple): out = out[0]
                              hwav = out[0]
