@@ -357,6 +357,24 @@ class AIIA_Audio_Enhance:
                     # Run
                     # Note: We do NOT move global mel_fn to device anymore.
                     # safe_inference_chunk returns CPU tensor, so merge_chunks (CPU) + mel_fn (CPU) is safe.
+                    
+                    # CLEANUP: In previous versions (1.4.56-60), we moved global mel_fn to CUDA.
+                    # If the ComfyUI process hasn't restarted, it might still be on CUDA!
+                    # We must FORCE it back to CPU to match our new strategy.
+                    try:
+                        import sys
+                        if "resemble_enhance.inference" in sys.modules:
+                             mod = sys.modules["resemble_enhance.inference"]
+                             if hasattr(mod, "mel_fn") and hasattr(mod.mel_fn, "to"):
+                                 mod.mel_fn.to("cpu")
+                                 
+                        if "resemble_enhance.audio" in sys.modules:
+                             mod = sys.modules["resemble_enhance.audio"]
+                             if hasattr(mod, "mel_fn") and hasattr(mod.mel_fn, "to"):
+                                 mod.mel_fn.to("cpu")
+                    except:
+                        pass
+                    
                     return inference(
                         model=_cached_enhancer,
                         dwav=wav_tensor.to(active_device), 
