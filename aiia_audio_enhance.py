@@ -300,7 +300,7 @@ class AIIA_Audio_Enhance:
                         hwav = hwav * abs_max
                         
                         # DEBUG: Verify device
-                        # print(f"[AIIA DEBUG] Chunk computed. Device before return: {hwav.device}")
+                        print(f"[AIIA DEBUG] Chunk computed. Device before return: {hwav.device}")
                         
                         return hwav.cpu()
 
@@ -308,14 +308,33 @@ class AIIA_Audio_Enhance:
                     inference_mod.inference_chunk = safe_inference_chunk
                     print("[AIIA] Monkey-patched inference_chunk for CUDA safety (v3).")
                     
-                    # Apply Patch 2: Merge Chunks (Safety Net)
-                    # Ensure all chunks are CPU before merging (because mel_fn is CPU)
+                    # Apply Patch 2: Merge Chunks (Safety Net + Debug)
                     if not hasattr(inference_mod, "original_merge_chunks"):
                         inference_mod.original_merge_chunks = inference_mod.merge_chunks
                         
                     def safe_merge_chunks(chunks, *args, **kwargs):
                         # Force CPU
                         cpu_chunks = [c.cpu() for c in chunks]
+                        
+                        # DIAGNOSTICS
+                        try:
+                             print(f"[AIIA DEBUG] safe_merge_chunks called with {len(chunks)} chunks.")
+                             if len(chunks) > 0:
+                                 print(f"[AIIA DEBUG] Chunk[0] device: {chunks[0].device} -> Forced to: {cpu_chunks[0].device}")
+                                 
+                             # Check MelFn Device
+                             if hasattr(inference_mod, "mel_fn"):
+                                 # mel_fn is a torch.nn.Module or partial?
+                                 if hasattr(inference_mod.mel_fn, "device"):
+                                      print(f"[AIIA DEBUG] inference.mel_fn.device: {inference_mod.mel_fn.device}")
+                                 elif hasattr(inference_mod.mel_fn, "parameters"):
+                                      p = next(inference_mod.mel_fn.parameters(), None)
+                                      if p is not None:
+                                           print(f"[AIIA DEBUG] inference.mel_fn param device: {p.device}")
+                                           
+                        except Exception as e:
+                             print(f"[AIIA DEBUG] Diagnostics failed: {e}")
+
                         return inference_mod.original_merge_chunks(cpu_chunks, *args, **kwargs)
                         
                     inference_mod.merge_chunks = safe_merge_chunks
