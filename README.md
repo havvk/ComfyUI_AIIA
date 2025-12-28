@@ -259,6 +259,20 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
         -   **2 (Denoise Only)**: 仅去噪。适合仅有底噪的音频。
     -   `use_cuda`: 是否使用 GPU (推荐)。
 -   **依赖**: 首次运行会自动安装 `voicefixer` 库。
+-   **⚠️ 模型下载问题 (Model Download Issues)**:
+    如果遇到下载卡顿或 `PytorchStreamReader` 报错，请尝试**手工下载**模型文件，并按以下结构放入 `ComfyUI/models/voicefixer` 目录中：
+    ```text
+    ComfyUI/models/voicefixer/
+    ├── analysis_module/
+    │   └── checkpoints/
+    │       └── vf.ckpt  (466MB)
+    └── synthesis_module/
+        └── 44100/
+            └── model.ckpt-1490000_trimed.pt (135MB)
+    ```
+    **下载地址 (Download Links)**:
+    *   **vf.ckpt**: [HuggingFace Mirror](https://huggingface.co/Diogodiogod/VoiceFixer-vf.ckpt/resolve/main/vf.ckpt) 或 [Zenodo](https://zenodo.org/record/5600188/files/vf.ckpt?download=1)
+    *   **model.ckpt-1490000_trimed.pt**: [HuggingFace Mirror](https://huggingface.co/Diogodiogod/VoiceFixer-model.ckpt-1490000_trimed.pt/resolve/main/model.ckpt-1490000_trimed.pt) 或 [Zenodo](https://zenodo.org/record/5513378/files/model.ckpt-1490000_trimed.pt?download=1)
 
 #### 3.4 Audio Splice Analyzer (AIIA Debug)
 -   **用途**: 可视化验证音频拼接质量。
