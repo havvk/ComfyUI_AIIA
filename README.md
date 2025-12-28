@@ -438,6 +438,18 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - 可自定义背景填充颜色。
 - **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
 
+- **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
+
+#### 3.10 Microsoft VibeVoice (Beta)
+- **用途**: 微软最新的 1.5B TTS/音色克隆模型。音质非常惊人，但对环境要求较高。
+- **环境要求**:
+    - **Flash Attention 2**: 必须安装。
+    - **Wrappers**: `transformers >= 4.51`。
+- **节点**:
+    - `VibeVoice Loader`: 自动下载并加载 `microsoft/VibeVoice-1.5B`。
+    - `VibeVoice TTS`: 支持 Zero-shot 音色克隆（输入 `reference_audio` 即可）。
+- **注意**: 由于官方 API 变动频繁，此功能目前标记为 Beta，若遇到环境报错请优先检查 `requirements.txt`。
+
 ---
 
 ## ❓ 故障排查
