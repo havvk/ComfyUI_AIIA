@@ -45,22 +45,34 @@ def _install_resemble_if_needed():
         pass_packages = ["torch", "torchaudio", "torchvision", "numpy", "scipy", "tqdm"] 
         
         # MOCK DEEPSPEED to prevent import error (we only need inference)
-        from unittest.mock import MagicMock
+        # DeepSpeed is a heavy training dependency that is hard to install.
+        # We use a custom Importer to intercept ALL deepspeed submodules dynamically.
         if "deepspeed" not in sys.modules:
-            print("[AIIA] Mocking DeepSpeed to bypass dependency check...")
-            # We must mock the package AND the submodules that are imported
-            ds_mock = MagicMock()
-            ds_mock.__path__ = [] # Pretend to be a package
-            ds_mock.__spec__ = None # Fix for __spec__ error
-            ds_mock.__file__ = "mock_deepspeed.py"
-            ds_mock.__name__ = "deepspeed"
-            ds_mock.__loader__ = None
-            ds_mock.__package__ = "deepspeed"
-            
-            sys.modules["deepspeed"] = ds_mock
-            
-            # Submodules must be in sys.modules too
-            sys.modules["deepspeed.accelerator"] = MagicMock()
+            print("[AIIA] Mocking DeepSpeed via sys.meta_path...")
+            from importlib.abc import MetaPathFinder, Loader
+            from importlib.machinery import ModuleSpec
+            from unittest.mock import MagicMock
+
+            class DeepSpeedImportMocker(MetaPathFinder, Loader):
+                def find_spec(self, fullname, path, target=None):
+                    if fullname.startswith("deepspeed"):
+                        return ModuleSpec(fullname, self)
+                    return None
+
+                def create_module(self, spec):
+                    m = MagicMock()
+                    m.__path__ = []
+                    m.__file__ = "mock_deepspeed_dynamic.py"
+                    m.__loader__ = self
+                    m.__spec__ = spec
+                    # Allow attribute access to return new mocks (default MagicMock behavior)
+                    return m
+
+                def exec_module(self, module):
+                    pass
+
+            # Register globally
+            sys.meta_path.insert(0, DeepSpeedImportMocker())
             
         try:
             import hjson
