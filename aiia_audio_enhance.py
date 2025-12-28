@@ -255,60 +255,55 @@ class AIIA_Audio_Enhance:
                 processed_wav, new_sr = denoise(wav_tensor, sample_rate, device)
             else:
                 # 1. FIX CUDA Device Mismatch (Monkey Patch)
-                # The library crashes on 'hwav * abs_max' because abs_max is a CUDA tensor scalar
-                # and PyTorch sometimes dislikes mixing it with model output if types mismatch strictly?
-                # Or simply making it a float is safer.
                 try:
                     import resemble_enhance.inference as inference_mod
+                    import torch.nn.functional as F
                     
                     # Store original if not already patched
                     if not hasattr(inference_mod, "original_inference_chunk"):
                         inference_mod.original_inference_chunk = inference_mod.inference_chunk
                         
-                    # Define safe chunk inference
-                    def safe_inference_chunk(model, chunk, sr, device):
-                        # Chunk is [T]
+                    # Define safe chunk inference (Based on inspected source)
+                    def safe_inference_chunk(model, dwav, sr, device, npad=441):
                         # 1. Calculate abs_max as FLOAT (CPU Scalar)
                         # This prevents "Expected all tensors to be on same device" when multiplying later
-                        abs_max = float(chunk.abs().max()) + 1e-6
+                        abs_max = float(dwav.abs().max().clamp(min=1e-7))
                         
                         # 2. Normalize
-                        chunk = chunk / abs_max
+                        dwav = dwav.to(device)
+                        dwav = dwav / abs_max
                         
-                        # 3. Call original logic?
-                        # Using original logic but we need to inject the float abs_max handling.
-                        # Since we can't inject into a compiled function, we must reimplement the FEW lines 
-                        # of inference_chunk from source.
-                        # Source:
-                        # def inference_chunk(model, dwav, sr, device):
-                        #     abs_max = dwav.abs().max()
-                        #     dwav = dwav / abs_max  <- we did this
-                        #     dwav = dwav.to(device)
-                        #     t = torch.linspace(0, 1, model.config.nfe + 1, device=device)
-                        #     hwav = model.ode_solve(dwav, t, solver=model.config.solver, tau=model.config.tau)
-                        #     hwav = hwav * abs_max
-                        #     return hwav
+                        # 3. Valid Padding (from original source)
+                        dwav = F.pad(dwav, (0, npad))
                         
-                        chunk = chunk.to(device)
-                        # Fix: Handle missing config by providing defaults or injecting
-                        nfe = getattr(model.config, "nfe", 64) if hasattr(model, "config") else 64
-                        t = torch.linspace(0, 1, model.config.nfe + 1, device=device)
+                        # 4. Run Model (using forward/__call__ as seen in source)
+                        # Original: hwav = model(dwav[None])[0].cpu()
+                        # We keep it on GPU if possible? 
+                        # Result of model(...) is likely on GPU.
+                        # The original source forces .cpu() immediately?
+                        # "hwav = model(dwav[None])[0].cpu()"
+                        # If we want to stay on GPU, we should remove .cpu()
                         
-                        # Solver
-                        # Check if model has ode_solve (EnhancerStage2)
-                        if hasattr(model, "ode_solve"):
-                             hwav = model.ode_solve(chunk, t, solver=solver_val, tau=tau_val)
-                        else:
-                             # Fallback if API changes
-                             hwav = chunk
-                             
-                        # 4. Unnormalize with FLOAT
+                        with torch.no_grad():
+                             # Input [1, T]
+                             out = model(dwav.unsqueeze(0))
+                             # Output [1, T]?
+                             if isinstance(out, tuple): out = out[0]
+                             hwav = out[0]
+                        
+                        # 5. Trim padding
+                        length = dwav.shape[-1] - npad
+                        hwav = hwav[:length]
+                        
+                        # 6. Unnormalize with FLOAT
+                        # hwav is on GPU (if we didn't force cpu), abs_max is float. Safe.
                         hwav = hwav * abs_max
+                        
                         return hwav
 
                     # Apply Patch
                     inference_mod.inference_chunk = safe_inference_chunk
-                    print("[AIIA] Monkey-patched resemble_enhance.inference_chunk for CUDA safety.")
+                    print("[AIIA] Monkey-patched resemble_enhance.inference_chunk for CUDA safety (v2).")
                     
                 except ImportError:
                     pass
@@ -359,21 +354,6 @@ class AIIA_Audio_Enhance:
                     _cached_enhancer.to(active_device)
                     _cached_enhancer.eval()
                     
-                    # DEBUG: Check model structure
-                    if not hasattr(_cached_enhancer, "ode_solve"):
-                        print(f"[AIIA DEBUG] Model type: {type(_cached_enhancer)}")
-                        print(f"[AIIA DEBUG] Model dir: {dir(_cached_enhancer)}")
-                        
-                        # DEBUG: Inspect Original Code to see what it calls!
-                        try:
-                            import inspect
-                            import resemble_enhance.inference as inference_mod_inner
-                            if hasattr(inference_mod_inner, "original_inference_chunk"):
-                                src = inspect.getsource(inference_mod_inner.original_inference_chunk)
-                                print(f"[AIIA DEBUG] Original inference_chunk source:\n{src}")
-                        except Exception as e:
-                            print(f"[AIIA DEBUG] Failed to inspect source: {e}")
-
                     # Fix: Move global mel_fn if it exists (fixes 'stft input and window' error)
                     # The library uses a global mel_fn for chunk merging, which stays on CPU by default.
                     
