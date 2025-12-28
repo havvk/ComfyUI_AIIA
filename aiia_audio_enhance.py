@@ -434,7 +434,86 @@ class AIIA_Audio_Enhance:
                     # 3. Create Time Steps
                     t = torch.linspace(0, 1, nfe + 1, device=device)
                     
-                    # EXECUTE            if "device" in str(e) and device != "cpu":
+                    # EXECUTE
+                    # Use standard forward pass (verified to trigger CFM Solver if configured correctly)
+                    # We injected _eval_lambd/tau above to ensure it runs.
+                    
+                    if hasattr(model, "ode_solve"):
+                         hwav = model.ode_solve(dwav, t, solver=solver, tau=tau)
+                    else:
+                         print(f"[AIIA DEBUG] Running model forward pass (NFE={nfe})...")
+                         out = model(dwav.unsqueeze(0))
+                         if isinstance(out, tuple): out = out[0]
+                         hwav = out[0]
+
+                    # 6. Unnormalize with FLOAT
+                    # hwav is on GPU here. 'abs_max' might be on CPU (float).
+                    hwav = hwav * abs_max
+                    
+                    # 7. Strict Length Trimming (Fix Tensor Mismatch)
+                    target_length = dwav.shape[-1] - npad
+                    if hwav.shape[-1] > target_length:
+                        hwav = hwav[..., :target_length]
+                    elif hwav.shape[-1] < target_length:
+                         hwav = F.pad(hwav, (0, target_length - hwav.shape[-1]))
+                    
+                    return hwav.cpu()
+
+                # Apply Patch 1: Inference Chunk
+                inference_mod.inference_chunk = safe_inference_chunk
+                print("[AIIA] Monkey-patched inference_chunk for CUDA safety (v4).")
+                
+                # Apply Patch 2: Merge Chunks (Safety Net)
+                if not hasattr(inference_mod, "original_merge_chunks"):
+                    inference_mod.original_merge_chunks = inference_mod.merge_chunks
+
+                def safe_merge_chunks(chunks):
+                    # Force all chunks to CPU before merging
+                    try:
+                        cpu_chunks = [c.cpu() if hasattr(c, 'cpu') else c for c in chunks]
+                        return inference_mod.original_merge_chunks(cpu_chunks)
+                    except RuntimeError as e:
+                         print(f"[AIIA ERROR] Merge chunks failed: {e}")
+                         # Debug shapes
+                         for i, c in enumerate(chunks):
+                             if hasattr(c, 'shape'):
+                                 print(f"Chunk {i}: shape={c.shape}, device={c.device}")
+                         raise e
+
+                inference_mod.merge_chunks = safe_merge_chunks
+                print("[AIIA] Monkey-patched merge_chunks for CPU safety.")
+
+                def run_inference_safe(active_device):
+                    # Force move model
+                    _cached_enhancer.to(active_device)
+                    
+                    # CLEANUP: Force mel_fn to CPU (ghost fix)
+                    try:
+                        import sys
+                        if "resemble_enhance.inference" in sys.modules:
+                             mod = sys.modules["resemble_enhance.inference"]
+                             if hasattr(mod, "mel_fn") and hasattr(mod.mel_fn, "to"):
+                                 mod.mel_fn.to("cpu")
+                                 
+                        if "resemble_enhance.audio" in sys.modules:
+                             mod = sys.modules["resemble_enhance.audio"]
+                             if hasattr(mod, "mel_fn") and hasattr(mod.mel_fn, "to"):
+                                 mod.mel_fn.to("cpu")
+                    except:
+                        pass
+                    
+                    return inference(
+                        model=_cached_enhancer,
+                        dwav=wav_tensor.to(active_device), 
+                        sr=sample_rate, 
+                        device=active_device,
+                    )
+
+                try:
+                    # Try on requested device
+                    processed_wav, new_sr = run_inference_safe(device)
+                except RuntimeError as e:
+                    if "device" in str(e) and device != "cpu":
                         print(f"[AIIA] Device mismatch error on {device}. Retrying on CPU (fallback)...")
                         # Clear cache or just move?
                         try:
