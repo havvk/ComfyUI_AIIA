@@ -196,7 +196,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
         -   `Specified`: 手动指定输出秒数。
         -   `normalize`: 开启后将自动防止音量叠加导致的破音。
 
-#### 3.3 智能切片与 CosyVoice (Smart Chunking & Voice Conversion)
+#### 3.3 智能切片 (Smart Chunking)
 
 **Audio Smart Chunker (Silence-based)**
 -   **用途**: 全量扫描长音频，寻找最优切片方案。
@@ -206,7 +206,8 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 -   **输出**: 供 `Voice Conversion (AIIA Unlimited)` 使用的 `whisper_chunks` 引导数据。
 -   **协同优势**: 预先规划好切点，避免转换节点在词句中间暴力切分，是彻底消除拼接毛刺的关键。
 
-**Voice Conversion (AIIA Unlimited)** (CosyVoice 增强)
+#### 3.4 Voice Conversion (AIIA Unlimited) (CosyVoice 增强)
+
 -   **用途**: 增强版语音转换节点，解决了原版 CosyVoice3 只能转换 30 秒内语音的限制。
 -   **🔥 核心突破**: **全球首个突破时长限制的 ComfyUI 节点**。通过创新的静音点智能切片技术，本节点彻底突破了 CosyVoice 3 官方模型“建议 20 秒、最长 60 秒”的生成限制。它实现了**真正无限时长的音色克隆**，且拼接处自然无痕，完美满足长篇教学视频、有声书等专业制作需求。
 -   **创新设计 (创新亮点)**:
@@ -221,7 +222,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     -   `chunk_size`: 目标切片大小（默认 25 秒）。
     -   `overlap_size`: 重叠大小，用于平滑衔接。
 
-#### 3.4 智能音频降噪 (VoiceFixer)
+#### 3.5 智能音频降噪 (VoiceFixer)
 -   **用途**: 使用 AI 模型去除 CosyVoice 等生成式语音中的底噪、电音、混响及破音。
 -   **核心优势**: 相比数学滤波器，它能“听懂”人声，保留人声细节的同时去除背景杂音。
 -   **参数**:
@@ -246,7 +247,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     *   **vf.ckpt**: [HuggingFace Mirror](https://huggingface.co/Diogodiogod/VoiceFixer-vf.ckpt/resolve/main/vf.ckpt) 或 [Zenodo](https://zenodo.org/record/5600188/files/vf.ckpt?download=1)
     *   **model.ckpt-1490000_trimed.pt**: [HuggingFace Mirror](https://huggingface.co/Diogodiogod/VoiceFixer-model.ckpt-1490000_trimed.pt/resolve/main/model.ckpt-1490000_trimed.pt) 或 [Zenodo](https://zenodo.org/record/5513378/files/model.ckpt-1490000_trimed.pt?download=1)
 
-#### 3.5 Audio Post-Process (Resample/Fade/Norm)
+#### 3.6 Audio Post-Process (Resample/Fade/Norm)
 -   **用途**: 音频后期处理“母带”节点。
 -   **功能**:
     -   **Resample**: 使用高精度算法（sinc_interp_hann）将音频上采样至 44.1kHz 或 48kHz，改善听感清晰度。
@@ -256,7 +257,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     -   **Normalize**: 将音量标准化至 -1dB，确保输出响度饱满且不破音。
 -   **场景**: 建议串联在 `Voice Conversion` 节点之后使用。
 
-#### 3.6 Audio Splice Analyzer (AIIA Debug)
+#### 3.7 Audio Splice Analyzer (AIIA Debug)
 -   **用途**: 可视化验证音频拼接质量。
 -   **功能**: 
     -   生成 Log-Mel 语谱图 (Spectrogram)。
