@@ -51,6 +51,12 @@ def _install_resemble_if_needed():
             # We must mock the package AND the submodules that are imported
             ds_mock = MagicMock()
             ds_mock.__path__ = [] # Pretend to be a package
+            ds_mock.__spec__ = None # Fix for __spec__ error
+            ds_mock.__file__ = "mock_deepspeed.py"
+            ds_mock.__name__ = "deepspeed"
+            ds_mock.__loader__ = None
+            ds_mock.__package__ = "deepspeed"
+            
             sys.modules["deepspeed"] = ds_mock
             
             # Submodules must be in sys.modules too
