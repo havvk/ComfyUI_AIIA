@@ -5,7 +5,88 @@ import random
 import tempfile
 import soundfile as sf
 from typing import Dict, Any, Tuple, List
-import folder_paths
+import sys
+import subprocess
+from huggingface_hub import snapshot_download
+
+def _install_cosyvoice():
+    try:
+        import cosyvoice
+        return
+    except ImportError:
+        print("Installing cosyvoice...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "cosyvoice", "modelscope", "torchaudio", "hyperpyyaml", "onnxruntime"], env=os.environ)
+        except Exception as e:
+            print(f"Failed to install cosyvoice: {e}")
+            print("Please manually install 'cosyvoice' into your python environment.")
+
+_install_cosyvoice()
+
+try:
+    from cosyvoice.cli.cosyvoice import CosyVoice
+except ImportError:
+    CosyVoice = None # Handle missing import gracefully during node definition
+
+class AIIA_CosyVoice_ModelLoader:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model_name": ([
+                    "CosyVoice-300M",
+                    "CosyVoice-300M-SFT",
+                    "CosyVoice-300M-Instruct", 
+                    "CosyVoice-ttsfrd"
+                ],),
+                "use_fp16": ("BOOLEAN", {"default": True}),
+            }
+        }
+
+    RETURN_TYPES = ("COSYVOICE_MODEL",)
+    RETURN_NAMES = ("model",)
+    FUNCTION = "load_model"
+    CATEGORY = "AIIA/Loaders"
+
+    def load_model(self, model_name, use_fp16):
+        if CosyVoice is None:
+            raise ImportError("CosyVoice package is not installed. Please install it manually or check internet connection for auto-install.")
+
+        # Setup paths
+        base_path = folder_paths.models_dir
+        cosyvoice_path = os.path.join(base_path, "cosyvoice")
+        model_dir = os.path.join(cosyvoice_path, model_name)
+        
+        # Download if missing
+        if not os.path.exists(model_dir):
+            print(f"Downloading {model_name} to {model_dir}...")
+            repo_id = f"FunAudioLLM/{model_name}"
+            # Trying huggingface first
+            try:
+                snapshot_download(repo_id=repo_id, local_dir=model_dir)
+            except Exception as e:
+                print(f"Failed to download from HF: {e}. Trying ModelScope is typically handled by CosyVoice internal, but we need the files locally.")
+                raise e
+
+        # Load Model
+        print(f"Loading CosyVoice model from {model_dir}...")
+        # CosyVoice init signature: (model_dir, load_jit=True/False, load_onnx=False, fp16=True/False)
+        # Note: API might vary slightly by version, but standard usage is init with dir.
+        
+        # We need to temporarily add model_dir to sys.path if customized code exists? 
+        # Usually CosyVoice loads yaml config.
+        
+        # NOTE: Allow using gpu if available is handled by Torch internally?
+        # User requested explicit Load, but CosyVoice() usually auto-detects device or accepts it.
+        # Checking source code of CosyVoice: it usually moves to CUDA if available.
+        
+        try:
+           model_instance = CosyVoice(model_dir) # Default initialization
+        except Exception as e:
+           raise RuntimeError(f"Failed to initialize CosyVoice model: {e}")
+           
+        # IMPORTANT: The Voice Conversion node expects 'model' key.
+        return ({"model": model_instance},)
 
 class AIIA_CosyVoice_VoiceConversion:
     @classmethod
@@ -217,5 +298,11 @@ class AIIA_CosyVoice_VoiceConversion:
         finally:
             if os.path.exists(source_path): os.unlink(source_path)
 
-NODE_CLASS_MAPPINGS = {"AIIA_CosyVoice_VoiceConversion": AIIA_CosyVoice_VoiceConversion}
-NODE_DISPLAY_NAME_MAPPINGS = {"AIIA_CosyVoice_VoiceConversion": "Voice Conversion (AIIA Unlimited)"}
+NODE_CLASS_MAPPINGS = {
+    "AIIA_CosyVoice_ModelLoader": AIIA_CosyVoice_ModelLoader,
+    "AIIA_CosyVoice_VoiceConversion": AIIA_CosyVoice_VoiceConversion
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIIA_CosyVoice_ModelLoader": "CosyVoice Model Loader (AIIA)",
+    "AIIA_CosyVoice_VoiceConversion": "Voice Conversion (AIIA Unlimited)"
+}
