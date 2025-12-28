@@ -1,5 +1,6 @@
 # /app/ComfyUI/custom_nodes/ComfyUI_AIIA/__init__.py
-print("--- 正在加载 ComfyUI_AIIA 自定义节点包 ---") # 中文注释
+print(f"--- 正在加载 ComfyUI_AIIA 自定义节点包 (Module: {__name__}) ---")
+# print(f"    File: {__file__}") # Optional debug
 
 # 初始化空的映射字典
 NODE_CLASS_MAPPINGS = {}
