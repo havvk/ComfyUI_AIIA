@@ -225,22 +225,23 @@ class AIIA_CosyVoice_ModelLoader:
         
         try:
             # Import specific classes from the CLI module since we need V3 support
-            from cosyvoice.cli.cosyvoice import CosyVoice, CosyVoice2, CosyVoice3
+            # Use aliases to avoid UnboundLocalError shadowing the global 'CosyVoice' variable
+            from cosyvoice.cli.cosyvoice import CosyVoice as CV1, CosyVoice2 as CV2, CosyVoice3 as CV3
             
             # Smart loading logic
             if os.path.exists(os.path.join(model_dir, "cosyvoice3.yaml")):
                 print("[AIIA] Detected V3 Model. Using CosyVoice3 class.")
-                model_instance = CosyVoice3(model_dir)
+                model_instance = CV3(model_dir)
             elif os.path.exists(os.path.join(model_dir, "cosyvoice2.yaml")):
                 print("[AIIA] Detected V2 Model. Using CosyVoice2 class.")
-                model_instance = CosyVoice2(model_dir)
+                model_instance = CV2(model_dir)
             else:
                 print("[AIIA] Detected V1 Model (or default). Using CosyVoice class.")
-                model_instance = CosyVoice(model_dir)
+                model_instance = CV1(model_dir)
                 
         except ImportError:
-             # Fallback if library is old (though we clone explicit one, user might have old conflicting one)
-             print("[AIIA] Warning: Advanced CosyVoice classes not found. Fallback to default.")
+             # Fallback if library is old
+             print("[AIIA] Warning: Advanced CosyVoice classes not found. Fallback to default global class.")
              model_instance = CosyVoice(model_dir)
         except Exception as e:
            raise RuntimeError(f"Failed to initialize CosyVoice model: {e}")
