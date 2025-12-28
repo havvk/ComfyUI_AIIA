@@ -146,14 +146,20 @@ class AIIA_CosyVoice_ModelLoader:
 
         model_dir = os.path.join(cosyvoice_path, local_name)
         
-        # Download if missing
-        if not os.path.exists(model_dir):
-            print(f"[AIIA] Downloading {model_name} to {model_dir}...")
+        # Validation: Check if critical files exist
+        yaml_path = os.path.join(model_dir, "cosyvoice.yaml")
+        model_pt_path = os.path.join(model_dir, "model.pt")
+        
+        # Download if missing or incomplete
+        if not os.path.exists(model_dir) or not os.path.exists(yaml_path) or not os.path.exists(model_pt_path):
+            print(f"[AIIA] Model missing or incomplete (checked for cosyvoice.yaml and model.pt). Downloading {model_name} to {model_dir}...")
             try:
                 snapshot_download(repo_id=repo_id, local_dir=model_dir)
             except Exception as e:
                 print(f"Failed to download from HF: {e}. Checking if ModelScope works...")
                 raise e
+        else:
+             print(f"[AIIA] Model verified at {model_dir}")
 
         # Load Model
         print(f"Loading CosyVoice model from {model_dir}...")

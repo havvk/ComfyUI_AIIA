@@ -75,6 +75,7 @@
 
 ### 2. 安装 NeMo 模型 (音频AI节点必须)
 音频处理节点（如说话人日志）依赖 NeMo 模型。
+
 -   在 ComfyUI 的 `models` 目录下，创建一个名为 `nemo_models` 的子目录。最终路径应为 `ComfyUI/models/nemo_models/`。
 -   从 [NVIDIA NeMo 目录](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/diar_sortformer_telephonic_tele_ft_marblenet) 下载所需的 `.nemo` 模型文件。
     -   基础模型: `diar_sortformer_4spk-v1.nemo`
