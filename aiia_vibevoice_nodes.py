@@ -80,6 +80,8 @@ class AIIA_VibeVoice_Loader:
         # Strategy: Load available code (likely from 0.5B repo) and alias it to load 1.5B weights
         
         import importlib.util
+        import re
+        import types
         try:
             # We look for the files user copied from 'modular' folder
             # Note: The file names in GitHub repo are specific
