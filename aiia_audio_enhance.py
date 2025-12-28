@@ -303,6 +303,10 @@ class AIIA_Audio_Enhance:
                         # EXECUTE
                         if hasattr(model, "ode_solve"):
                              hwav = model.ode_solve(dwav, t, solver=solver, tau=tau)
+                        elif hasattr(model, "lcfm") and hasattr(model.lcfm, "ode_solve"):
+                             # EnhancerStage2 typically has ode_solve, but maybe it's nested?
+                             print("[AIIA DEBUG] Found ode_solve in model.lcfm")
+                             hwav = model.lcfm.ode_solve(dwav, t, solver=solver, tau=tau)
                         else:
                              # Fallback (Should not happen for EnhancerStage2)
                              print("[AIIA DEBUG] WARNING: model has no ode_solve! Running forward pass only.")
@@ -311,11 +315,19 @@ class AIIA_Audio_Enhance:
                              hwav = out[0]
 
                         # 6. Unnormalize with FLOAT
-                        # hwav is on GPU (if we didn't force cpu), abs_max is float. Safe.
+                        # hwav is on GPU
                         hwav = hwav * abs_max
                         
-                        # DEBUG: Verify device
-                        # print(f"[AIIA DEBUG] Chunk computed. Device before return: {hwav.device}")
+                        # 7. Strict Length Trimming (Fix Tensor Mismatch)
+                        # We must return exactly 'length' samples (original length before padding)
+                        # dwav was padded by npad.
+                        # Original logic: length = dwav.shape[-1] - npad; hwav = hwav[:length]
+                        target_length = dwav.shape[-1] - npad
+                        if hwav.shape[-1] > target_length:
+                            hwav = hwav[..., :target_length]
+                        elif hwav.shape[-1] < target_length:
+                             # Pad if too short (rare but possible with some models)
+                             hwav = F.pad(hwav, (0, target_length - hwav.shape[-1]))
                         
                         return hwav.cpu()
 
