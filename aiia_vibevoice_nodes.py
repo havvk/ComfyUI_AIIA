@@ -24,7 +24,7 @@ class AIIA_VibeVoice_Loader:
         print(f"[AIIA] Loading VibeVoice model: {model_name} ({precision})...")
         
         try:
-            from transformers import AutoTokenizer, AutoModel, AutoConfig
+            from transformers import AutoTokenizer, AutoModel, AutoConfig, Qwen2TokenizerFast
             import transformers
             print(f"[AIIA] Transformers version: {transformers.__version__}")
         except ImportError:
@@ -61,7 +61,6 @@ class AIIA_VibeVoice_Loader:
         # Fix for "KeyError: vibevoice":
         # Strategy: Manually import the model code and register it to AutoConfig/AutoModel
         
-        vibe_tokenizer_class = None
         sys_path_added = False
 
         import importlib.util
@@ -143,15 +142,13 @@ class AIIA_VibeVoice_Loader:
             # 2. Register Config
             AutoConfig.register("vibevoice", VibeVoiceConfig)
             
-            # 3. Capture Tokenizer Class
-            if "modular_vibevoice_tokenizer" in sys.modules:
-                mod = sys.modules["modular_vibevoice_tokenizer"]
-                if hasattr(mod, "VibeVoiceTokenizer"):
-                     vibe_tokenizer_class = mod.VibeVoiceTokenizer
-                     try:
-                        from transformers.models.auto.tokenization_auto import TOKENIZER_MAPPING
-                        TOKENIZER_MAPPING.register(VibeVoiceConfig, (vibe_tokenizer_class, None))
-                     except: pass
+            # 3. Register Tokenizer mapping for this config
+            # VibeVoice uses Qwen2Tokenizer
+            try:
+                from transformers.models.auto.tokenization_auto import TOKENIZER_MAPPING
+                TOKENIZER_MAPPING.register(VibeVoiceConfig, (Qwen2TokenizerFast, None))
+            except: 
+                pass
 
             # 4. Get Model Class
             if "modeling_vibevoice_streaming_inference" in sys.modules:
@@ -190,12 +187,39 @@ class AIIA_VibeVoice_Loader:
             raise e
             
         # 7. Load Tokenizer
-        if vibe_tokenizer_class:
-             print(f"[AIIA] Loading tokenizer using explicit class: {vibe_tokenizer_class.__name__}")
-             tokenizer = vibe_tokenizer_class.from_pretrained(load_path)
-        else:
-             print("[AIIA] Loading tokenizer using AutoTokenizer (fallback)...")
-             tokenizer = AutoTokenizer.from_pretrained(load_path, trust_remote_code=True)
+        # Try finding Qwen tokenizer path
+        tokenizer_load_path = load_path
+        
+        # Check subfolders for Qwen tokenizer files
+        possible_tokenizer_paths = [
+            os.path.join(model_path, "tokenizer"), # ../models/vibevoice/tokenizer
+            os.path.join(load_path, "tokenizer"),  # ../models/vibevoice/VibeVoice-1.5B/tokenizer
+            load_path # Root
+        ]
+        
+        tokenizer = None
+        
+        # First try AutoTokenizer with our registration
+        try:
+             print("[AIIA] Attempting AutoTokenizer...")
+             tokenizer = AutoTokenizer.from_pretrained(tokenizer_load_path, trust_remote_code=True)
+        except Exception as e:
+             print(f"[AIIA] AutoTokenizer failed ({e}), attempting fallback to Qwen2TokenizerFast...")
+             
+             # Try fallback paths
+             for path in possible_tokenizer_paths:
+                 if os.path.exists(path) and (os.path.exists(os.path.join(path, "tokenizer.json")) or os.path.exists(os.path.join(path, "vocab.json"))):
+                     print(f"[AIIA] Found tokenizer files at {path}")
+                     try:
+                        tokenizer = Qwen2TokenizerFast.from_pretrained(path)
+                        break
+                     except Exception as te:
+                        print(f"[AIIA] Failed to load tokenizer from {path}: {te}")
+        
+        if tokenizer is None:
+             raise RuntimeError("Could not load tokenizer. Please ensure Qwen2.5-1.5B tokenizer files (tokenizer.json, vocab.json, merges.txt) are present in the model directory or a 'tokenizer' subdirectory.")
+             
+        print(f"[AIIA] Tokenizer loaded: {tokenizer.__class__.__name__}")
         
         model.eval()
         
