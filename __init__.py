@@ -2,16 +2,19 @@
 # print(f"--- 正在加载 ComfyUI_AIIA 自定义节点包 (Module: {__name__}) ---") 
 
 # 防止多次重复加载 (Double Import Guard)
-# ComfyUI 有时会通过不同路径加载同一个包，导致初始化运行两次。
-# 我们只允许 "ComfyUI_AIIA" 或 "custom_nodes.ComfyUI_AIIA" 这样的标准导入，
-# 阻止类似 "/app/ComfyUI/..." 这种绝对路径的导入。
-if __name__ != "ComfyUI_AIIA" and "custom_nodes" not in __name__:
-    # print(f"[ComfyUI_AIIA] 忽略非标准路径导入: {__name__}")
+# 之前的检查失败了，因为绝对路径 "/app/ComfyUI/custom_nodes/..." 也包含 "custom_nodes"。
+# 我们通过检查是否存在路径分隔符来过滤绝对路径导入。
+import os
+if os.path.sep in __name__ or "/" in __name__ or "\\" in __name__:
+    # print(f"[ComfyUI_AIIA] 忽略路径式导入: {__name__}")
     NODE_CLASS_MAPPINGS = {}
     NODE_DISPLAY_NAME_MAPPINGS = {}
-    # 我们直接返回，避免执行后续的导入逻辑
+elif __name__ != "ComfyUI_AIIA" and "custom_nodes" not in __name__ and "ComfyUI_AIIA" not in __name__:
+    # 额外的安全性检查，虽然通常不需要
+    NODE_CLASS_MAPPINGS = {}
+    NODE_DISPLAY_NAME_MAPPINGS = {}
 else:
-    print("--- 正在加载 ComfyUI_AIIA 自定义节点包 ---")
+    print(f"--- 正在加载 ComfyUI_AIIA 自定义节点包 (Module: {__name__}) ---")
 
     # 初始化空的映射字典
     NODE_CLASS_MAPPINGS = {}
