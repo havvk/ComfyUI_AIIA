@@ -22,7 +22,6 @@ def _mock_deepspeed():
         return
 
     # Check if we already registered the finder
-    import sys
     # We can check sys.meta_path, but it's hard to identify our specific instance class properly if we reload.
     # We'll just define the class and check if any instance of it is in meta_path? 
     # Or simpler: just proceed.
