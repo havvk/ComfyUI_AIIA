@@ -339,7 +339,6 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
    - `0.0`: 保留所有原始底噪。
    - `1.0`: 强力去噪。
    - **Tip**: 如果你在频谱图的低频部分看到 **水平条纹 (Hum/Buzz)**，请将此值提高到 **0.8 - 1.0**。
-
 6. **high_pass_hz (高通滤波) 🔥 新增 (v1.4.82)**:
 
    - **范围**: `0 - 1000` Hz。**默认 `0` (关闭)**。
@@ -347,7 +346,6 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
    - **为什么需要它？**: 如果 `denoise_strength=1.0` 仍无法消除低频条纹，说明 AI 把这些噪音当成了“真实信号”进行增强。
    - **最佳实践**: 遇到顽固的低频条纹时，设置 **60 - 80 Hz**。
    - **安全**: **只要保持默认为 0，此功能完全禁用，对原音质零影响。**
-
 7. **chunk_seconds / overlap_seconds**:
 
    - **30s / 1s**: **(推荐)** 4090 等显卡的最佳平衡点。
@@ -409,7 +407,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - **Normalize**: 将音量标准化至 -1dB，确保输出响度饱满且不破音。
 - **场景**: 建议串联在 `Voice Conversion` 节点之后使用。
 
-#### 3.7 Audio Splice Analyzer (AIIA Debug)
+#### 3.8 Audio Splice Analyzer (AIIA Debug)
 
 - **用途**: 可视化验证音频拼接质量。
 - **功能**:
@@ -417,6 +415,16 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - 如果接入了 `Voice Conversion` 节点的 `SPLICE_INFO` 输出，会自动在图上用红线标记出所有拼接点的位置。
   - 帮助用户直观地检查拼接点是否位于静音区，以及是否有明显的频谱断裂。
 - **依赖**: 需要 `matplotlib` 库。如果未安装，节点会生成一张提示错误的图片，不会导致工作流崩溃。
+
+#### 3.9 音频信息查看 (Audio Info & Metadata)
+
+- **用途**: 实时查看音频流的元数据，确保你的采样率符合预期。
+- **输入**: `AUDIO` 张量。
+- **输出**:
+  - `info_text`: 包含采样率、时长、通道数、BatchSize等详细信息的文本报告。
+  - `sample_rate`: 采样率 (INT)。
+  - `duration`: 时长秒数 (FLOAT)。
+  - `channels`: 通道数 (INT)。
 
 ### 4. 图像工具 (Image Utilities)
 
@@ -429,15 +437,6 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - 可自动调整其中一个图像序列的尺寸以匹配另一个，并保持宽高比。
   - 可自定义背景填充颜色。
 - **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
-
-#### 3.9 音频信息查看 (Audio Info & Metadata)
-- **用途**: 实时查看音频流的元数据，确保你的采样率符合预期。
-- **输入**: `AUDIO` 张量。
-- **输出**:
-    - `info_text`: 包含采样率、时长、通道数、BatchSize等详细信息的文本报告。
-    - `sample_rate`: 采样率 (INT)。
-    - `duration`: 时长秒数 (FLOAT)。
-    - `channels`: 通道数 (INT)。
 
 ---
 

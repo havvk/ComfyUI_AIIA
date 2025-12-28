@@ -53,4 +53,13 @@ class AIIA_Audio_Info:
         
         print(f"[AIIA Audio Info]\n{info}")
         
+
         return (info, sample_rate, duration, channels, str(list(shape)))
+
+NODE_CLASS_MAPPINGS = {
+    "AIIA_Audio_Info": AIIA_Audio_Info
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIIA_Audio_Info": "🕵️‍♂️ AIIA Audio Info"
+}
