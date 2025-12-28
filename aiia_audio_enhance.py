@@ -201,6 +201,7 @@ class AIIA_Audio_Enhance:
                 "denoise_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "0.0 = Keep Original Noise, 1.0 = Full Denoise. Increase to remove artifacts/hum."}),
                 "chunk_seconds": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 60.0, "step": 1.0}),
                 "overlap_seconds": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 5.0, "step": 0.1}),
+                "use_cuda": ("BOOLEAN", {"default": True}),
             }, "optional": {
                 "splice_info": ("SPLICE_INFO",),
             }
