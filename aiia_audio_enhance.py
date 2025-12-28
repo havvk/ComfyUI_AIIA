@@ -367,9 +367,15 @@ class AIIA_Audio_Enhance:
                 
                 # Also inject into .hp (HyperParameters) if available
                 if hasattr(_cached_enhancer, "hp"):
-                    _cached_enhancer.hp.nfe = nfe
-                    _cached_enhancer.hp.solver = solver.lower()
-                    _cached_enhancer.hp.tau = tau
+                    try:
+                        # Fix FrozenInstanceError: .hp is a frozen dataclass
+                        object.__setattr__(_cached_enhancer.hp, 'nfe', nfe)
+                        object.__setattr__(_cached_enhancer.hp, 'solver', solver.lower())
+                        object.__setattr__(_cached_enhancer.hp, 'tau', tau)
+                    except Exception as e:
+                        print(f"[AIIA] Warning: Failed to force set hp params: {e}")
+                        # Fallback: Maybe replace hp?
+                        pass
                     
                 # Also inject directly (just in case)
                 _cached_enhancer.nfe = nfe
