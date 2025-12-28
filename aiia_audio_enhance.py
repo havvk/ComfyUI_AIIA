@@ -404,8 +404,8 @@ class AIIA_Audio_Enhance:
                          # For now, I'll set lambd=0.5 (default) or 1.0?
                          # The library default is 0.5.
                          
-                         _cached_enhancer.configurate_(nfe=nfe, solver=solver, lambd=0.5, tau=tau)
-                         print(f"[AIIA DEBUG] Configured model: nfe={nfe}, solver={solver}, tau={tau}")
+                         _cached_enhancer.configurate_(nfe=nfe, solver=solver.lower(), lambd=0.5, tau=tau)
+                         print(f"[AIIA DEBUG] Configured model: nfe={nfe}, solver={solver.lower()}, tau={tau}")
                     except Exception as e:
                          print(f"[AIIA WARNING] configurate_ failed: {e}")
                 else:
