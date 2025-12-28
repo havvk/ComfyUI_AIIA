@@ -9,49 +9,45 @@ import sys
 import subprocess
 from huggingface_hub import snapshot_download
 
-def _install_cosyvoice():
-    target_install = False
+# Lazy-loaded global variable
+CosyVoice = None
+
+def _install_cosyvoice_if_needed():
+    global CosyVoice
+    if CosyVoice is not None:
+        return
+
+    # Try import first
     try:
-        # Check if we can import the class we need
-        from cosyvoice.cli.cosyvoice import CosyVoice
+        from cosyvoice.cli.cosyvoice import CosyVoice as CV
+        CosyVoice = CV
         return
     except ImportError:
-        target_install = True
-        print("[AIIA] CosyVoice invalid or missing. Attempting robust installation...")
+        pass
+    
+    print("[AIIA] CosyVoice invalid or missing. Attempting robust installation...")
+    try:
+        print("[AIIA] Installing CosyVoice from GitHub (latest) to ensure v3 support...")
+        # Use --no-deps to avoid overriding torch, but install git package
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "git+https://github.com/FunAudioLLM/CosyVoice.git", "--no-deps", "--force-reinstall"], env=os.environ)
 
-    if target_install:
-        try:
-            # 1. Try pip install from specific git commit or HEAD if PyPI is broken/outdated
-            #    The pypi 'cosyvoice' seems to be old (0.0.8) and missing 'cli'. 
-            #    We need to install from git.
-            
-            #    Since user just fixed their torch, we MUST use --no-deps to avoid overriding torch.
-            #    But git install often triggers build which needs deps. 
-            #    We try to install from github repo directly with --no-deps
-            
-            print("[AIIA] Installing CosyVoice from GitHub (latest) to ensure v3 support...")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "git+https://github.com/FunAudioLLM/CosyVoice.git", "--no-deps", "--force-reinstall"], env=os.environ)
+        # Check and install critical sub-dependencies
+        reqs = ["modelscope", "hyperpyyaml", "onnxruntime", "hjson"]
+        for r in reqs:
+            try:
+                __import__(r)
+            except ImportError:
+                  print(f"[AIIA] Installing missing dependency: {r}")
+                  subprocess.check_call([sys.executable, "-m", "pip", "install", r], env=os.environ)
+        
+        # Retry import
+        from cosyvoice.cli.cosyvoice import CosyVoice as CV
+        CosyVoice = CV
 
-            # 2. Check and install critical sub-dependencies
-            reqs = ["modelscope", "hyperpyyaml", "onnxruntime", "hjson"]
-            for r in reqs:
-                try:
-                    __import__(r)
-                except ImportError:
-                     print(f"[AIIA] Installing missing dependency: {r}")
-                     subprocess.check_call([sys.executable, "-m", "pip", "install", r], env=os.environ)
-
-        except Exception as e:
-            print(f"Failed to install cosyvoice: {e}")
-            print("Please manually install CosyVoice: 'pip install git+https://github.com/FunAudioLLM/CosyVoice.git --no-deps'")
-
-_install_cosyvoice()
-
-try:
-    from cosyvoice.cli.cosyvoice import CosyVoice
-except ImportError as e:
-    print(f"[AIIA] Critical Error importing CosyVoice: {e}")
-    CosyVoice = None 
+    except Exception as e:
+        print(f"Failed to install cosyvoice: {e}")
+        print("Please manually install CosyVoice: 'pip install git+https://github.com/FunAudioLLM/CosyVoice.git --no-deps'")
+ 
 
 class AIIA_CosyVoice_ModelLoader:
     @classmethod
@@ -76,6 +72,8 @@ class AIIA_CosyVoice_ModelLoader:
     CATEGORY = "AIIA/Loaders"
 
     def load_model(self, model_name, use_fp16):
+        _install_cosyvoice_if_needed()
+        
         if CosyVoice is None:
             raise ImportError("CosyVoice package is not installed. Please install it manually.")
 

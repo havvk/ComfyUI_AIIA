@@ -8,44 +8,66 @@ import numpy as np
 import tempfile
 from pathlib import Path
 
-# Auto-install resemble-enhance
-try:
-    import resemble_enhance
-except ImportError:
-    print("[AIIA] resemble-enhance not found. Installing without dependencies to protect environment...")
-    # 1. Install resemble-enhance without dependencies to avoid messing up torch/torchaudio
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "resemble-enhance", "--no-deps"])
-    
-    # 2. Manually check and install ONLY critical missing non-torch dependencies
-    #    resemble-enhance needs: scipy, torchaudio(present), torch(present), numpy(present), tqdm, etc.
-    #    We assume standard ComfyUI env has torch/numpy/tqdm/Pillow.
-    pass_packages = ["torch", "torchaudio", "torchvision", "numpy", "scipy", "tqdm"] 
-    # Check if we need to install anything else from its requirements? 
-    # Usually 'hjson' or similar might be missing. 
-    # Let's try to just install the package and let import fail if something helps specific is missing, 
-    # but 'resemble-embed' might be needed?
-    # Actually, let's just install 'resemble-enhance' + 'gdown' (if used for download) but usually safe.
-    # To be safe, we can try to install a few lightweight deps if they are missing.
-    
-    try:
-        import hjson
-    except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "hjson"])
-        
-    print("[AIIA] resemble-enhance installed.")
+# Lazy-loaded globals
+enhance = None
+denoise = None
 
-# We need to import these AFTER install
-try:
-    # Try updated import structure
-    from resemble_enhance.enhancer.inference import enhance, denoise
-except ImportError:
+def _install_resemble_if_needed():
+    global enhance, denoise
+    if enhance is not None:
+        return
+
+    # Try import first
     try:
-        # Fallback for older versions or different structure
-        from resemble_enhance.inference import enhance, denoise
+        from resemble_enhance.enhancer.inference import enhance as eh, denoise as dn
+        enhance = eh
+        denoise = dn
+        return
     except ImportError:
-         print("[AIIA] Failed to import resemble_enhance. Please install it manually.")
-         enhance = None
-         denoise = None
+        pass
+        
+    try:
+        # Fallback import
+        from resemble_enhance.inference import enhance as eh, denoise as dn
+        enhance = eh
+        denoise = dn
+        return
+    except ImportError:
+        pass
+
+    print("[AIIA] resemble-enhance not found. Installing without dependencies to protect environment...")
+    try:
+        # 1. Install resemble-enhance without dependencies
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "resemble-enhance", "--no-deps"])
+        
+        # 2. Check critical deps
+        #    resemble-enhance needs: scipy, torchaudio(present), torch(present), numpy(present), tqdm, etc.
+        pass_packages = ["torch", "torchaudio", "torchvision", "numpy", "scipy", "tqdm"] 
+        try:
+            import hjson
+        except ImportError:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "hjson"])
+            
+        print("[AIIA] resemble-enhance installed.")
+        
+        # Retry import
+        try:
+            from resemble_enhance.enhancer.inference import enhance as eh, denoise as dn
+            enhance = eh
+            denoise = dn
+        except ImportError:
+             try:
+                from resemble_enhance.inference import enhance as eh, denoise as dn
+                enhance = eh
+                denoise = dn
+             except ImportError:
+                 print("[AIIA] Failed to import resemble_enhance even after install.")
+                 enhance = None
+                 denoise = None
+
+    except Exception as e:
+        print(f"[AIIA] Error installing resemble-enhance: {e}")
+
 
 def setup_resemble_model_path():
     """
@@ -128,6 +150,7 @@ class AIIA_Audio_Enhance:
     CATEGORY = "AIIA/Audio"
 
     def process_audio(self, audio, mode, solver, nfe, tau, denoising, use_cuda, splice_info=None):
+        _install_resemble_if_needed()
         if enhance is None:
              raise ImportError("resemble-enhance library is not available.")
 

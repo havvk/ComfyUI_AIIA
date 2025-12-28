@@ -6,13 +6,27 @@ import subprocess
 import soundfile as sf
 import numpy as np
 
-# Auto-install voicefixer if missing
-try:
-    from voicefixer import VoiceFixer
-except ImportError:
-    print("[AIIA] VoiceFixer not found. Installing automatically...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "voicefixer>=0.1.3"])
-    from voicefixer import VoiceFixer
+# Lazy-loaded globals
+VoiceFixer = None
+
+def _install_voicefixer_if_needed():
+    global VoiceFixer
+    if VoiceFixer is not None:
+        return
+
+    try:
+        from voicefixer import VoiceFixer as VF
+        VoiceFixer = VF
+        return
+    except ImportError:
+        print("[AIIA] VoiceFixer not found. Installing automatically...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "voicefixer>=0.1.3"])
+            from voicefixer import VoiceFixer as VF
+            VoiceFixer = VF
+        except Exception as e:
+            print(f"[AIIA] Failed to install voicefixer: {e}")
+            VoiceFixer = None
 
 import shutil
 import folder_paths
@@ -101,6 +115,10 @@ class AIIA_Audio_Denoise:
     CATEGORY = "AIIA/Audio"
 
     def denoise_audio(self, audio, mode, use_cuda, splice_info=None):
+        _install_voicefixer_if_needed()
+        if VoiceFixer is None:
+             raise ImportError("VoiceFixer package is not installed.")
+
         # 1. Initialize Model (Singleton)
         cuda_available = torch.cuda.is_available() and use_cuda
         device_str = "cuda" if cuda_available else "cpu"
