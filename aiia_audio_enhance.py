@@ -48,7 +48,13 @@ def _install_resemble_if_needed():
         from unittest.mock import MagicMock
         if "deepspeed" not in sys.modules:
             print("[AIIA] Mocking DeepSpeed to bypass dependency check...")
-            sys.modules["deepspeed"] = MagicMock()
+            # We must mock the package AND the submodules that are imported
+            ds_mock = MagicMock()
+            ds_mock.__path__ = [] # Pretend to be a package
+            sys.modules["deepspeed"] = ds_mock
+            
+            # Submodules must be in sys.modules too
+            sys.modules["deepspeed.accelerator"] = MagicMock()
             
         try:
             import hjson
