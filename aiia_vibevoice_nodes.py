@@ -73,7 +73,22 @@ class AIIA_VibeVoice_Loader:
                  print(f"[AIIA] Model not found locally. Downloading from HuggingFace to cache...")
 
         # Fix for "KeyError: vibevoice":
-        # We must load config first with trust_remote_code=True to register the custom architecture
+        # Debugging: List files to ensure remote code is present
+        print(f"[AIIA] Inspecting model dir: {load_path}")
+        try:
+            files_in_dir = os.listdir(load_path)
+            print(f"[AIIA] Files found: {files_in_dir}")
+            
+            config_file = os.path.join(load_path, "config.json")
+            if os.path.exists(config_file):
+                with open(config_file, "r") as f:
+                    print(f"[AIIA] config.json content partial: {f.read(500)}")
+            else:
+                 print(f"[AIIA] CRITICAL: config.json not found in {load_path}")
+                 
+        except Exception as e:
+            print(f"[AIIA] File inspection failed: {e}")
+
         print(f"[AIIA] Loading AutoConfig from {load_path}...")
         try:
             config = AutoConfig.from_pretrained(load_path, trust_remote_code=True)
