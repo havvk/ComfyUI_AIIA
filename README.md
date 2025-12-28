@@ -286,14 +286,40 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     -   `overlap_size`: 重叠大小，用于平滑衔接。
 
 #### 3.5 智能音频增强 (Audio AI Enhance) (推荐)
--   **用途**: 专为 CosyVoice 等生成式语音设计的增强器。基于 `resemble-enhance`，它不仅能去除底噪，还能扩展频带（Bandwidth Extension），使声音更加饱满、清晰，且不会引入像 VoiceFixer 那样的条纹或爆音。
--   **参数**:
-    -   `mode`:
-        -   **Enhance**: 降噪 + 频带扩展 (推荐)。
-        -   **Denoise Only**: 仅降噪。
-    -   `solver`: 推理求解器 (默认为 Midpoint)。
-    -   `nfe`: Number of Function Evaluations (默认 64)。越高越精细但越慢。
-    -   `tau`: 温度参数 (默认 0.5)。
+
+-   **用途**: 专为 CosyVoice 等生成式语音设计的增强器。它基于 `resemble-enhance` 强大的 **Conditional Flow Matching (CFM)** 模型，能同时完成后处理降噪和超分辨率（Bandwidth Extension）。
+-   **核心能力**: 将任意低采样率（如 22kHz, 16kHz）的输入音频，重构为 **44.1kHz** 的高保真音频。
+
+**参数详解**:
+
+1.  **mode**:
+    -   `Enhance (Denoise + Bandwidth Ext)`: **(推荐)** 同时去除底噪并提升音质。
+    -   `Denoise Only`: 仅去除噪声，不改变音质。
+
+2.  **solver**: 推理求解器。
+    -   `Midpoint` (默认): 速度与质量的最佳平衡。
+    -   `RK4`: 质量最高，但速度慢 2 倍。
+    -   `Euler`: 速度最快，但可能产生条纹。
+
+3.  **nfe (Steps)**: 迭代步数。
+    -   **32**: 快速预览。可能会有残留条纹。
+    -   **64**: **(推荐)** 标准质量。
+    -   **128**: 极高画质，消除所有细微伪影，但耗时。
+
+4.  **tau (Temperature)**: 先验温度 (默认 0.5)。
+    -   控制生成过程的“创造力”。
+    -   0.5 为平衡点。如果声音发虚，尝试降低到 0.3。
+
+5.  **denoise_strength (去噪强度) 🔥 新增**:
+    -   范围 `0.0` - `1.0`。默认 `0.5`。
+    -   `0.0`: 保留所有原始底噪。
+    -   `1.0`: 强力去噪。
+    -   **Tip**: 如果你在低频部分听到 **水平条纹 (Hum/Buzz)**，请将此值提高到 **0.8 - 1.0**。
+
+6.  **chunk_seconds / overlap_seconds**:
+    -   **30s / 1s**: **(推荐)** 4090 等显卡的最佳平衡点。
+    -   **注意**: 首次运行时，模型会进行 **JIT 编译（约60秒）**。请耐心等待，这只发生一次。
+
 -   **依赖**: 首次运行会自动安装 `resemble-enhance`。
 
 #### 3.6 智能音频降噪 (VoiceFixer) (Legacy)
