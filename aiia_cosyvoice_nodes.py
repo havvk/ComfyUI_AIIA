@@ -171,7 +171,6 @@ class AIIA_CosyVoice_ModelLoader:
         else:
              print(f"[AIIA] Model verified at {model_dir}")
              
-        # Handling V3 Shim: CosyVoice class expects 'cosyvoice.yaml' hardcodedly
         if os.path.exists(yaml3_path) and not os.path.exists(yaml_path):
             import shutil
             print(f"[AIIA] V3 Model detected. Creating shim: cosyvoice3.yaml -> cosyvoice.yaml")
@@ -179,6 +178,24 @@ class AIIA_CosyVoice_ModelLoader:
                 shutil.copy2(yaml3_path, yaml_path)
             except Exception as e:
                 print(f"[AIIA] Warning: Failed to copy config file: {e}")
+
+        # V3 Configuration Patch: Inject absolute model path
+        # The default config has pretrain_path: "" which crashes transformers
+        if is_v3 and os.path.exists(yaml_path):
+            try:
+                with open(yaml_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                if 'pretrain_path: ""' in content or "pretrain_path: ''" in content:
+                    print(f"[AIIA] Patching pretrain_path in cosyvoice.yaml to point to local dir")
+                    safe_model_dir = model_dir.replace("\\", "/")
+                    content = content.replace('pretrain_path: ""', f'pretrain_path: "{safe_model_dir}"')
+                    content = content.replace("pretrain_path: ''", f'pretrain_path: "{safe_model_dir}"')
+                    
+                    with open(yaml_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+            except Exception as e:
+                print(f"[AIIA] Warning: Failed to patch yaml configuration: {e}")
 
         # --- RL Model Switching Logic (Symlink Strategy) ---
         llm_pt = os.path.join(model_dir, "llm.pt")
