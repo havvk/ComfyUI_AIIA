@@ -339,7 +339,8 @@ class AIIA_Audio_Enhance:
                      # If run_dir is found, load_enhancer(run_dir) skips download.
                      # If not found, it runs download (which we might have patched to fail/noop, so be careful)
                      
-                     _cached_enhancer = load_enhancer(str(run_dir) if run_dir else None, device)
+                     # ERROR FIXED: load_enhancer expects Path object, not string (it uses / operator)
+                     _cached_enhancer = load_enhancer(run_dir if run_dir else None, device)
                 
                 # Force move to device
                 _cached_enhancer.to(device)
