@@ -76,28 +76,42 @@ class AIIA_VibeVoice_Loader:
         # Fix for "KeyError: vibevoice":
         # Strategy: Manually import the model code and register it to AutoConfig/AutoModel
         
-        sys_path_added = False
+        # Fix for "KeyError: vibevoice":
+        # Strategy: Use importlib to load code file directly from path (bypassing import system issues)
+        
+        import importlib.util
         try:
-            # 1. Add model dir to sys.path so we can import 'configuration_vibevoice'
-            if load_path not in sys.path:
-                sys.path.append(load_path)
-                sys_path_added = True
+            config_file_path = os.path.join(load_path, "configuration_vibevoice.py")
+            model_file_path = os.path.join(load_path, "modeling_vibevoice.py")
             
-            # 2. Dynamic Import
-            print(f"[AIIA] Manually importing VibeVoice code from {load_path}...")
-            import configuration_vibevoice
-            import modeling_vibevoice
+            # Helper to load module from file
+            def load_module_from_path(module_name, file_path):
+                spec = importlib.util.spec_from_file_location(module_name, file_path)
+                if spec is None:
+                    raise ImportError(f"Could not load spec for {module_name} from {file_path}")
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+                return module
+
+            # 1. Load Configuration Code
+            print(f"[AIIA] Loading configuration_vibevoice from {config_file_path}...")
+            config_module = load_module_from_path("configuration_vibevoice", config_file_path)
+            VibeVoiceConfig = config_module.VibeVoiceConfig
             
-            # 3. Get Classes
-            VibeVoiceConfig = configuration_vibevoice.VibeVoiceConfig
-            VibeVoiceForConditionalGeneration = modeling_vibevoice.VibeVoiceForConditionalGeneration
-            
-            # 4. Register to Transformers
-            print(f"[AIIA] Registering 'vibevoice' architecture manually...")
+            # 2. Register Config (Critical step for AutoConfig to work later)
             AutoConfig.register("vibevoice", VibeVoiceConfig)
+            
+            # 3. Load Modeling Code
+            # Modeling usually requires config to be importable or available
+            print(f"[AIIA] Loading modeling_vibevoice from {model_file_path}...")
+            model_module = load_module_from_path("modeling_vibevoice", model_file_path)
+            VibeVoiceForConditionalGeneration = model_module.VibeVoiceForConditionalGeneration
+            
+            # 4. Register Model
             AutoModel.register(VibeVoiceConfig, VibeVoiceForConditionalGeneration)
             
-            # 5. Load Config & Model
+            # 5. Load
             print("[AIIA] Loading VibeVoice via manual registration...")
             config = VibeVoiceConfig.from_pretrained(load_path)
             model = VibeVoiceForConditionalGeneration.from_pretrained(
@@ -106,15 +120,9 @@ class AIIA_VibeVoice_Loader:
                 torch_dtype=dtype,
                 device_map="auto"
             )
-            
-            # Cleanup sys.path to avoid pollution
-            if sys_path_added:
-                sys.path.remove(load_path)
 
         except Exception as e:
-            print(f"[AIIA] Manual registration failed: {e}")
-            if sys_path_added:
-                sys.path.remove(load_path)
+            print(f"[AIIA] Manual import/registration failed: {e}")
             raise e
             
         tokenizer = AutoTokenizer.from_pretrained(load_path, trust_remote_code=True)
