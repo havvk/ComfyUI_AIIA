@@ -171,32 +171,6 @@ class AIIA_CosyVoice_ModelLoader:
         else:
              print(f"[AIIA] Model verified at {model_dir}")
              
-        if os.path.exists(yaml3_path) and not os.path.exists(yaml_path):
-            import shutil
-            print(f"[AIIA] V3 Model detected. Creating shim: cosyvoice3.yaml -> cosyvoice.yaml")
-            try:
-                shutil.copy2(yaml3_path, yaml_path)
-            except Exception as e:
-                print(f"[AIIA] Warning: Failed to copy config file: {e}")
-
-        # V3 Configuration Patch: Inject absolute model path
-        # The default config has pretrain_path: "" which crashes transformers
-        if is_v3 and os.path.exists(yaml_path):
-            try:
-                with open(yaml_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                if 'pretrain_path: ""' in content or "pretrain_path: ''" in content:
-                    print(f"[AIIA] Patching pretrain_path in cosyvoice.yaml to point to local dir")
-                    safe_model_dir = model_dir.replace("\\", "/")
-                    content = content.replace('pretrain_path: ""', f'pretrain_path: "{safe_model_dir}"')
-                    content = content.replace("pretrain_path: ''", f'pretrain_path: "{safe_model_dir}"')
-                    
-                    with open(yaml_path, 'w', encoding='utf-8') as f:
-                        f.write(content)
-            except Exception as e:
-                print(f"[AIIA] Warning: Failed to patch yaml configuration: {e}")
-
         # --- RL Model Switching Logic (Symlink Strategy) ---
         llm_pt = os.path.join(model_dir, "llm.pt")
         llm_rl = os.path.join(model_dir, "llm.rl.pt")
@@ -232,12 +206,6 @@ class AIIA_CosyVoice_ModelLoader:
                     else:
                          os.remove(llm_pt) # Wrong link
                 else:
-                    # It's a file but we expect it to be a link (or we just renamed it away in step 1)
-                    # If we are here, step 1 didn't run or llm.pt reappeared?
-                    # Safety: If it's the exact same file as target (copy), we can remove it.
-                    # But if it's unknown, backup?
-                    # Given step 1, if llm.pt exists here it's either a rogue file or we failed to rename.
-                    # Let's assume safely remove if we have base.
                     os.remove(llm_pt) 
 
             if need_update:
@@ -250,24 +218,30 @@ class AIIA_CosyVoice_ModelLoader:
                     import shutil
                     print("[AIIA] Symlink failed. Copying file instead (slower)...")
                     shutil.copy2(target_source, llm_pt)
-        else:
-             print(f"[AIIA] Critical: Target model file {target_source} missing!")
         # -------------------------------
 
         # Load Model
         print(f"Loading CosyVoice model from {model_dir}...")
-        # CosyVoice init signature: (model_dir, load_jit=True/False, load_onnx=False, fp16=True/False)
-        # Note: API might vary slightly by version, but standard usage is init with dir.
-        
-        # We need to temporarily add model_dir to sys.path if customized code exists? 
-        # Usually CosyVoice loads yaml config.
-        
-        # NOTE: Allow using gpu if available is handled by Torch internally?
-        # User requested explicit Load, but CosyVoice() usually auto-detects device or accepts it.
-        # Checking source code of CosyVoice: it usually moves to CUDA if available.
         
         try:
-           model_instance = CosyVoice(model_dir) # Default initialization
+            # Import specific classes from the CLI module since we need V3 support
+            from cosyvoice.cli.cosyvoice import CosyVoice, CosyVoice2, CosyVoice3
+            
+            # Smart loading logic
+            if os.path.exists(os.path.join(model_dir, "cosyvoice3.yaml")):
+                print("[AIIA] Detected V3 Model. Using CosyVoice3 class.")
+                model_instance = CosyVoice3(model_dir)
+            elif os.path.exists(os.path.join(model_dir, "cosyvoice2.yaml")):
+                print("[AIIA] Detected V2 Model. Using CosyVoice2 class.")
+                model_instance = CosyVoice2(model_dir)
+            else:
+                print("[AIIA] Detected V1 Model (or default). Using CosyVoice class.")
+                model_instance = CosyVoice(model_dir)
+                
+        except ImportError:
+             # Fallback if library is old (though we clone explicit one, user might have old conflicting one)
+             print("[AIIA] Warning: Advanced CosyVoice classes not found. Fallback to default.")
+             model_instance = CosyVoice(model_dir)
         except Exception as e:
            raise RuntimeError(f"Failed to initialize CosyVoice model: {e}")
            
