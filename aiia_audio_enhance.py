@@ -72,7 +72,10 @@ def _install_resemble_if_needed():
 
     # 2. Try import first
     try:
-        from resemble_enhance.enhancer.inference import enhance as eh, denoise as dn
+        from resemble_enhance.enhancer.inference import enhance as eh, denoise as dn, load_enhancer, inference
+        # Inject into global namespace so we can use them
+        globals()["load_enhancer"] = load_enhancer
+        globals()["inference"] = inference
         enhance = eh
         denoise = dn
         return
@@ -81,7 +84,9 @@ def _install_resemble_if_needed():
         
     try:
         # Fallback import
-        from resemble_enhance.inference import enhance as eh, denoise as dn
+        from resemble_enhance.inference import enhance as eh, denoise as dn, load_enhancer, inference
+        globals()["load_enhancer"] = load_enhancer
+        globals()["inference"] = inference
         enhance = eh
         denoise = dn
         return
@@ -103,12 +108,16 @@ def _install_resemble_if_needed():
         
         # 5. Retry import
         try:
-            from resemble_enhance.enhancer.inference import enhance as eh, denoise as dn
+            from resemble_enhance.enhancer.inference import enhance as eh, denoise as dn, load_enhancer, inference
+            globals()["load_enhancer"] = load_enhancer
+            globals()["inference"] = inference
             enhance = eh
             denoise = dn
         except ImportError:
              try:
-                from resemble_enhance.inference import enhance as eh, denoise as dn
+                from resemble_enhance.inference import enhance as eh, denoise as dn, load_enhancer, inference
+                globals()["load_enhancer"] = load_enhancer
+                globals()["inference"] = inference
                 enhance = eh
                 denoise = dn
              except ImportError as e:
@@ -245,22 +254,31 @@ class AIIA_Audio_Enhance:
                 # It returns (waveform, new_sr)
                 processed_wav, new_sr = denoise(wav_tensor, sample_rate, device)
             else:
+                # Manual Inference to ensure correct Device placement
+                # Because DeepSpeed mock might confuse the library's device logic
+                global _cached_enhancer
+                if "_cached_enhancer" not in globals() or _cached_enhancer is None:
+                     print(f"[AIIA] Loading Enhancer model...")
+                     # load_enhancer(run_dir=None, device=device)
+                     _cached_enhancer = load_enhancer(None, device)
+                
+                # Force move to device (crucial fix)
+                _cached_enhancer.to(device)
+                _cached_enhancer.eval()
+
+                # Call inference primitives
                 # enhance(waveform, sample_rate, device, nfe=64, solver="Midpoint", lambd=0.5, tau=0.5)
-                # Note: 'denoising' param is implicitly handled if we use 'enhance' wrapper?
-                # Actually enhance() calls denoise() internally if we look at source, 
-                # but let's see if we can control it. 
-                # The python API `enhance` func signature:
-                # def enhance(waveform, sample_rate, device, nfe=64, solver="Midpoint", lambd=0.9, tau=0.5):
-                # We map our inputs.
-                processed_wav, new_sr = enhance(
-                    wav_tensor, 
-                    sample_rate, 
-                    device, 
+                # Signature: inference(model, dwav, sr, device, nfe=64, solver='midpoint', lambd=0.5, tau=0.5)
+                
+                processed_wav, new_sr = inference(
+                    model=_cached_enhancer,
+                    dwav=wav_tensor, 
+                    sr=sample_rate, 
+                    device=device, 
                     nfe=nfe, 
                     solver=solver.lower(), 
                     tau=tau,
-                    lambd=0.9 if denoising else 0.1 # Approximate control, usually high lambd = more denoising focus?
-                    # Actually standard usage just calls clean, enhanced = enhance(...)
+                    lambd=0.9 if denoising else 0.1
                 )
         except Exception as e:
             print(f"Error in resemble-enhance: {e}")
