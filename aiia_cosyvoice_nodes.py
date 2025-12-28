@@ -10,16 +10,30 @@ import subprocess
 from huggingface_hub import snapshot_download
 
 def _install_cosyvoice():
+    target_install = False
     try:
-        import cosyvoice
-        # TODO: simple check if it supports v3? For now we just ensure it is installed.
-        # User might need to force update if they have old version.
+        from cosyvoice.cli.cosyvoice import CosyVoice
         return
     except ImportError:
-        print("Installing cosyvoice...")
+        target_install = True
+        print("[AIIA] CosyVoice not found or incomplete. Installing options...")
+
+    if target_install:
         try:
-            # We add --upgrade to ensure we get the latest version supporting CosyVoice3
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "cosyvoice", "modelscope", "torchaudio", "hyperpyyaml", "onnxruntime"], env=os.environ)
+            # 1. Install 'cosyvoice' WITHOUT dependencies to protect Torch/CUDA
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "cosyvoice", "--no-deps", "--upgrade"], env=os.environ)
+            
+            # 2. Check and install critical sub-dependencies if missing
+            #    We skip torch/torchaudio/numpy/tqdm as they are standard ComfyUI.
+            #    We check specifically for: modelscope, hyperpyyaml, onnxruntime
+            reqs = ["modelscope", "hyperpyyaml", "onnxruntime", "hjson"]
+            for r in reqs:
+                try:
+                    __import__(r)
+                except ImportError:
+                     print(f"[AIIA] Installing missing dependency: {r}")
+                     subprocess.check_call([sys.executable, "-m", "pip", "install", r], env=os.environ)
+
         except Exception as e:
             print(f"Failed to install cosyvoice: {e}")
             print("Please manually install 'cosyvoice' into your python environment.")
@@ -28,7 +42,8 @@ _install_cosyvoice()
 
 try:
     from cosyvoice.cli.cosyvoice import CosyVoice
-except ImportError:
+except ImportError as e:
+    print(f"[AIIA] Critical Error importing CosyVoice: {e}")
     CosyVoice = None 
 
 class AIIA_CosyVoice_ModelLoader:
