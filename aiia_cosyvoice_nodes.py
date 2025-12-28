@@ -40,16 +40,28 @@ def _install_cosyvoice_if_needed():
             print("[AIIA] Cloning CosyVoice from GitHub...")
             subprocess.check_call(["git", "clone", "--recursive", "https://github.com/FunAudioLLM/CosyVoice.git", cosyvoice_dir])
         else:
-            # Optional: Check if we need to pull? For stability, maybe not auto-pull every time.
-            pass
+             # Verify consistency?
+             pass
 
-        # 2. Add to sys.path
+        # 2. Add to sys.path with PRIORITY
+        # Using insert(0) ensures we use OUR cloned version, not some broken pip version
         if cosyvoice_dir not in sys.path:
-            sys.path.append(cosyvoice_dir)
-        if matcha_dir not in sys.path:
-            sys.path.append(matcha_dir)
+            sys.path.insert(0, cosyvoice_dir)
+        else:
+            # Move to front
+            sys.path.remove(cosyvoice_dir)
+            sys.path.insert(0, cosyvoice_dir)
 
-        # 3. Install Requirements
+        if matcha_dir not in sys.path:
+            sys.path.insert(0, matcha_dir)
+            
+        # 3. Clean sys.modules to prevent conflict with previous failed imports
+        # If 'cosyvoice' was partially loaded or loaded from wrong place, clear it
+        keys_to_remove = [k for k in sys.modules.keys() if k.startswith("cosyvoice") or k.startswith("matcha")]
+        for k in keys_to_remove:
+            del sys.modules[k]
+
+        # 4. Install Requirements
         # Critical dependencies from requirements.txt
         reqs = ["modelscope", "hyperpyyaml", "onnxruntime", "hjson", "openai-whisper", "webrtcvad", "pydub"]
         for r in reqs:
@@ -59,7 +71,12 @@ def _install_cosyvoice_if_needed():
                  print(f"[AIIA] Installing missing dependency: {r}")
                  subprocess.check_call([sys.executable, "-m", "pip", "install", r], env=os.environ)
 
-        # 4. Retry import
+        # 5. Retry import
+        # Print file existence for debugging
+        expected_file = os.path.join(cosyvoice_dir, "cosyvoice", "cli", "cosyvoice.py")
+        if not os.path.exists(expected_file):
+             print(f"[AIIA] CRITICAL WARNING: Expected file not found at {expected_file}")
+
         from cosyvoice.cli.cosyvoice import CosyVoice as CV
         CosyVoice = CV
 
