@@ -209,7 +209,22 @@ class AIIA_VibeVoice_Loader:
             # 4. Register Model
             AutoModel.register(VibeVoiceConfig, VibeVoiceClass)
             
-            # 5. Load
+            # 5. Fix Tokenizer Mapping (KeyError: 'VibeVoiceStreamingConfig')
+            # AutoTokenizer fails because it doesn't know which tokenizer class matches our custom config.
+            # We must manually register the mapping.
+            try:
+                from transformers.models.auto.tokenization_auto import TOKENIZER_MAPPING
+                if "modular_vibevoice_tokenizer" in sys.modules:
+                    tokenizer_mod = sys.modules["modular_vibevoice_tokenizer"]
+                    if hasattr(tokenizer_mod, "VibeVoiceTokenizer"):
+                        VibeVoiceTokenizer = tokenizer_mod.VibeVoiceTokenizer
+                        # Register mapping: ConfigClass -> (SlowTokenizer, FastTokenizer)
+                        TOKENIZER_MAPPING.register(VibeVoiceConfig, (VibeVoiceTokenizer, None))
+                        print(f"[AIIA] Registered VibeVoiceTokenizer for {VibeVoiceConfig.__name__}")
+            except Exception as e:
+                print(f"[AIIA] Failed to register tokenizer mapping: {e}")
+
+            # 6. Load
             print("[AIIA] Loading VibeVoice 1.5B using aliased class...")
             # We force the config to use the class we found
             config = VibeVoiceConfig.from_pretrained(load_path)
