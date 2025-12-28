@@ -1,12 +1,33 @@
 # /app/ComfyUI/custom_nodes/ComfyUI_AIIA/__init__.py
-# print(f"--- 正在加载 ComfyUI_AIIA 自定义节点包 (Module: {__name__}) ---") 
+import sys
+import os
 
-# Reverting guard to ensure nodes load (Double load is better than no load)
-print("--- 正在加载 ComfyUI_AIIA 自定义节点包 ---")
+# Smart Duplicate Detection
+# Check if this file is already loaded under a different module name.
+# This allows 'reload()' (same name) but prevents aliased double-loading (e.g. Path vs Package).
+_current_file = os.path.abspath(__file__)
+_is_duplicate = False
 
-# 初始化空的映射字典
-NODE_CLASS_MAPPINGS = {}
-NODE_DISPLAY_NAME_MAPPINGS = {}
+for _name, _module in list(sys.modules.items()): # construct list to avoid runtime change error
+    if _name == __name__: continue # Allow re-execution of self (reload)
+    if hasattr(_module, '__file__') and _module.__file__:
+        try:
+            if os.path.abspath(_module.__file__) == _current_file:
+                # print(f"[ComfyUI_AIIA] Skipping duplicate load (already loaded as {_name})")
+                _is_duplicate = True
+                break
+        except:
+            pass
+
+if _is_duplicate:
+    NODE_CLASS_MAPPINGS = {}
+    NODE_DISPLAY_NAME_MAPPINGS = {}
+else:
+    print("--- 正在加载 ComfyUI_AIIA 自定义节点包 ---")
+
+    # 初始化空的映射字典
+    NODE_CLASS_MAPPINGS = {}
+    NODE_DISPLAY_NAME_MAPPINGS = {}
 
 # --- 模块导入和映射合并 ---
 # (为了代码简洁，我将重复的导入逻辑封装成一个函数)
