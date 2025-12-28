@@ -299,11 +299,27 @@ class AIIA_Audio_Enhance:
                         # hwav is on GPU (if we didn't force cpu), abs_max is float. Safe.
                         hwav = hwav * abs_max
                         
-                        return hwav
+                        # DEBUG: Verify device
+                        # print(f"[AIIA DEBUG] Chunk computed. Device before return: {hwav.device}")
+                        
+                        return hwav.cpu()
 
-                    # Apply Patch
+                    # Apply Patch 1: Inference Chunk
                     inference_mod.inference_chunk = safe_inference_chunk
-                    print("[AIIA] Monkey-patched resemble_enhance.inference_chunk for CUDA safety (v2).")
+                    print("[AIIA] Monkey-patched inference_chunk for CUDA safety (v3).")
+                    
+                    # Apply Patch 2: Merge Chunks (Safety Net)
+                    # Ensure all chunks are CPU before merging (because mel_fn is CPU)
+                    if not hasattr(inference_mod, "original_merge_chunks"):
+                        inference_mod.original_merge_chunks = inference_mod.merge_chunks
+                        
+                    def safe_merge_chunks(chunks, *args, **kwargs):
+                        # Force CPU
+                        cpu_chunks = [c.cpu() for c in chunks]
+                        return inference_mod.original_merge_chunks(cpu_chunks, *args, **kwargs)
+                        
+                    inference_mod.merge_chunks = safe_merge_chunks
+                    print("[AIIA] Monkey-patched merge_chunks for CPU safety.")
                     
                 except ImportError:
                     pass
