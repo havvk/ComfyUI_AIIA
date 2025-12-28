@@ -219,7 +219,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `whisper_chunks`: 由 Diarization 节点生成的 JSON 片段数据。
   - `speaker_label`: 要提取的说话人 ID（例如 "SPEAKER_00"）。
   - `isolation_mode`:
-    - **Maintain Duration (推荐)**: 输出与原音频等长的音轨，非目标说话人部分填充静音。这对于**视频驱动（Talking Head）**工作流至关重要，能确保口型与原视频时间轴严格对齐。
+    - **Maintain Duration (推荐)**: 输出与原音频等长的音轨，非目标说话人部分填充静音。这对于 **视频驱动（Talking Head）** 工作流至关重要，能确保口型与原视频时间轴严格对齐。
     - **Concatenate**: 将属于该说话人的所有片段无缝拼接在一起，去除中间的空隙。
 - **亮点**:
   - **防爆音**: 内置微小的淡入淡出（Fade In/Out）处理，确保片段边缘自然顺滑。
@@ -338,7 +338,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
    - 范围 `0.0` - `1.0`。默认 `0.5`。
    - `0.0`: 保留所有原始底噪。
    - `1.0`: 强力去噪。
-   - **Tip**: 如果你在低频部分听到 **水平条纹 (Hum/Buzz)**，请将此值提高到 **0.8 - 1.0**。
+   - **Tip**: 如果你在频谱图的低频部分看到 **水平条纹 (Hum/Buzz)**，请将此值提高到 **0.8 - 1.0**。
 6. **chunk_seconds / overlap_seconds**:
 
    - **30s / 1s**: **(推荐)** 4090 等显卡的最佳平衡点。

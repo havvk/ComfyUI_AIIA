@@ -201,6 +201,7 @@ class AIIA_Audio_Enhance:
                 "denoise_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "0.0 = Keep Original Noise, 1.0 = Full Denoise. Increase to remove artifacts/hum."}),
                 "chunk_seconds": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 60.0, "step": 1.0}),
                 "overlap_seconds": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 5.0, "step": 0.1}),
+                "high_pass_hz": ("INT", {"default": 0, "min": 0, "max": 1000, "step": 10, "tooltip": "Remove low frequency rumble/hum before enhancement. Try 50-80Hz if you see horizontal stripes."}),
                 "use_cuda": ("BOOLEAN", {"default": True}),
             }, "optional": {
                 "splice_info": ("SPLICE_INFO",),
@@ -212,7 +213,7 @@ class AIIA_Audio_Enhance:
     FUNCTION = "process_audio"
     CATEGORY = "AIIA/Audio"
 
-    def process_audio(self, audio, mode, solver, nfe, tau, denoise_strength, chunk_seconds, overlap_seconds, use_cuda, splice_info=None):
+    def process_audio(self, audio, mode, solver, nfe, tau, denoise_strength, chunk_seconds, overlap_seconds, high_pass_hz, use_cuda, splice_info=None):
         _install_resemble_if_needed()
         if enhance is None:
              raise ImportError("resemble-enhance library is not available.")
@@ -562,7 +563,25 @@ class AIIA_Audio_Enhance:
 
                 try:
                     # Try on requested device
-                    processed_wav, new_sr = run_inference_safe(device)
+                    # 0. Pre-process: High Pass Filter (Remove Low Freq Rumble/Hum)
+            try:
+                if high_pass_hz > 0:
+                    import torchaudio.functional as F_audio
+                    # highpass_biquad expects (channel, time), audio['waveform'] is (batch, channel, time)
+                    # We iterate over batch
+                    # original_waveform: (B, C, T)
+                    filtered_list = []
+                    for b in range(original_waveform.shape[0]):
+                        wav_b = original_waveform[b]
+                        wav_b_filtered = F_audio.highpass_biquad(wav_b, original_sr, cutoff_freq=high_pass_hz)
+                        filtered_list.append(wav_b_filtered)
+                    original_waveform = torch.stack(filtered_list)
+                    print(f"[AIIA] Applied High Pass Filter at {high_pass_hz}Hz")
+            except Exception as e:
+                print(f"[AIIA WARNING] High Pass Filter failed: {e}")
+
+            # 1. Run Inference
+            processed_wav, new_sr = run_inference_safe(device)
                 except RuntimeError as e:
                     if "device" in str(e) and device != "cpu":
                         print(f"[AIIA] Device mismatch error on {device}. Retrying on CPU (fallback)...")
