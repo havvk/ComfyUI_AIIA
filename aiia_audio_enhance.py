@@ -382,6 +382,20 @@ class AIIA_Audio_Enhance:
                         sr=sample_rate, 
                         device=active_device,
                     )
+
+                try:
+                    # Try on requested device
+                    processed_wav, new_sr = run_inference_safe(device)
+                except RuntimeError as e:
+                    if "device" in str(e) and device != "cpu":
+                        print(f"[AIIA] Device mismatch error on {device}. Retrying on CPU (fallback)...")
+                        # Clear cache or just move?
+                        try:
+                            processed_wav, new_sr = run_inference_safe("cpu")
+                        except Exception as e2:
+                            raise e2
+                    else:
+                        raise e
         except Exception as e:
             print(f"Error in resemble-enhance: {e}")
             raise e
