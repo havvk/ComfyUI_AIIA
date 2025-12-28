@@ -384,59 +384,57 @@ class AIIA_Audio_Enhance:
                 
                 # Configure Params: FORCE INJECT EVERYWHERE (to fix Quality/Stripes)
 
-                    # 5. Inject Parameters into the Model (Shotgun Approach)
-                    # We must ensure specific internal variables are updated, otherwise the model might skip logic
-                    # or use old values. Enhancer.forward uses self._eval_lambd to decide whether to skip.
+                # 5. Inject Parameters into the Model (Shotgun Approach)
+                # We must ensure specific internal variables are updated, otherwise the model might skip logic
+                # or use old values. Enhancer.forward uses self._eval_lambd to decide whether to skip.
+                
+                # Update Config/HP dataclasses
+                try:
+                    if hasattr(_cached_enhancer, "config"):
+                        object.__setattr__(_cached_enhancer.config, "nfe", nfe)
+                        object.__setattr__(_cached_enhancer.config, "solver", solver)
+                        object.__setattr__(_cached_enhancer.config, "tau", tau)
                     
-                    # Update Config/HP dataclasses
-                    try:
-                        if hasattr(_cached_enhancer, "config"):
-                            object.__setattr__(_cached_enhancer.config, "nfe", nfe)
-                            object.__setattr__(_cached_enhancer.config, "solver", solver)
-                            object.__setattr__(_cached_enhancer.config, "tau", tau)
+                    if hasattr(_cached_enhancer, "hp"):
+                        object.__setattr__(_cached_enhancer.hp, "nfe", nfe)
+                        object.__setattr__(_cached_enhancer.hp, "solver", solver)
+                        object.__setattr__(_cached_enhancer.hp, "tau", tau)
                         
-                        if hasattr(_cached_enhancer, "hp"):
-                            object.__setattr__(_cached_enhancer.hp, "nfe", nfe)
-                            object.__setattr__(_cached_enhancer.hp, "solver", solver)
-                            object.__setattr__(_cached_enhancer.hp, "tau", tau)
-                            
-                        # CRITICAL: Update internal state variables used by forward()
-                        # forward() uses: lambd = self._eval_lambd
-                        # LCFM uses: tau = self._eval_tau
-                        if hasattr(_cached_enhancer, "_eval_lambd"):
-                            # lambd is typically 0 (skip) or >0 (run). If tau=0.5, lambd usually != 0.
-                            # We force it to be non-zero to ensure CFM runs.
-                            # In resemble-enhance, lambd is often just 'tau' or derived.
-                            # Let's set it to tau just to be safe, or 1.0?
-                            # Actually, normally init does: self._eval_lambd = 0 if ... else ...
-                            # Let's set it to tau logic:
-                             _cached_enhancer._eval_lambd = tau
+                    # CRITICAL: Update internal state variables used by forward()
+                    # forward() uses: lambd = self._eval_lambd
+                    # LCFM uses: tau = self._eval_tau
+                    if hasattr(_cached_enhancer, "_eval_lambd"):
+                        # lambd is typically 0 (skip) or >0 (run). If tau=0.5, lambd usually != 0.
+                        # We force it to be non-zero to ensure CFM runs.
+                         _cached_enhancer._eval_lambd = tau
 
-                        if hasattr(_cached_enhancer, "lcfm") and hasattr(_cached_enhancer.lcfm, "_eval_tau"):
-                             _cached_enhancer.lcfm._eval_tau = tau
-                             
-                    except Exception as e:
-                        print(f"[AIIA WARNING] Parameter injection failed: {e}")
+                    if hasattr(_cached_enhancer, "lcfm") and hasattr(_cached_enhancer.lcfm, "_eval_tau"):
+                         _cached_enhancer.lcfm._eval_tau = tau
+                         
+                except Exception as e:
+                    print(f"[AIIA WARNING] Parameter injection failed: {e}")
 
-                    # 6. Monkey-Patch Inference (if not already)
-                    import resemble_enhance.inference as inference_mod
+                # 6. Monkey-Patch Inference (if not already)
+                import resemble_enhance.inference as inference_mod
 
-                    def safe_inference_chunk(model, dwav, device):
-                        # ... wrapper logic ...
-                        # Ensure parameters are fresh in the model object itself
-                        # (Already done above, but safe to re-assert if needed)
-                        pass 
-                        
-                        # 1. Padding
-                        # ...
-                        
-                        # 2. To Device
-                        # ...
-                        
-                        # 3. Create Time Steps
-                        t = torch.linspace(0, 1, nfe + 1, device=device)
-                        
-                        # EXECUTE            if "device" in str(e) and device != "cpu":
+                def safe_inference_chunk(model, dwav, device):
+                    # 1. Padding
+                    # PAD to be divisible by 64 (or whatever the model needs)
+                    n_fft = 1024
+                    hop_length = 256
+                    
+                    # Pad logic from original
+                    pad_len = (dwav.shape[-1] // hop_length + 1) * hop_length - dwav.shape[-1]
+                    npad = pad_len
+                    dwav = F.pad(dwav, (0, npad), mode='constant', value=0)
+
+                    # 2. To Device
+                    dwav = dwav.to(device)
+                    
+                    # 3. Create Time Steps
+                    t = torch.linspace(0, 1, nfe + 1, device=device)
+                    
+                    # EXECUTE            if "device" in str(e) and device != "cpu":
                         print(f"[AIIA] Device mismatch error on {device}. Retrying on CPU (fallback)...")
                         # Clear cache or just move?
                         try:
