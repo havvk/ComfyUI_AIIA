@@ -244,14 +244,25 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     -   `chunk_size`: 目标切片大小（默认 25 秒）。
     -   `overlap_size`: 重叠大小，用于平滑衔接。
 
-#### 3.5 智能音频降噪 (VoiceFixer)
--   **用途**: 使用 AI 模型去除 CosyVoice 等生成式语音中的底噪、电音、混响及破音。
--   **核心优势**: 相比数学滤波器，它能“听懂”人声，保留人声细节的同时去除背景杂音。
+#### 3.5 智能音频增强 (Audio AI Enhance) (推荐)
+-   **用途**: 专为 CosyVoice 等生成式语音设计的增强器。基于 `resemble-enhance`，它不仅能去除底噪，还能扩展频带（Bandwidth Extension），使声音更加饱满、清晰，且不会引入像 VoiceFixer 那样的条纹或爆音。
+-   **参数**:
+    -   `mode`:
+        -   **Enhance**: 降噪 + 频带扩展 (推荐)。
+        -   **Denoise Only**: 仅降噪。
+    -   `solver`: 推理求解器 (默认为 Midpoint)。
+    -   `nfe`: Number of Function Evaluations (默认 64)。越高越精细但越慢。
+    -   `tau`: 温度参数 (默认 0.5)。
+-   **依赖**: 首次运行会自动安装 `resemble-enhance`。
+
+#### 3.6 智能音频降噪 (VoiceFixer) (Legacy)
+-   **用途**: 用于修复**严重受损**的音频（如老电影、严重削波或极强背景噪）。
+-   **注意**: 对于 CosyVoice 生成的较干净语音，**不推荐**使用此节点，因为它通过重构方式修复，容易在干净语音上引入伪影（Spectral Stripes）。请优先使用 `Audio AI Enhance`。
 -   **参数**:
     -   `mode`:
         -   **0 (Full)**: 去噪 + 去混响 + 去破音 + 超分。适合质量最差的音频。
         -   **1 (No DeClip)**: 去噪 + 去混响 + 超分。适合大多数情况。
-        -   **2 (Denoise Only)**: 仅去噪。适合仅有底噪的音频。
+        -   **2 (Denoise Only)**: 仅去噪。
     -   `use_cuda`: 是否使用 GPU (推荐)。
 -   **依赖**: 首次运行会自动安装 `voicefixer` 库。
 -   **⚠️ 模型下载问题 (Model Download Issues)**:

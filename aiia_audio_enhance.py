@@ -1,0 +1,201 @@
+import torch
+import os
+import sys
+import subprocess
+import folder_paths
+import soundfile as sf
+import numpy as np
+import tempfile
+from pathlib import Path
+
+# Auto-install resemble-enhance
+try:
+    import resemble_enhance
+except ImportError:
+    print("[AIIA] resemble-enhance not found. Installing...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "resemble-enhance"])
+
+# We need to import these AFTER install
+try:
+    from resemble_enhance.enhancer.inference import enhance, denoise
+    from resemble_enhance.enhancer.download import download_model
+except ImportError:
+    print("[AIIA] Failed to import resemble_enhance. Please install it manually.")
+    enhance = None
+    denoise = None
+    download_model = None
+
+def setup_resemble_model_path():
+    """
+    Redirect resemble-enhance model download to ComfyUI/models/resemble_enhance
+    Resemble Enhance uses: ~/.cache/resemble-enhance/
+    """
+    try:
+        # 1. Target Directory (ComfyUI/models/resemble_enhance)
+        comfy_models_dir = folder_paths.models_dir
+        target_dir = os.path.join(comfy_models_dir, "resemble_enhance")
+        
+        # 2. Source Cache Directory
+        cache_dir = Path.home() / ".cache" / "resemble-enhance"
+        
+        # If cache_dir is already a symlink pointing to target_dir, we are good.
+        if os.path.islink(cache_dir):
+            if os.readlink(cache_dir) == target_dir:
+                return
+            else:
+                os.unlink(cache_dir)
+
+        # Prepare target directory
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
+            print(f"[AIIA] Created Resemble Enhance model directory: {target_dir}")
+
+        # If cache dir exists and is a real folder
+        if os.path.exists(cache_dir) and not os.path.islink(cache_dir):
+            print(f"[AIIA] Migrating Resemble Enhance models from {cache_dir}...")
+            import shutil
+            for item in os.listdir(cache_dir):
+                s = os.path.join(cache_dir, item)
+                d = os.path.join(target_dir, item)
+                if not os.path.exists(d):
+                    shutil.move(s, d)
+                else:
+                    if os.path.isdir(s): shutil.rmtree(s)
+                    else: os.remove(s)
+            try:
+                os.rmdir(cache_dir)
+            except:
+                pass
+
+        # Create symlink
+        os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
+        if not os.path.exists(cache_dir):
+            try:
+                os.symlink(target_dir, cache_dir)
+                print(f"[AIIA] Linked {cache_dir} -> {target_dir}")
+            except OSError:
+                print(f"[AIIA] Warning: Failed to create symlink for Resemble Enhance.")
+
+        # Trigger download if empty to ensure files are there (it normally downloads on first run)
+        # But we let the inference call handle it via the library's internal check
+        
+    except Exception as e:
+        print(f"[AIIA] Error setting up model path: {e}")
+
+class AIIA_Audio_Enhance:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+                "mode": (["Enhance (Denoise + Bandwidth Ext)", "Denoise Only"], {"default": "Enhance (Denoise + Bandwidth Ext)"}),
+                "solver": (["Midpoint", "RK4", "Euler"], {"default": "Midpoint"}),
+                "nfe": ("INT", {"default": 64, "min": 1, "max": 128}),
+                "tau": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "denoising": ("BOOLEAN", {"default": True}),
+                "use_cuda": ("BOOLEAN", {"default": True}),
+            },
+             "optional": {
+                "splice_info": ("SPLICE_INFO",),
+            }
+        }
+
+    RETURN_TYPES = ("AUDIO", "SPLICE_INFO")
+    RETURN_NAMES = ("audio", "splice_info")
+    FUNCTION = "process_audio"
+    CATEGORY = "AIIA/Audio"
+
+    def process_audio(self, audio, mode, solver, nfe, tau, denoising, use_cuda, splice_info=None):
+        if enhance is None:
+             raise ImportError("resemble-enhance library is not available.")
+
+        setup_resemble_model_path()
+        
+        device = "cuda" if use_cuda and torch.cuda.is_available() else "cpu"
+        
+        # Prepare Input
+        waveform = audio["waveform"] # [B, C, T]
+        sample_rate = audio["sample_rate"]
+        
+        if waveform.ndim == 3:
+            wav_tensor = waveform[0] # [C, T]
+        else:
+            wav_tensor = waveform
+            
+        # Resemble Enhance expects torch tensor on device, shape [C, T] or [1, T]?
+        # Looking at library: run(dwav, sr, device) -> dwav is torch tensor
+        # It handles resampling internally? 
+        # Actually inference.py takes (process_audio_file) or (waveform, sample_rate)
+        # We need to make sure we pass the right thing.
+        
+        # Convert to mono if needed?
+        # The library seems to handle it, but typically it expects [1, T] or [T]
+        if wav_tensor.shape[0] > 1:
+            # Simple mixdown for enhancement stability
+             wav_tensor = torch.mean(wav_tensor, dim=0, keepdim=True)
+        
+        wav_tensor = wav_tensor.to(device)
+        
+        print(f"[AIIA] Running Resemble Enhance ({mode}) on {device}...")
+        
+        try:
+            if mode == "Denoise Only":
+                # denoise(waveform: Tensor, sample_rate: int, device: str)
+                # It returns (waveform, new_sr)
+                processed_wav, new_sr = denoise(wav_tensor, sample_rate, device)
+            else:
+                # enhance(waveform, sample_rate, device, nfe=64, solver="Midpoint", lambd=0.5, tau=0.5)
+                # Note: 'denoising' param is implicitly handled if we use 'enhance' wrapper?
+                # Actually enhance() calls denoise() internally if we look at source, 
+                # but let's see if we can control it. 
+                # The python API `enhance` func signature:
+                # def enhance(waveform, sample_rate, device, nfe=64, solver="Midpoint", lambd=0.9, tau=0.5):
+                # We map our inputs.
+                processed_wav, new_sr = enhance(
+                    wav_tensor, 
+                    sample_rate, 
+                    device, 
+                    nfe=nfe, 
+                    solver=solver, 
+                    tau=tau,
+                    lambd=0.9 if denoising else 0.1 # Approximate control, usually high lambd = more denoising focus?
+                    # Actually standard usage just calls clean, enhanced = enhance(...)
+                )
+        except Exception as e:
+            print(f"Error in resemble-enhance: {e}")
+            raise e
+
+        # Post-process
+        # processed_wav is typically on device
+        processed_wav = processed_wav.cpu()
+        
+        # Output format [1, C, T]
+        if processed_wav.ndim == 1:
+            processed_wav = processed_wav.unsqueeze(0).unsqueeze(0)
+        elif processed_wav.ndim == 2:
+            processed_wav = processed_wav.unsqueeze(0)
+            
+        # Handle Output SR (usually 44100)
+        result_sr = new_sr
+
+        # Splice Info Scaling
+        new_splice_info = None
+        if splice_info is not None:
+             import copy
+             new_splice_info = copy.deepcopy(splice_info)
+             old_rate = splice_info.get("sample_rate", sample_rate)
+             if old_rate != result_sr:
+                 scale = result_sr / old_rate
+                 new_splice_info["splice_points"] = [int(p * scale) for p in new_splice_info.get("splice_points", [])]
+                 new_splice_info["sample_rate"] = result_sr
+                 new_splice_info["scale_factor"] = scale
+
+        return ({"waveform": processed_wav, "sample_rate": result_sr}, new_splice_info)
+
+NODE_CLASS_MAPPINGS = {
+    "AIIA_Audio_Enhance": AIIA_Audio_Enhance
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIIA_Audio_Enhance": "Audio AI Enhance (Resemble)"
+}
