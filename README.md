@@ -227,6 +227,23 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
         -   `CosyVoice2-0.5B` (CosyVoice 2.0)
         -   `CosyVoice-300M` 系列 (SFT, Instruct, TTSFRD)
 -   **输出**: `COSYVOICE_MODEL` (专为 AIIA Voice Conversion 节点优化)。
+    -   **⚠️ 模型下载问题 (Model Download Issues)**:
+        如果遇到自动下载卡顿或失败，请**手工下载**模型文件夹，并将其放入 `ComfyUI/models/cosyvoice/` 目录中。
+        
+        **目录结构示例 (Directory Structure)**:
+        请注意：文件夹名称建议与下方列表保持一致（即去除 `FunAudioLLM/` 前缀）。
+        ```text
+        ComfyUI/models/cosyvoice/
+        ├── Fun-CosyVoice3-0.5B-2512/  <-- 对应选项 FunAudioLLM/Fun-CosyVoice3-0.5B-2512
+        │   ├── cosyvoice.yaml
+        │   ├── model.pt
+        │   └── ...
+        ├── CosyVoice2-0.5B/           <-- 对应选项 FunAudioLLM/CosyVoice2-0.5B
+        └── CosyVoice-300M/            <-- 对应选项 CosyVoice-300M
+        ```
+        **下载地址 (Download Sources)**:
+        *   [ModelScope (魔搭社区)](https://www.modelscope.cn/organization/iic) (搜索 CosyVoice)
+        *   [HuggingFace - FunAudioLLM](https://huggingface.co/FunAudioLLM)
 
 **2. Voice Conversion (AIIA Unlimited)**
 
