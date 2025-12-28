@@ -76,13 +76,35 @@ class AIIA_VibeVoice_Loader:
         # Fix for "KeyError: vibevoice":
         # Strategy: Manually import the model code and register it to AutoConfig/AutoModel
         
-        # Fix for "KeyError: vibevoice":
-        # Strategy: Load available code (likely from 0.5B repo) and alias it to load 1.5B weights
-        
-        import importlib.util
-        import re
-        import types
+        vibe_tokenizer_class = None
+
         try:
+            # ... (previous code) ...
+            
+            # ... inside loop or module loading ...
+             if "modular_vibevoice_tokenizer" in sys.modules:
+                    tokenizer_mod = sys.modules["modular_vibevoice_tokenizer"]
+                    if hasattr(tokenizer_mod, "VibeVoiceTokenizer"):
+                        vibe_tokenizer_class = tokenizer_mod.VibeVoiceTokenizer
+                        # Register mapping: ConfigClass -> (SlowTokenizer, FastTokenizer)
+                        try:
+                            from transformers.models.auto.tokenization_auto import TOKENIZER_MAPPING
+                            TOKENIZER_MAPPING.register(VibeVoiceConfig, (vibe_tokenizer_class, None))
+                        except:
+                            pass
+            # ...
+            
+        except Exception as e:
+            # ... logic ...
+            pass
+            
+        # 6. Load Tokenizer
+        if vibe_tokenizer_class is not None:
+             print(f"[AIIA] Loading tokenizer using custom class {vibe_tokenizer_class.__name__}...")
+             tokenizer = vibe_tokenizer_class.from_pretrained(load_path)
+        else:
+             print("[AIIA] Loading tokenizer using AutoTokenizer (fallback)...")
+             tokenizer = AutoTokenizer.from_pretrained(load_path, trust_remote_code=True)
             # We look for the files user copied from 'modular' folder
             # Note: The file names in GitHub repo are specific
             config_file_path = os.path.join(load_path, "configuration_vibevoice_streaming.py") 
@@ -209,24 +231,19 @@ class AIIA_VibeVoice_Loader:
             # 4. Register Model
             AutoModel.register(VibeVoiceConfig, VibeVoiceClass)
             
-            # 5. Fix Tokenizer Mapping (KeyError: 'VibeVoiceStreamingConfig')
-            # AutoTokenizer fails because it doesn't know which tokenizer class matches our custom config.
-            # We must manually register the mapping.
-            try:
-                from transformers.models.auto.tokenization_auto import TOKENIZER_MAPPING
-                if "modular_vibevoice_tokenizer" in sys.modules:
-                    tokenizer_mod = sys.modules["modular_vibevoice_tokenizer"]
-                    if hasattr(tokenizer_mod, "VibeVoiceTokenizer"):
-                        VibeVoiceTokenizer = tokenizer_mod.VibeVoiceTokenizer
-                        # Register mapping: ConfigClass -> (SlowTokenizer, FastTokenizer)
-                        TOKENIZER_MAPPING.register(VibeVoiceConfig, (VibeVoiceTokenizer, None))
-                        print(f"[AIIA] Registered VibeVoiceTokenizer for {VibeVoiceConfig.__name__}")
-            except Exception as e:
-                print(f"[AIIA] Failed to register tokenizer mapping: {e}")
+            # 5. Capture Tokenizer Class
+            if "modular_vibevoice_tokenizer" in sys.modules:
+                mod = sys.modules["modular_vibevoice_tokenizer"]
+                if hasattr(mod, "VibeVoiceTokenizer"):
+                     VibeVoiceTokenizerClass = mod.VibeVoiceTokenizer
+                     # Optional: still try to register mapping for completeness
+                     try:
+                        from transformers.models.auto.tokenization_auto import TOKENIZER_MAPPING
+                        TOKENIZER_MAPPING.register(VibeVoiceConfig, (VibeVoiceTokenizerClass, None))
+                     except: pass
 
-            # 6. Load
+            # 6. Load Model
             print("[AIIA] Loading VibeVoice 1.5B using aliased class...")
-            # We force the config to use the class we found
             config = VibeVoiceConfig.from_pretrained(load_path)
             model = VibeVoiceClass.from_pretrained(
                 load_path,
@@ -244,7 +261,14 @@ class AIIA_VibeVoice_Loader:
                  sys.path.remove(load_path)
             raise e
             
-        tokenizer = AutoTokenizer.from_pretrained(load_path, trust_remote_code=True)
+        # 7. Load Tokenizer
+        if 'VibeVoiceTokenizerClass' in locals() and VibeVoiceTokenizerClass:
+             print(f"[AIIA] Loading tokenizer using explicit class: {VibeVoiceTokenizerClass.__name__}")
+             tokenizer = VibeVoiceTokenizerClass.from_pretrained(load_path)
+        else:
+             print("[AIIA] Loading tokenizer using AutoTokenizer...")
+             tokenizer = AutoTokenizer.from_pretrained(load_path, trust_remote_code=True)
+        
         # Note: model is already loaded above manually
 
         
