@@ -363,8 +363,17 @@ class AIIA_Audio_Enhance:
                     if not hasattr(_cached_enhancer, "ode_solve"):
                         print(f"[AIIA DEBUG] Model type: {type(_cached_enhancer)}")
                         print(f"[AIIA DEBUG] Model dir: {dir(_cached_enhancer)}")
-                        # Check submodules?
-                    
+                        
+                        # DEBUG: Inspect Original Code to see what it calls!
+                        try:
+                            import inspect
+                            import resemble_enhance.inference as inference_mod_inner
+                            if hasattr(inference_mod_inner, "original_inference_chunk"):
+                                src = inspect.getsource(inference_mod_inner.original_inference_chunk)
+                                print(f"[AIIA DEBUG] Original inference_chunk source:\n{src}")
+                        except Exception as e:
+                            print(f"[AIIA DEBUG] Failed to inspect source: {e}")
+
                     # Fix: Move global mel_fn if it exists (fixes 'stft input and window' error)
                     # The library uses a global mel_fn for chunk merging, which stays on CPU by default.
                     
