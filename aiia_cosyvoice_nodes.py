@@ -180,49 +180,61 @@ class AIIA_CosyVoice_ModelLoader:
             except Exception as e:
                 print(f"[AIIA] Warning: Failed to copy config file: {e}")
 
-        # --- RL Model Switching Logic ---
+        # --- RL Model Switching Logic (Symlink Strategy) ---
         llm_pt = os.path.join(model_dir, "llm.pt")
         llm_rl = os.path.join(model_dir, "llm.rl.pt")
         llm_base = os.path.join(model_dir, "llm.base.pt")
 
+        # 1. Normalize: Ensure we have a persistent llm.base.pt
+        if not os.path.exists(llm_base) and os.path.exists(llm_pt):
+            # If llm.pt is a real file (not a link), it's our base model. Rename it.
+            if not os.path.islink(llm_pt):
+                print(f"[AIIA] One-time setup: Renaming original llm.pt to llm.base.pt")
+                os.rename(llm_pt, llm_base)
+
+        # 2. Determine Target
+        target_source = llm_base
         if use_rl_model:
             if os.path.exists(llm_rl):
-                print(f"[AIIA] Switch: RL Model Requested.")
-                if not os.path.exists(llm_base):
-                    if os.path.exists(llm_pt):
-                        # Assuming current llm.pt is the base, backup it
-                        print(f"[AIIA] Backing up Base LLM to {llm_base}")
-                        os.rename(llm_pt, llm_base)
-                
-                # Create symlink/copy for RL
-                # Check if current llm.pt is already RL? (Hard to check symlink validity in py cross platform easily, blindly relinking is safer)
-                if os.path.exists(llm_pt):
-                    os.remove(llm_pt)
-                
-                print(f"[AIIA] Linking RL Model -> llm.pt")
-                try:
-                    os.symlink(llm_rl, llm_pt)
-                except OSError:
-                    import shutil
-                    shutil.copy2(llm_rl, llm_pt)
+                target_source = llm_rl
+                print(f"[AIIA] RL Mode Active: Using {os.path.basename(llm_rl)}")
             else:
-                print(f"[AIIA] Warning: RL Mode requested but {llm_rl} not found. Using default LLM.")
+                print(f"[AIIA] Warning: RL Mode requested but llm.rl.pt not found. Fallback to Base.")
         else:
-            # Revert to Base if backed up
-            if os.path.exists(llm_base):
-                print(f"[AIIA] Switch: Base Model Requested. Restoring...")
-                if os.path.exists(llm_pt):
-                    os.remove(llm_pt)
-                
-                print(f"[AIIA] Linking Base Model -> llm.pt")
+             print(f"[AIIA] Base Mode Active: Using {os.path.basename(llm_base)}")
+
+        # 3. Create/Update Symlink llm.pt -> target_source
+        if os.path.exists(target_source):
+            # Check if link needs update
+            need_update = True
+            if os.path.exists(llm_pt):
+                if os.path.islink(llm_pt):
+                    current_link = os.readlink(llm_pt)
+                    if current_link == os.path.basename(target_source):
+                        need_update = False
+                    else:
+                         os.remove(llm_pt) # Wrong link
+                else:
+                    # It's a file but we expect it to be a link (or we just renamed it away in step 1)
+                    # If we are here, step 1 didn't run or llm.pt reappeared?
+                    # Safety: If it's the exact same file as target (copy), we can remove it.
+                    # But if it's unknown, backup?
+                    # Given step 1, if llm.pt exists here it's either a rogue file or we failed to rename.
+                    # Let's assume safely remove if we have base.
+                    os.remove(llm_pt) 
+
+            if need_update:
+                print(f"[AIIA] Linking llm.pt -> {os.path.basename(target_source)}")
                 try:
-                    os.symlink(llm_base, llm_pt)
+                    # Use relative symlink for portability
+                    os.symlink(os.path.basename(target_source), llm_pt)
                 except OSError:
+                    # Fallback to copy if symlink fails (e.g. Windows non-admin)
                     import shutil
-                    shutil.copy2(llm_base, llm_pt)
-            else:
-                # No backup, means current llm.pt is likely base or RL is missing. Do nothing.
-                pass
+                    print("[AIIA] Symlink failed. Copying file instead (slower)...")
+                    shutil.copy2(target_source, llm_pt)
+        else:
+             print(f"[AIIA] Critical: Target model file {target_source} missing!")
         # -------------------------------
 
         # Load Model
