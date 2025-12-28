@@ -290,12 +290,14 @@ class AIIA_Audio_Enhance:
                         #     return hwav
                         
                         chunk = chunk.to(device)
+                        # Fix: Handle missing config by providing defaults or injecting
+                        nfe = getattr(model.config, "nfe", 64) if hasattr(model, "config") else 64
                         t = torch.linspace(0, 1, model.config.nfe + 1, device=device)
                         
                         # Solver
                         # Check if model has ode_solve (EnhancerStage2)
                         if hasattr(model, "ode_solve"):
-                             hwav = model.ode_solve(chunk, t, solver=model.config.solver, tau=model.config.tau)
+                             hwav = model.ode_solve(chunk, t, solver=solver_val, tau=tau_val)
                         else:
                              # Fallback if API changes
                              hwav = chunk
@@ -336,9 +338,6 @@ class AIIA_Audio_Enhance:
                              print(f"[AIIA] Found Resume Enhance model at: {run_dir}")
                              break
                      
-                     # If run_dir is found, load_enhancer(run_dir) skips download.
-                     # If not found, it runs download (which we might have patched to fail/noop, so be careful)
-                     
                      # ERROR FIXED: load_enhancer expects Path object, not string (it uses / operator)
                      _cached_enhancer = load_enhancer(run_dir if run_dir else None, device)
                 
@@ -346,11 +345,14 @@ class AIIA_Audio_Enhance:
                 _cached_enhancer.to(device)
                 _cached_enhancer.eval()
                 
-                # Configure Params
-                if hasattr(_cached_enhancer, "config"):
-                    _cached_enhancer.config.nfe = nfe
-                    _cached_enhancer.config.solver = solver.lower()
-                    _cached_enhancer.config.tau = tau
+                # Configure Params: FORCE INJECT Config if missing
+                if not hasattr(_cached_enhancer, "config"):
+                    class Config: pass
+                    _cached_enhancer.config = Config()
+                    
+                _cached_enhancer.config.nfe = nfe
+                _cached_enhancer.config.solver = solver.lower()
+                _cached_enhancer.config.tau = tau
 
                 # Run Inference
                 # Now that inference_chunk is patched, standard inference() should work on CUDA
