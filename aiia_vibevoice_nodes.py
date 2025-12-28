@@ -93,22 +93,90 @@ class AIIA_VibeVoice_Loader:
             if not os.path.exists(model_file_path):
                  # Fallback: maybe user renamed it to standard modeling_vibevoice.py?
                  model_file_path = os.path.join(load_path, "modeling_vibevoice.py")
+            
+            # Ensure sys.path has the load_path so absolute imports work
+            sys_path_added = False
+            if load_path not in sys.path:
+                sys.path.append(load_path)
+                sys_path_added = True
 
-            # Helper to load module from file
-            def load_module_from_path(module_name, file_path):
+            # Helper to load module from file with SOURCE PATCHING
+            def load_module_from_path_patched(module_name, file_path):
                 if not os.path.exists(file_path):
                      raise FileNotFoundError(f"Required code file not found: {file_path}")
-                spec = importlib.util.spec_from_file_location(module_name, file_path)
-                if spec is None:
-                    raise ImportError(f"Could not load spec for {module_name} from {file_path}")
-                module = importlib.util.module_from_spec(spec)
+                
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    source_code = f.read()
+                
+                # PATCH: Convert relative imports to absolute imports
+                # "from .module import" -> "from module import"
+                # "from . import x" -> "import x" (less common here but possible)
+                
+                # Regex 1: "from .module import" -> "from module import"
+                source_code = re.sub(r'from \.(\w+)', r'from \1', source_code)
+                # Regex 2: "from . import" -> "import" (This might change semantics if importing symbols, be careful)
+                # In these files, we see "from .streamer import ...". pattern 1 covers it.
+                
+                module = types.ModuleType(module_name)
+                # Set __file__ so relative paths inside (if any left) might work or for debugging
+                module.__file__ = file_path
                 sys.modules[module_name] = module
-                spec.loader.exec_module(module)
+                
+                # Execute patched source
+                exec(source_code, module.__dict__)
                 return module
 
             # 1. Load Configuration Code
-            print(f"[AIIA] Loading config code from {config_file_path}...")
-            config_module = load_module_from_path("configuration_vibevoice", config_file_path)
+            print(f"[AIIA] Loading config code (patched) from {config_file_path}...")
+            # We need to make sure dependencies are loaded. 
+            # configuration_vibevoice_streaming imports configuration_vibevoice.
+            # We should probably pre-load configuration_vibevoice if we can guess it.
+            # But making imports absolute + sys.path should allow it to import naturally if we don't mess up.
+            # However, "from configuration_vibevoice import" will look in sys.path.
+            
+            # Note: We use the patched loader for the main files we need, 
+            # but their DEPENDENCIES (imported inside them via 'from configuration_vibevoice')
+            # will be loaded by Python's standard importer from sys.path (since we removed the dot).
+            # This requires those dependencies to be loadable as standard modules.
+            # Since we added load_path to sys.path, 'import configuration_vibevoice' should work 
+            # IF configuration_vibevoice.py doesn't itself assume relative imports from a parent package.
+            # Most likely it's fine or we might need to patch dependencies too?
+            # Let's trust that dependencies like configuration_vibevoice.py are simpler (usually define Config class).
+            
+            # Wait, if configuration_vibevoice_streaming imports configuration_vibevoice, 
+            # and we patch it to 'from configuration_vibevoice import ...', 
+            # then Python loads configuration_vibevoice.py from disk.
+            # Does configuration_vibevoice.py assume package? Usually no for Configs.
+            
+            # Alternative: Just user 'importlib' but wrap it?
+            # Let's try to just load the specific ones we know we need in dependency order.
+            # 1. configuraton_vibevoice
+            # 2. configuration_vibevoice_streaming
+            # 3. modular_vibevoice_diffusion_head
+            # 4. modeling_vibevoice_streaming
+            # 5. modeling_vibevoice_streaming_inference
+            
+            # Let's try loading them in this order manually.
+            module_order = [
+                "configuration_vibevoice",
+                "modular_vibevoice_tokenizer",
+                "modular_vibevoice_text_tokenizer",
+                "streamer",
+                "configuration_vibevoice_streaming",
+                "modular_vibevoice_diffusion_head",
+                "vibevoice_processor", # maybe?
+                "modeling_vibevoice_streaming",
+                "modeling_vibevoice_streaming_inference"
+            ]
+            
+            for mod_name in module_order:
+                f_path = os.path.join(load_path, f"{mod_name}.py")
+                if os.path.exists(f_path):
+                     # Load and patch, inject to sys.modules
+                     load_module_from_path_patched(mod_name, f_path)
+
+            # Now we can just get the class from sys.modules
+            config_module = sys.modules["configuration_vibevoice_streaming"]
             
             # The config class name might be VibeVoiceStreamingConfig or VibeVoiceConfig
             if hasattr(config_module, "VibeVoiceStreamingConfig"):
@@ -120,19 +188,9 @@ class AIIA_VibeVoice_Loader:
             # Note: 1.5B config.json says model_type is "vibevoice", so we register for that key
             AutoConfig.register("vibevoice", VibeVoiceConfig)
             
-            # 3. Load Modeling Code (this will likely trigger imports of other files in that dir)
-            # We need to make sure the dir is in sys.path temporarily so internal imports work
-            sys_path_added = False
-            if load_path not in sys.path:
-                sys.path.append(load_path)
-                sys_path_added = True
-                
-            print(f"[AIIA] Loading modeling code from {model_file_path}...")
-            try:
-                model_module = load_module_from_path("modeling_vibevoice_streaming_inference", model_file_path)
-            except Exception as e:
-                # If direct load fails (due to intense relative imports), try standard import since it's in sys.path
-                import modeling_vibevoice_streaming_inference as model_module
+            # 3. Load Modeling Code
+            print(f"[AIIA] Loading modeling code (patched) from {model_file_path}...")
+            model_module = sys.modules["modeling_vibevoice_streaming_inference"]
             
             # Identify the correct class
             if hasattr(model_module, "VibeVoiceStreamingForConditionalGenerationInference"):
