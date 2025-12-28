@@ -417,12 +417,34 @@ class AIIA_Audio_Enhance:
                 # 6. Monkey-Patch Inference (if not already)
                 import resemble_enhance.inference as inference_mod
 
+                target_len_samples = 0
+
                 def safe_inference_chunk(model, dwav, sr, device):
+                    nonlocal target_len_samples
+                    
                     # 0. Normalization (Required for correct enhancement)
                     abs_max = dwav.abs().max()
                     dwav = dwav / (abs_max + 1e-8)
+                    
+                    # Record the "Standard Cache Size" (usually the first chunk)
+                    current_len = dwav.shape[-1]
+                    if target_len_samples == 0:
+                        target_len_samples = current_len
+                        
+                    # DYNAMIC PADDING (AVOID RE-COMPILE)
+                    # If this chunk is smaller than our standard cache (e.g. last chunk),
+                    # pad it to match the standard size so we hit the JIT cache.
+                    original_len = current_len
+                    has_padded = False
+                    
+                    if current_len < target_len_samples:
+                        pad_diff = target_len_samples - current_len
+                        # Pad with silence at the end
+                        dwav = F.pad(dwav, (0, pad_diff))
+                        has_padded = True
+                        print(f"[AIIA DEBUG] Padding last chunk to {target_len_samples} samples to hit JIT cache...")
 
-                    # 1. Padding
+                    # 1. Padding (Alignment for Model)
                     # PAD to be divisible by 64 (or whatever the model needs)
                     n_fft = 1024
                     hop_length = 256
@@ -445,7 +467,7 @@ class AIIA_Audio_Enhance:
                     if hasattr(model, "ode_solve"):
                          hwav = model.ode_solve(dwav, t, solver=solver, tau=tau)
                     else:
-                         print(f"[AIIA DEBUG] Running model forward pass (NFE={nfe})...")
+                         # print(f"[AIIA DEBUG] Running model forward pass (NFE={nfe}, len={dwav.shape[-1]})...")
                          out = model(dwav.unsqueeze(0))
                          if isinstance(out, tuple): out = out[0]
                          hwav = out[0]
@@ -455,9 +477,20 @@ class AIIA_Audio_Enhance:
                     hwav = hwav * abs_max
                     
                     # 7. Strict Length Trimming (Fix Tensor Mismatch)
-                    target_length = dwav.shape[-1] - npad
-                    if hwav.shape[-1] > target_length:
-                        hwav = hwav[..., :target_length]
+                    # First, undo alignment padding
+                    aligned_len = dwav.shape[-1] - npad
+                    if hwav.shape[-1] != aligned_len:
+                        if hwav.shape[-1] > aligned_len:
+                            hwav = hwav[..., :aligned_len]
+                        else:
+                            hwav = F.pad(hwav, (0, aligned_len - hwav.shape[-1]))
+                            
+                    # Second, undo Compiliation Padding (if applied)
+                    if has_padded:
+                        if hwav.shape[-1] > original_len:
+                             hwav = hwav[..., :original_len]
+                    
+                    return hwav.cpu()
                     elif hwav.shape[-1] < target_length:
                          hwav = F.pad(hwav, (0, target_length - hwav.shape[-1]))
                     
