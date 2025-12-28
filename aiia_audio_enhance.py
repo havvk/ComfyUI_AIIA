@@ -45,7 +45,6 @@ def _install_resemble_if_needed():
         pass_packages = ["torch", "torchaudio", "torchvision", "numpy", "scipy", "tqdm"] 
         
         # MOCK DEEPSPEED to prevent import error (we only need inference)
-        import sys
         from unittest.mock import MagicMock
         if "deepspeed" not in sys.modules:
             print("[AIIA] Mocking DeepSpeed to bypass dependency check...")
