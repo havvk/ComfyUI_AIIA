@@ -417,7 +417,7 @@ class AIIA_Audio_Enhance:
                 # 6. Monkey-Patch Inference (if not already)
                 import resemble_enhance.inference as inference_mod
 
-                def safe_inference_chunk(model, dwav, device):
+                def safe_inference_chunk(model, dwav, sr, device):
                     # 1. Padding
                     # PAD to be divisible by 64 (or whatever the model needs)
                     n_fft = 1024
