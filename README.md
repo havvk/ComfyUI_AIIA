@@ -430,6 +430,15 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - 可自定义背景填充颜色。
 - **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
 
+#### 3.9 音频信息查看 (Audio Info & Metadata)
+- **用途**: 实时查看音频流的元数据，确保你的采样率符合预期。
+- **输入**: `AUDIO` 张量。
+- **输出**:
+    - `info_text`: 包含采样率、时长、通道数、BatchSize等详细信息的文本报告。
+    - `sample_rate`: 采样率 (INT)。
+    - `duration`: 时长秒数 (FLOAT)。
+    - `channels`: 通道数 (INT)。
+
 ---
 
 ## ❓ 故障排查

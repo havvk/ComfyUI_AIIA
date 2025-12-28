@@ -103,6 +103,9 @@ else:
     # 13. 处理 aiia_audio_enhance.py
     _load_nodes_from_module(".aiia_audio_enhance", "aiia_audio_enhance")
 
+    # 14. 处理 aiia_audio_info.py (新增元数据查看)
+    _load_nodes_from_module(".aiia_audio_info", "aiia_audio_info")
+
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
 
