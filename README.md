@@ -430,18 +430,40 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 - **用途**: 微软最新的 1.5B TTS/音色克隆模型。音质非常惊人，但对环境要求较高。
 - **环境要求**:
-  - **Flash Attention 2**: 必须安装。
-  - **Wrappers**: `transformers >= 4.51`。
+  - **Flash Attention 2**: 强烈推荐安装（否则速度较慢）。
+  - **Transformers**: `>= 4.51`（重要: 旧版本不支持该模型）。
 - **节点**:
-  - `VibeVoice Loader`: 自动下载并加载 `microsoft/VibeVoice-1.5B`。
+  - `VibeVoice Loader`: 加载模型。支持从 HuggingFace 自动下载，也支持加载本地模型。
   - `VibeVoice TTS`: 支持 Zero-shot 音色克隆（输入 `reference_audio` 即可）。
-- **手动下载 (Manual Download)**:
-  如果不希望节点自动下载，可以使用 hf 命令行手动下载到指定目录：
-  ```bash
-  # 推荐目录结构: ComfyUI/models/vibevoice/microsoft/VibeVoice-1.5B
-  hf download microsoft/VibeVoice-1.5B --local-dir models/vibevoice/microsoft/VibeVoice-1.5B
+- **模型准备 (Model Preparation)**:
+  如果遇到下载问题或分词器报错，请手动下载模型文件到 `models/vibevoice` 目录。
+  
+  **必须的文件结构**:
+  ```text
+  ComfyUI/models/vibevoice/microsoft/VibeVoice-1.5B/
+  ├── model-00001-of-00003.safetensors ... (模型权重)
+  ├── config.json
+  ├── modeling_vibevoice_*.py (Python代码)
+  └── [Tokenizer Files] (必须包含以下 Qwen 文件!)
+      ├── tokenizer.json
+      ├── tokenizer_config.json
+      ├── vocab.json
+      └── merges.txt
   ```
-- **注意**: 由于官方 API 变动频繁，此功能目前标记为 Beta，若遇到环境报错请优先检查 `requirements.txt`。
+
+  **⚠️ 重要提示**: VibeVoice 依赖 **Qwen2.5-1.5B** 的分词器。如果你下载的模型包里没有上面列出的 tokenizer 文件，请手动从 [Qwen/Qwen2.5-1.5B](https://huggingface.co/Qwen/Qwen2.5-1.5B/tree/main) 下载这 4 个文件并放入模型目录。
+
+  **手动下载命令**:
+  ```bash
+  mkdir -p models/vibevoice/microsoft/VibeVoice-1.5B
+  # 1. 下载模型权重和代码
+  hf download microsoft/VibeVoice-1.5B --local-dir models/vibevoice/microsoft/VibeVoice-1.5B
+  # 2. 补全 Tokenizer 文件 (如果没有)
+  wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/tokenizer.json -P models/vibevoice/microsoft/VibeVoice-1.5B/
+  wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/tokenizer_config.json -P models/vibevoice/microsoft/VibeVoice-1.5B/
+  wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/vocab.json -P models/vibevoice/microsoft/VibeVoice-1.5B/
+  wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/merges.txt -P models/vibevoice/microsoft/VibeVoice-1.5B/
+  ```
 
 ### 4. 图像工具 (Image Utilities)
 
