@@ -43,11 +43,15 @@ class AIIA_VibeVoice_Loader:
         if not os.path.exists(model_path):
             os.makedirs(model_path, exist_ok=True)
         
-        # Extract model version from model_name (e.g., "microsoft/VibeVoice-1.5B" -> "VibeVoice-1.5B")
-        model_version = model_name.split("/")[-1]  # "VibeVoice-1.5B" or "VibeVoice-7B"
+        # Extract organization and model version from model_name 
+        # e.g., "microsoft/VibeVoice-1.5B" -> org="microsoft", version="VibeVoice-1.5B"
+        # e.g., "vibevoice/VibeVoice-7B" -> org="vibevoice", version="VibeVoice-7B"
+        parts = model_name.split("/")
+        org_name = parts[0] if len(parts) > 1 else "microsoft"
+        model_version = parts[-1]  # "VibeVoice-1.5B" or "VibeVoice-7B"
         
-        # Try to find local first
-        local_model_path = os.path.join(model_path, "microsoft", model_version) 
+        # Try to find local first (check org-specific path)
+        local_model_path = os.path.join(model_path, org_name, model_version) 
         load_path = model_name # Default to HF hub ID
         
         if os.path.exists(local_model_path):
