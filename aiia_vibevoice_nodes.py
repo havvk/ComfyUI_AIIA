@@ -210,6 +210,20 @@ class AIIA_VibeVoice_Loader:
                     if not found:
                         print(f"[AIIA WARNING] Could not find module file for {mod_name}")
 
+            # PRE-PATCH: Explicitly patch dependency modules that contain logic (like generate)
+            # which might be imported by the main model file. Standard imports won't use our patched loader!
+            pre_patch_modules = [
+                "modeling_vibevoice_inference", 
+                "modeling_vibevoice_streaming",
+                "streamer"
+            ]
+            for mod in pre_patch_modules:
+                if mod not in sys.modules:
+                    # Look for it in core
+                    p_path = os.path.join(core_path, "modular", f"{mod}.py")
+                    if os.path.exists(p_path):
+                         load_module_from_path_patched(mod, p_path)
+
             # 1. Get Config Class
             if "configuration_vibevoice_streaming" in sys.modules:
                 config_module = sys.modules["configuration_vibevoice_streaming"]
