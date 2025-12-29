@@ -447,7 +447,6 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     - **官方基准 (Official Baseline)**: **10** (极速方案)。
     - **推荐高质量**: **30 - 50**。步数增加到 100 理论上更细腻，但边际收益递减。
   - `speed` (默认: 1.0): 播放速度。可用此参数补偿 `cfg_scale` 带来的语速变化。
-  - `max_length_times` (默认: 5.0): 最大生成长度倍率 = 输入长度 × 此值。
   - `normalize_text` (默认: True): 文本预处理补丁（年份范围、引号移除）。
     - **1.5B**: 强烈建议开启，修复某些标点干扰。
     - **7B**: 建议关闭（False），7B 原生处理能力更强。建议关闭开关后观察效果。

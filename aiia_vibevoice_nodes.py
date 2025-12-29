@@ -402,7 +402,6 @@ class AIIA_VibeVoice_TTS:
                 "cfg_scale": ("FLOAT", {"default": 3.0, "min": 1.0, "max": 10.0, "step": 0.5, "tooltip": "CFG scale for speech generation. Higher = more faithful to text."}),
                 "ddpm_steps": ("INT", {"default": 50, "min": 10, "max": 100, "step": 10, "tooltip": "Diffusion steps. Higher = better quality but slower."}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1, "tooltip": "Playback speed. >1 = faster, <1 = slower (post-process time-stretch)."}),
-                "max_length_times": ("FLOAT", {"default": 5.0, "min": 2.0, "max": 20.0, "step": 1.0, "tooltip": "Max generation length = input_length × this. Increase if audio cuts off early."}),
                 "normalize_text": ("BOOLEAN", {"default": True, "tooltip": "Apply text normalization (year ranges → 至, remove quotes). Disable for 7B model or custom text."}),
             },
             "optional": {
@@ -415,7 +414,7 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, max_length_times, normalize_text, reference_audio=None):
+    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, normalize_text, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -507,6 +506,10 @@ class AIIA_VibeVoice_TTS:
              
              max_new_tokens = 4096 # Default safe limit
              
+             # Set max_length_times to a high internal default (10.0)
+             # This ensures the model has enough budget to finish naturally via EOS
+             max_length_times = 10.0
+             
              # Prepare generation kwargs
              generation_kwargs = {
                  "max_new_tokens": max_new_tokens,
@@ -515,7 +518,7 @@ class AIIA_VibeVoice_TTS:
                  "eos_token_id": tokenizer.eos_token_id, 
                  "pad_token_id": tokenizer.eos_token_id,
                  "cfg_scale": cfg_scale, # User-controlled CFG scale for speech generation
-                 "max_length_times": max_length_times, # Control max generation length (input_length × this)
+                 "max_length_times": max_length_times, # Safety budget
              }
              
              # Set diffusion inference steps (crucial for quality/speed tradeoff)
