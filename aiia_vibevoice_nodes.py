@@ -245,13 +245,15 @@ class AIIA_VibeVoice_Loader:
                 trust_remote_code=False
             )
             
-            if sys_path_added:
-                sys.path.remove(load_path)
+            # Cleanup not needed as we didn't add load_path to sys.path
+            # if sys_path_added:
+            #    sys.path.remove(core_path) # We keep core_path for now to ensure sub-modules resolve
+            pass
 
         except Exception as e:
             print(f"[AIIA] Manual import/registration failed: {e}")
-            if 'sys_path_added' in locals() and sys_path_added:
-                 sys.path.remove(load_path)
+            # if 'sys_path_added' in locals() and sys_path_added:
+            #      sys.path.remove(load_path)
             raise e
             
         # 7. Load Tokenizer & Processor

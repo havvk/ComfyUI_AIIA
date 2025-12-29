@@ -443,13 +443,14 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   ComfyUI/models/vibevoice/microsoft/VibeVoice-1.5B/
   ├── model-00001-of-00003.safetensors ... (模型权重)
   ├── config.json
-  ├── modeling_vibevoice_*.py (Python代码)
   └── [Tokenizer Files] (必须包含以下 Qwen 文件!)
       ├── tokenizer.json
       ├── tokenizer_config.json
       ├── vocab.json
       └── merges.txt
   ```
+
+  **💡 说明**: 插件已内置并修复了所有 VibeVoice 的 Python 核心代码 (`vibevoice_core`)。你**不需要**也不建议在模型目录中保留 `modeling_vibevoice_*.py` 等 Python 脚本，以避免潜在的冲突。
 
   **⚠️ 重要提示**: VibeVoice 依赖 **Qwen2.5-1.5B** 的分词器。如果你下载的模型包里没有上面列出的 tokenizer 文件，请手动从 [Qwen/Qwen2.5-1.5B](https://huggingface.co/Qwen/Qwen2.5-1.5B/tree/main) 下载这 4 个文件并放入模型目录。
 
