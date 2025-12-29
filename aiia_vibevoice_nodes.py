@@ -323,6 +323,27 @@ class AIIA_VibeVoice_TTS:
 
         print(f"[AIIA] Generating VibeVoice TTS... text length: {len(text)}")
         
+        # FIX: Processor expects script format "Speaker X: text" for raw strings
+        import re
+        if not re.search(r'^Speaker\s+\d+\s*:', text, re.IGNORECASE | re.MULTILINE):
+            print("[AIIA] No speaker tag found, adding default 'Speaker 1:' prefix")
+            # If multi-line, prefix each line that has content?
+            # Or just wrap the whole thing?
+            # VibeVoice supports multiple speakers. If user gives plain text, assume single speaker.
+            
+            # Simple approach: Prepend Speaker 1: to the whole block?
+            # The processor parsing logic splits by newline.
+            # If I wrap the whole text, newlines inside might be treated as... 
+            # Processor parse_script iterates lines. Each line MUST start with Speaker X:.
+            
+            lines = text.split('\n')
+            formatted_lines = []
+            for line in lines:
+                if line.strip():
+                     formatted_lines.append(f"Speaker 1: {line.strip()}")
+            text = "\n".join(formatted_lines)
+            print(f"[AIIA] Formatted input: {text[:50]}...")
+        
         # Prepare reference audio for processor
         voice_samples = None
         if reference_audio is not None:
