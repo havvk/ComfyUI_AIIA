@@ -55,12 +55,12 @@ except ImportError as e:
         f"Original error: {e}"
     )
 
-from .configuration_vibevoice import VibeVoiceConfig
+from configuration_vibevoice import VibeVoiceConfig
 
-from .modular_vibevoice_text_tokenizer import VibeVoiceTextTokenizer, VibeVoiceTextTokenizerFast
+from modular_vibevoice_text_tokenizer import VibeVoiceTextTokenizer, VibeVoiceTextTokenizerFast
 
-from .modeling_vibevoice import VibeVoiceModel, VibeVoicePreTrainedModel
-from .streamer import AudioStreamer, AsyncAudioStreamer
+from modeling_vibevoice import VibeVoiceModel, VibeVoicePreTrainedModel
+from streamer import AudioStreamer, AsyncAudioStreamer
 
 logger = logging.get_logger(__name__)
 

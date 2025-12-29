@@ -57,7 +57,7 @@ except ImportError as e:
         f"Original error: {e}"
     )
 
-from .configuration_vibevoice import VibeVoiceConfig
+from configuration_vibevoice import VibeVoiceConfig
 
 
 logger = logging.get_logger(__name__)
