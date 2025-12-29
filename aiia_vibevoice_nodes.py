@@ -144,7 +144,20 @@ class AIIA_VibeVoice_Loader:
                 
                 module.__file__ = file_path
                 
-                exec(source_code, module.__dict__)
+                try:
+                    exec(source_code, module.__dict__)
+                except Exception as e:
+                    print(f"[AIIA ERROR] Failed to exec module {module_name}: {e}")
+                    # Print context around error line if possible
+                    if hasattr(e, 'lineno'):
+                        lines = source_code.split('\n')
+                        start = max(0, e.lineno - 5)
+                        end = min(len(lines), e.lineno + 5)
+                        print(f"[AIIA DEBUG] Context around line {e.lineno}:")
+                        for i in range(start, end):
+                            indicator = ">>" if i + 1 == e.lineno else "  "
+                            print(f"{indicator} {i+1}: {lines[i]}")
+                    raise e
                 return module
             # Add VibeVoice core path to sys.path
             nodes_path = os.path.dirname(os.path.abspath(__file__))
