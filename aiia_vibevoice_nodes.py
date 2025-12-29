@@ -443,7 +443,11 @@ class AIIA_VibeVoice_TTS:
                      print(f"[AIIA DEBUG] {k}: {type(v)} - shape: {v.shape if hasattr(v, 'shape') else 'N/A'}")
 
              # Move all tensors to device
-             input_args = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
+             # Extract input_ids for positional argument
+             input_ids = inputs["input_ids"].to(device)
+             
+             # Prepare other kwargs
+             input_args = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items() if k != "input_ids"}
              
              max_new_tokens = 4096 # Default safe limit
              
@@ -461,6 +465,7 @@ class AIIA_VibeVoice_TTS:
              
              with torch.no_grad():
                 output_wav = model.generate(
+                    input_ids,
                     **input_args,
                     **generation_kwargs
                 )
