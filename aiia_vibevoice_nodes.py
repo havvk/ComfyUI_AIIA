@@ -392,8 +392,8 @@ class AIIA_VibeVoice_TTS:
             "required": {
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
                 "text": ("STRING", {"multiline": True, "default": "Hello, this is a test of VibeVoice."}),
-                "language": (["en", "zh", "ja"], {"default": "en"}),
-                "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
+                "cfg_scale": ("FLOAT", {"default": 3.0, "min": 1.0, "max": 10.0, "step": 0.5, "tooltip": "CFG scale for speech generation. Higher = more faithful to text."}),
+                "ddpm_steps": ("INT", {"default": 50, "min": 10, "max": 100, "step": 10, "tooltip": "Diffusion steps. Higher = better quality but slower."}),
             },
             "optional": {
                 "reference_audio": ("AUDIO",),
@@ -405,7 +405,7 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def generate(self, vibevoice_model, text, language, speed, reference_audio=None):
+    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -479,14 +479,12 @@ class AIIA_VibeVoice_TTS:
                  "bos_token_id": 151643, # Qwen2 BOS
                  "eos_token_id": tokenizer.eos_token_id, 
                  "pad_token_id": tokenizer.eos_token_id,
+                 "cfg_scale": cfg_scale, # User-controlled CFG scale for speech generation
              }
              
-             # Add sampling params if enabled (currently deterministic by default in this node but we can add later)
-             # For now, just basic generation
-             
-             # Set diffusion inference steps (crucial for quality/speed)
+             # Set diffusion inference steps (crucial for quality/speed tradeoff)
              if hasattr(model, "set_ddpm_inference_steps"):
-                 model.set_ddpm_inference_steps(num_steps=50) # Use 50 for better quality default, reference used 20
+                 model.set_ddpm_inference_steps(num_steps=ddpm_steps)
                  
              with torch.no_grad():
                 output_wav = model.generate(
