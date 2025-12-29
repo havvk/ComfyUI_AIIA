@@ -101,29 +101,32 @@ class AIIA_VibeVoice_Loader:
 
                 # PATCH: Fix unsafe .to(device) on potential None types in VibeVoice generation code
                 # Using regex for robustness against whitespace
+                print(f"[AIIA] Checking content of {module_name} for hot-patching...")
                 
                 # 1. speech_tensors
                 source_code, n_subs = re.subn(
-                    r'("speech_tensors"\s*:\s*speech_tensors\.to\(device=device\)),',
-                    r'"speech_tensors": speech_tensors.to(device=device) if speech_tensors is not None else None,',
-                    source_code
+                    r'("speech_tensors"\s*:\s*speech_tensors\.to\(.*?\)),',
+                    r'"speech_tensors": speech_tensors.to(device) if speech_tensors is not None else None,',
+                    source_code,
+                    flags=re.DOTALL
                 )
                 if n_subs > 0: print(f"[AIIA] Hot-patched speech_tensors safety check ({n_subs} hits)")
-                else: print("[AIIA] WARNING: Could not find speech_tensors pattern to patch!")
 
                 # 2. speech_masks
                 source_code, n_subs = re.subn(
-                    r'("speech_masks"\s*:\s*speech_masks\.to\(device\)),',
+                    r'("speech_masks"\s*:\s*speech_masks\.to\(.*?\)),',
                     r'"speech_masks": speech_masks.to(device) if speech_masks is not None else None,',
-                    source_code
+                    source_code,
+                    flags=re.DOTALL
                 )
                 if n_subs > 0: print(f"[AIIA] Hot-patched speech_masks safety check ({n_subs} hits)")
 
                 # 3. speech_input_mask
                 source_code, n_subs = re.subn(
-                    r'("speech_input_mask"\s*:\s*speech_input_mask\.to\(device\)),',
+                    r'("speech_input_mask"\s*:\s*speech_input_mask\.to\(.*?\)),',
                     r'"speech_input_mask": speech_input_mask.to(device) if speech_input_mask is not None else None,',
-                    source_code
+                    source_code,
+                    flags=re.DOTALL
                 )
                 if n_subs > 0: print(f"[AIIA] Hot-patched speech_input_mask safety check ({n_subs} hits)")
                 
