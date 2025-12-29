@@ -234,9 +234,12 @@ class AIIA_VibeVoice_Loader:
 
             # PRE-PATCH: Explicitly patch dependency modules that contain logic (like generate)
             # which might be imported by the main model file. Standard imports won't use our patched loader!
+            # PRE-PATCH: Explicitly patch dependency modules that contain logic (like generate)
+            # which might be imported by the main model file. Standard imports won't use our patched loader!
             pre_patch_modules = [
                 "modeling_vibevoice_inference", 
                 "modeling_vibevoice_streaming",
+                "modeling_vibevoice_streaming_inference", # Added this to pre-patch list
                 "streamer"
             ]
             for mod in pre_patch_modules:
@@ -245,6 +248,43 @@ class AIIA_VibeVoice_Loader:
                     p_path = os.path.join(core_path, "modular", f"{mod}.py")
                     if os.path.exists(p_path):
                          load_module_from_path_patched(mod, p_path)
+            
+            # CRITICAL: Forcefully patch specific remote files ON DISK if they exist.
+            # This is necessary because AutoModel loads them directly, bypassing our runtime hook.
+            def _patch_file_on_disk(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        code = f.read()
+                    
+                    patched = False
+                    # Apply generic safety patch for .to(device)
+                    # 1. speech_tensors
+                    code, n = re.subn(r'(speech_tensors\.to\(([^)]+)\))(?!\s*if)', r'(\1 if speech_tensors is not None else None)', code)
+                    if n > 0: patched = True
+                    
+                    # 2. speech_masks
+                    code, n = re.subn(r'(speech_masks\.to\(([^)]+)\))(?!\s*if)', r'(\1 if speech_masks is not None else None)', code)
+                    if n > 0: patched = True
+                    
+                    # 3. speech_input_mask
+                    code, n = re.subn(r'(speech_input_mask\.to\(([^)]+)\))(?!\s*if)', r'(\1 if speech_input_mask is not None else None)', code)
+                    if n > 0: patched = True
+
+                    if patched:
+                        print(f"[AIIA] Patching remote file on disk: {file_path}")
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            f.write(code)
+                except Exception as e:
+                    print(f"[AIIA WARNING] Failed to patch remote file {file_path}: {e}")
+
+            if os.path.isdir(load_path):
+                 target_file = os.path.join(load_path, "modeling_vibevoice_streaming_inference.py")
+                 if os.path.exists(target_file):
+                     _patch_file_on_disk(target_file)
+                 # Check subdirs too if needed, but usually flat structure
+                 target_file_mod = os.path.join(load_path, "modular", "modeling_vibevoice_streaming_inference.py")
+                 if os.path.exists(target_file_mod):
+                     _patch_file_on_disk(target_file_mod)
 
             # 1. Get Config Class
             if "configuration_vibevoice_streaming" in sys.modules:
