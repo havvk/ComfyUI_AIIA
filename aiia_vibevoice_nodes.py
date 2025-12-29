@@ -102,7 +102,6 @@ class AIIA_VibeVoice_Loader:
                 
                 exec(source_code, module.__dict__)
                 return module
-        try:
             # Add VibeVoice core path to sys.path
             nodes_path = os.path.dirname(os.path.abspath(__file__))
             core_path = os.path.join(nodes_path, "vibevoice_core")
