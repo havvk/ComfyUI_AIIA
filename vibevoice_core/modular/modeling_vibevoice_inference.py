@@ -570,6 +570,10 @@ class VibeVoiceForConditionalGenerationInference(VibeVoicePreTrainedModel, Gener
             if finished_tags.all():
                 if hasattr(progress_bar, 'set_description'):
                     progress_bar.set_description("Generation complete")
+                # Ensure the progress bar looks 100% complete
+                if hasattr(progress_bar, 'total'):
+                    progress_bar.total = progress_bar.n
+                    progress_bar.refresh()
                 break
 
             if input_ids.shape[-1] >= generation_config.max_length:
