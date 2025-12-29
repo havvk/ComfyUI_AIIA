@@ -545,8 +545,12 @@ class VibeVoiceForConditionalGenerationInference(VibeVoicePreTrainedModel, Gener
         reach_max_step_sample = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
         # Create progress iterator if verbose
+        expected_steps = kwargs.get("expected_steps", max_steps)
+        # Use expected_steps for a smoother bar, but cap it at max_steps for safety
+        bar_total = min(expected_steps, max_steps)
+        
         if kwargs.get("show_progress_bar", True):
-            progress_bar = tqdm(range(max_steps), desc="Generating", leave=False)
+            progress_bar = tqdm(range(max_steps), total=bar_total, desc="Generating", leave=False)
         else:
             progress_bar = range(max_steps)
         

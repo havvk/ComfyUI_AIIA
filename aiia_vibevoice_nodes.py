@@ -533,6 +533,11 @@ class AIIA_VibeVoice_TTS:
              # This ensures the model has enough budget to finish naturally via EOS
              max_length_times = 10.0
              
+             # Heuristic for progress bar: 
+             # Chinese characters generate more audio than individual English letters.
+             # ~20 tokens per character is a safe estimation for smooth progress.
+             expected_steps = len(text) * 20
+             
              # Prepare generation kwargs
              generation_kwargs = {
                  "max_new_tokens": max_new_tokens,
@@ -546,6 +551,7 @@ class AIIA_VibeVoice_TTS:
                  "temperature": temperature,
                  "top_k": top_k,
                  "top_p": top_p,
+                 "expected_steps": expected_steps,
              }
              
              # Set diffusion inference steps (crucial for quality/speed tradeoff)
