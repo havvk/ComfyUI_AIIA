@@ -84,9 +84,11 @@ class AIIA_VibeVoice_Loader:
 
             # Helper to load module from file with SOURCE PATCHING
             def load_module_from_path_patched(module_name, file_path):
-                if module_name in sys.modules:
-                    return sys.modules[module_name]
-
+                # NOTE: We intentionally DO NOT check sys.modules early return here for some modules
+                # to ensure our hot-patches are applied even if the module was loaded by other means.
+                # However, completely reloading might break isinstance checks if classes are recreated.
+                # So we try to reuse the module object but EXECUTE the patched source into it.
+                
                 if not os.path.exists(file_path):
                      try:
                         return importlib.import_module(module_name)
@@ -100,12 +102,12 @@ class AIIA_VibeVoice_Loader:
                 source_code = re.sub(r'from \.(\w+)', r'from \1', source_code)
 
                 # PATCH: Fix unsafe .to(device) on potential None types in VibeVoice generation code
-                # Using regex for robustness against whitespace
-                print(f"[AIIA] Checking content of {module_name} for hot-patching...")
+                # Using regex for robustness against whitespace and quote styles
+                print(f"[AIIA] Checking content of {module_name} for hot-patching [FORCE RELOAD]...")
                 
                 # 1. speech_tensors
                 source_code, n_subs = re.subn(
-                    r'("speech_tensors"\s*:\s*speech_tensors\.to\(.*?\)),',
+                    r'(([\"\'])speech_tensors\2\s*:\s*speech_tensors\.to\(.*?\)),?',
                     r'"speech_tensors": speech_tensors.to(device) if speech_tensors is not None else None,',
                     source_code,
                     flags=re.DOTALL
@@ -114,7 +116,7 @@ class AIIA_VibeVoice_Loader:
 
                 # 2. speech_masks
                 source_code, n_subs = re.subn(
-                    r'("speech_masks"\s*:\s*speech_masks\.to\(.*?\)),',
+                    r'(([\"\'])speech_masks\2\s*:\s*speech_masks\.to\(.*?\)),?',
                     r'"speech_masks": speech_masks.to(device) if speech_masks is not None else None,',
                     source_code,
                     flags=re.DOTALL
@@ -123,16 +125,22 @@ class AIIA_VibeVoice_Loader:
 
                 # 3. speech_input_mask
                 source_code, n_subs = re.subn(
-                    r'("speech_input_mask"\s*:\s*speech_input_mask\.to\(.*?\)),',
+                    r'(([\"\'])speech_input_mask\2\s*:\s*speech_input_mask\.to\(.*?\)),?',
                     r'"speech_input_mask": speech_input_mask.to(device) if speech_input_mask is not None else None,',
                     source_code,
                     flags=re.DOTALL
                 )
                 if n_subs > 0: print(f"[AIIA] Hot-patched speech_input_mask safety check ({n_subs} hits)")
                 
-                module = types.ModuleType(module_name)
+                # Get existing or create new module
+                if module_name in sys.modules:
+                    module = sys.modules[module_name]
+                    print(f"[AIIA] Updating existing module: {module_name}")
+                else:
+                    module = types.ModuleType(module_name)
+                    sys.modules[module_name] = module
+                
                 module.__file__ = file_path
-                sys.modules[module_name] = module
                 
                 exec(source_code, module.__dict__)
                 return module
