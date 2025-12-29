@@ -399,8 +399,8 @@ class AIIA_VibeVoice_TTS:
             "required": {
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
                 "text": ("STRING", {"multiline": True, "default": "Hello, this is a test of VibeVoice."}),
-                "cfg_scale": ("FLOAT", {"default": 3.0, "min": 1.0, "max": 10.0, "step": 0.5, "tooltip": "CFG scale for speech generation. Higher = more faithful to text."}),
-                "ddpm_steps": ("INT", {"default": 50, "min": 10, "max": 100, "step": 10, "tooltip": "Diffusion steps. Higher = better quality but slower."}),
+                "cfg_scale": ("FLOAT", {"default": 1.3, "min": 1.0, "max": 10.0, "step": 0.1, "tooltip": "CFG scale for speech generation. Official baseline is 1.3."}),
+                "ddpm_steps": ("INT", {"default": 20, "min": 10, "max": 100, "step": 1, "tooltip": "Diffusion steps. Official baseline is 20."}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1, "tooltip": "Playback speed. >1 = faster, <1 = slower (post-process time-stretch)."}),
                 "normalize_text": ("BOOLEAN", {"default": True, "tooltip": "Apply text normalization (year ranges → 至, remove quotes). Disable for 7B model or custom text."}),
                 "do_sample": ("BOOLEAN", {"default": True, "tooltip": "Enable sampling for more expressive audio. Highly recommended for 7B model."}),

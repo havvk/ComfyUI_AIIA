@@ -3,7 +3,7 @@
   "eos_token_id": 151643,
   "max_new_tokens": 40500,
   "max_length": 40500,
-  "n_diffusion_steps": 10,
+  "n_diffusion_steps": 20,
   "noise_scheduler_class": "DPMSolverMultistepScheduler",
   "noise_scheduler_config": {
     "beta_schedule": "squaredcos_cap_v2",
