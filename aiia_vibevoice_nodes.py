@@ -270,7 +270,7 @@ class AIIA_VibeVoice_Loader:
                 AutoModel.register(VibeVoiceDiffusionHeadConfig, VibeVoiceDiffusionHead)
             
             # 6. Load Model
-            print("[AIIA] Loading VibeVoice 1.5B using aliased class...")
+            print(f"[AIIA] Loading VibeVoice model: {model_version} using aliased class...")
             config = VibeVoiceConfig.from_pretrained(load_path)
             model = VibeVoiceClass.from_pretrained(
                 load_path,
