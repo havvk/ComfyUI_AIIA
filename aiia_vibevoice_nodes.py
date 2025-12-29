@@ -280,20 +280,38 @@ class AIIA_VibeVoice_Loader:
                 trust_remote_code=False
             )
             
-            # 6.1 Load Generation Config (with bundled fallback)
+            # 6.1 Load Generation Config (with bundled presets/fallback)
             try:
                 gen_config_path = os.path.join(load_path, "generation_config.json")
-                bundled_gen_config_path = os.path.join(core_path, "generation_config.json")
+                from transformers import GenerationConfig
                 
-                if not os.path.exists(gen_config_path) and os.path.exists(bundled_gen_config_path):
-                     print(f"[AIIA] Loading bundled generation_config.json from {bundled_gen_config_path}")
-                     from transformers import GenerationConfig
-                     final_gen_config = GenerationConfig.from_pretrained(core_path)
-                     model.generation_config = final_gen_config
-                elif os.path.exists(gen_config_path):
-                     print(f"[AIIA] Found generation_config.json in model directory.")
+                if os.path.exists(gen_config_path):
+                    print(f"[AIIA] Loading generation_config.json from model directory: {gen_config_path}")
+                    final_gen_config = GenerationConfig.from_pretrained(load_path)
+                    model.generation_config = final_gen_config
                 else:
-                     print("[AIIA WARNING] No generation_config.json found (local or bundled). Model might use hardcoded defaults.")
+                    # Fallback to internal presets
+                    is_7b = False
+                    if hasattr(config, "decoder_config") and hasattr(config.decoder_config, "hidden_size"):
+                        is_7b = config.decoder_config.hidden_size > 2048
+                    
+                    preset_name = "generation_config_7B.json" if is_7b else "generation_config_1.5B.json"
+                    preset_path = os.path.join(core_path, preset_name)
+                    
+                    if os.path.exists(preset_path):
+                        print(f"[AIIA] Model-specific config not found. Using internal preset: {preset_name}")
+                        # We need to load it manually or use from_pretrained on the file path if possible
+                        import json
+                        with open(preset_path, "r") as f:
+                            gen_dict = json.load(f)
+                        model.generation_config = GenerationConfig.from_dict(gen_dict)
+                    else:
+                        bundled_gen_config_path = os.path.join(core_path, "generation_config.json")
+                        if os.path.exists(bundled_gen_config_path):
+                            print(f"[AIIA] Using generic bundled fallback: generation_config.json")
+                            model.generation_config = GenerationConfig.from_pretrained(core_path)
+                        else:
+                            print("[AIIA WARNING] No generation_config.json found (local or bundled).")
             except Exception as ge:
                 print(f"[AIIA WARNING] Failed to load generation config: {ge}")
 
