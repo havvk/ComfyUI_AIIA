@@ -105,10 +105,34 @@ class AIIA_VibeVoice_Loader:
                     print(f"[AIIA] Patched {n_subs} relative imports in {module_name}")
 
                 # PATCH: Fix unsafe .to(device) on potential None types in VibeVoice generation code
-                # (Ideally this should be fixed in the source file, but we keep this just in case users load unpatched files)
-                # UPDATE: We now prioritize bundled files which ARE fixed on disk. 
-                # Keeping this minimal just for legacy safety but simplified.
-                pass
+                # This protects unbundled (remote/downloaded) files that we cannot fix on disk.
+                
+                # 1. speech_tensors
+                source_code, n_subs = re.subn(
+                    r'(([\"\'])speech_tensors\2\s*:\s*speech_tensors\.to\(.*?\)),?',
+                    r'"speech_tensors": speech_tensors.to(device) if speech_tensors is not None else None,',
+                    source_code,
+                    flags=re.DOTALL
+                )
+                if n_subs > 0: print(f"[AIIA] Hot-patched speech_tensors safety check ({n_subs} hits)")
+
+                # 2. speech_masks
+                source_code, n_subs = re.subn(
+                    r'(([\"\'])speech_masks\2\s*:\s*speech_masks\.to\(.*?\)),?',
+                    r'"speech_masks": speech_masks.to(device) if speech_masks is not None else None,',
+                    source_code,
+                    flags=re.DOTALL
+                )
+                if n_subs > 0: print(f"[AIIA] Hot-patched speech_masks safety check ({n_subs} hits)")
+
+                # 3. speech_input_mask
+                source_code, n_subs = re.subn(
+                    r'(([\"\'])speech_input_mask\2\s*:\s*speech_input_mask\.to\(.*?\)),?',
+                    r'"speech_input_mask": speech_input_mask.to(device) if speech_input_mask is not None else None,',
+                    source_code,
+                    flags=re.DOTALL
+                )
+                if n_subs > 0: print(f"[AIIA] Hot-patched speech_input_mask safety check ({n_subs} hits)")
                 
                 # Get existing or create new module
                 if module_name in sys.modules:
