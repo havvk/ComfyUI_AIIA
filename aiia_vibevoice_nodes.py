@@ -167,8 +167,6 @@ class AIIA_VibeVoice_Loader:
                                 
                     if not found:
                         print(f"[AIIA WARNING] Could not find module file for {mod_name}")
-            
-
 
             # 1. Get Config Class
             if "configuration_vibevoice_streaming" in sys.modules:
