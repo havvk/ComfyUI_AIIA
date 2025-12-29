@@ -403,6 +403,10 @@ class AIIA_VibeVoice_TTS:
                 "ddpm_steps": ("INT", {"default": 50, "min": 10, "max": 100, "step": 10, "tooltip": "Diffusion steps. Higher = better quality but slower."}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1, "tooltip": "Playback speed. >1 = faster, <1 = slower (post-process time-stretch)."}),
                 "normalize_text": ("BOOLEAN", {"default": True, "tooltip": "Apply text normalization (year ranges → 至, remove quotes). Disable for 7B model or custom text."}),
+                "do_sample": ("BOOLEAN", {"default": True, "tooltip": "Enable sampling for more expressive audio. Highly recommended for 7B model."}),
+                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature. Higher = more diversity/expressiveness, lower = more stable."}),
+                "top_k": ("INT", {"default": 20, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling. 0 to disable."}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Top-p (nucleus) sampling."}),
             },
             "optional": {
                 "reference_audio": ("AUDIO",),
@@ -414,7 +418,8 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, normalize_text, reference_audio=None):
+    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, normalize_text, 
+                 do_sample, temperature, top_k, top_p, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -519,6 +524,10 @@ class AIIA_VibeVoice_TTS:
                  "pad_token_id": tokenizer.eos_token_id,
                  "cfg_scale": cfg_scale, # User-controlled CFG scale for speech generation
                  "max_length_times": max_length_times, # Safety budget
+                 "do_sample": do_sample,
+                 "temperature": temperature,
+                 "top_k": top_k,
+                 "top_p": top_p,
              }
              
              # Set diffusion inference steps (crucial for quality/speed tradeoff)
