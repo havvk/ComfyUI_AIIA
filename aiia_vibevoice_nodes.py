@@ -245,6 +245,23 @@ class AIIA_VibeVoice_Loader:
                 trust_remote_code=False
             )
             
+            # 6.1 Load Generation Config (with bundled fallback)
+            try:
+                gen_config_path = os.path.join(load_path, "generation_config.json")
+                bundled_gen_config_path = os.path.join(core_path, "generation_config.json")
+                
+                if not os.path.exists(gen_config_path) and os.path.exists(bundled_gen_config_path):
+                     print(f"[AIIA] Loading bundled generation_config.json from {bundled_gen_config_path}")
+                     from transformers import GenerationConfig
+                     final_gen_config = GenerationConfig.from_pretrained(core_path)
+                     model.generation_config = final_gen_config
+                elif os.path.exists(gen_config_path):
+                     print(f"[AIIA] Found generation_config.json in model directory.")
+                else:
+                     print("[AIIA WARNING] No generation_config.json found (local or bundled). Model might use hardcoded defaults.")
+            except Exception as ge:
+                print(f"[AIIA WARNING] Failed to load generation config: {ge}")
+
             # Cleanup not needed as we didn't add load_path to sys.path
             # if sys_path_added:
             #    sys.path.remove(core_path) # We keep core_path for now to ensure sub-modules resolve
@@ -421,9 +438,13 @@ class AIIA_VibeVoice_TTS:
              # Move all tensors to device
              input_args = {
                  "input_ids": inputs["input_ids"].to(device),
-                 "speech_tensors": inputs["speech_tensors"].to(device) if inputs["speech_tensors"] is not None else None,
-                 "speech_masks": inputs["speech_masks"].to(device) if inputs["speech_masks"] is not None else None,
-                 "speech_input_mask": inputs["speech_input_mask"].to(device) if inputs["speech_input_mask"] is not None else None,
+                 "attention_mask": inputs["attention_mask"].to(device) if "attention_mask" in inputs else None,
+                 "tts_text_ids": inputs["tts_text_ids"].to(device) if "tts_text_ids" in inputs else None,
+                 "tts_lm_input_ids": inputs["tts_lm_input_ids"].to(device) if "tts_lm_input_ids" in inputs else None,
+                 "tts_lm_attention_mask": inputs["tts_lm_attention_mask"].to(device) if "tts_lm_attention_mask" in inputs else None,
+                 "speech_tensors": inputs["speech_tensors"].to(device) if inputs.get("speech_tensors") is not None else None,
+                 "speech_masks": inputs["speech_masks"].to(device) if inputs.get("speech_masks") is not None else None,
+                 "speech_input_mask": inputs["speech_input_mask"].to(device) if inputs.get("speech_input_mask") is not None else None,
                  "tokenizer": tokenizer, # Pass tokenizer as required by model.generate logic
              }
              
