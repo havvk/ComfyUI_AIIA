@@ -505,12 +505,21 @@ class AIIA_VibeVoice_TTS:
              # Returns: VibeVoiceGenerationOutput or tensors. 
              # Our node implementation of generate returns VibeVoiceGenerationOutput class if return_dict=True (default)
              
+             # DEBUG: Print reference audio length
+             if reference_audio is not None:
+                 ref_len = reference_audio["waveform"].shape[-1]
+                 ref_sr = reference_audio.get("sample_rate", 24000)
+                 print(f"[AIIA DEBUG] Reference audio: {ref_len} samples @ {ref_sr}Hz = {ref_len/ref_sr:.2f}s")
+             
              if hasattr(output_wav, "speech_outputs"):
                  audio_out = output_wav.speech_outputs[0] # List[Tensor]
+                 print(f"[AIIA DEBUG] Got speech_outputs[0], type: {type(audio_out)}")
              elif isinstance(output_wav, list):
                  audio_out = output_wav[0]
+                 print(f"[AIIA DEBUG] Got list[0], type: {type(audio_out)}")
              else:
                  audio_out = output_wav
+                 print(f"[AIIA DEBUG] Got raw output, type: {type(audio_out)}")
 
              if audio_out is None:
                  raise RuntimeError("No audio generated.")
@@ -518,6 +527,9 @@ class AIIA_VibeVoice_TTS:
              # Ensure tensor format
              if not isinstance(audio_out, torch.Tensor):
                  audio_out = torch.from_numpy(audio_out)
+             
+             # DEBUG: Show generated audio length BEFORE any processing
+             print(f"[AIIA DEBUG] Generated audio shape: {audio_out.shape}, samples: {audio_out.shape[-1]}, duration: {audio_out.shape[-1]/24000:.2f}s")
              
              # Ensure [C, T] format for processing
              if audio_out.ndim == 1:
