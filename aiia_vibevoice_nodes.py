@@ -266,8 +266,21 @@ class AIIA_VibeVoice_Loader:
             else:
                  raise ImportError("Could not find VibeVoice model class.")
 
-            # 5. Register Model Class
+            # Retrieve sub-model classes for registration
+            VibeVoiceAcousticTokenizerModel = getattr(model_module, "VibeVoiceAcousticTokenizerModel", None)
+            VibeVoiceSemanticTokenizerModel = getattr(model_module, "VibeVoiceSemanticTokenizerModel", None)
+            VibeVoiceDiffusionHead = getattr(model_module, "VibeVoiceDiffusionHead", None)
+
+            # 5. Register Model Classes
             AutoModel.register(VibeVoiceConfig, VibeVoiceClass)
+            
+            # Register auxiliary model classes
+            if VibeVoiceAcousticTokenizerConfig and VibeVoiceAcousticTokenizerModel:
+                AutoModel.register(VibeVoiceAcousticTokenizerConfig, VibeVoiceAcousticTokenizerModel)
+            if VibeVoiceSemanticTokenizerConfig and VibeVoiceSemanticTokenizerModel:
+                AutoModel.register(VibeVoiceSemanticTokenizerConfig, VibeVoiceSemanticTokenizerModel)
+            if VibeVoiceDiffusionHeadConfig and VibeVoiceDiffusionHead:
+                AutoModel.register(VibeVoiceDiffusionHeadConfig, VibeVoiceDiffusionHead)
             
             # 6. Load Model
             print("[AIIA] Loading VibeVoice 1.5B using aliased class...")
