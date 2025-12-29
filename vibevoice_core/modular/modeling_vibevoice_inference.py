@@ -18,8 +18,8 @@ from transformers.utils import logging
 
 
 # from .modular_vibevoice_tokenizer import VibeVoiceTokenizerStreamingCache, VibeVoiceAcousticTokenizerModel, VibeVoiceSemanticTokenizerModel
-from .modular_vibevoice_tokenizer import VibeVoiceTokenizerStreamingCache, VibeVoiceTokenizerEncoderOutput
-from .modular_vibevoice_diffusion_head import VibeVoiceDiffusionHead
+from modular_vibevoice_tokenizer import VibeVoiceTokenizerStreamingCache, VibeVoiceTokenizerEncoderOutput
+from modular_vibevoice_diffusion_head import VibeVoiceDiffusionHead
 
 # Import schedule module with robust path handling to avoid conflicts with PyPI 'schedule' package
 import sys
