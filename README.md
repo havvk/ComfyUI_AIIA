@@ -432,8 +432,8 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **当前状态**: ✅ 可用（已通过测试）
 - **支持语言**: **英文 (en) 和 中文 (zh)**（官方仅在这两种语言数据集上训练）
 - **可选模型**:
-  - `microsoft/VibeVoice-1.5B`: 轻量版，64K 上下文（~3GB 显存）
-  - `vibevoice/VibeVoice-7B`: 高质量版，32K 上下文（~14GB 显存）
+  - `microsoft/VibeVoice-1.5B`: 轻量版，64K 上下文（~3GB 显存）。注：可能对某些标点（如连字符、引号）处理不佳。
+  - `vibevoice/VibeVoice-7B`: 高质量版，32K 上下文（~14GB 显存）。推荐用于生产环境。
 - **特点**:
   - **即时启动**: 无需预热或编译，首次运行即可使用（CosyVoice 首次需 ~1 分钟编译）。
   - **语言自动识别**: 模型会自动识别中英文文本。
