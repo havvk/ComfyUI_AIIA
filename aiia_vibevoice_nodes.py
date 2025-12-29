@@ -99,7 +99,10 @@ class AIIA_VibeVoice_Loader:
                     source_code = f.read()
                 
                 # PATCH: Convert relative imports to absolute
-                source_code = re.sub(r'from \.(\w+)', r'from \1', source_code)
+                # Regex handles "from .module" with variable spacing
+                source_code, n_subs = re.subn(r'from\s+\.(\w+)', r'from \1', source_code)
+                if n_subs > 0:
+                    print(f"[AIIA] Patched {n_subs} relative imports in {module_name}")
 
                 # PATCH: Fix unsafe .to(device) on potential None types in VibeVoice generation code
                 # (Ideally this should be fixed in the source file, but we keep this just in case users load unpatched files)
