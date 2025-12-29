@@ -450,9 +450,10 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `temperature` (默认: 0.8): 采样温度。仅在 `do_sample` 开启时有效。
   - `top_k / top_p`: 采样约束。
   - `speed` (默认: 1.0): 播放速度。
-  - `normalize_text` (默认: True): 文本预处理。注意：7B 建议关闭以获得更自然的标点停顿。
-    - **1.5B**: 强烈建议开启。
-    - **7B**: 建议关闭（False）观察效果，7B 应对标点能力更强。
+- **💡 0.5B Realtime (新) 实时多语言建议**:
+  - `do_sample`: **"auto"** (或 `false`) - 保证极速和绝对稳定。
+  - `normalize_text`: **True** - 帮助处理各种语言的特殊符号。
+  - **特点**: 该模型支持包括**韩语、日语**在内的更多语种，速度极快。
 
 #### 💡 7B 模型音质“全开”指南
 要达到官方 Benchmark 的水准，请对 7B 模型尝试以下组合：
@@ -490,10 +491,19 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
   **手动下载命令**:
   ```bash
-  # ===== 1.5B 模型 =====
+  # ===== 0.5B 实时多语言模型 (Realtime) =====
+  mkdir -p models/vibevoice/microsoft/VibeVoice-Realtime-0.5B
+  hf download microsoft/VibeVoice-Realtime-0.5B --local-dir models/vibevoice/microsoft/VibeVoice-Realtime-0.5B
+  # 补全 Tokenizer (使用 Qwen2.5-0.5B)
+  wget https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/tokenizer.json -P models/vibevoice/microsoft/VibeVoice-Realtime-0.5B/
+  wget https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/tokenizer_config.json -P models/vibevoice/microsoft/VibeVoice-Realtime-0.5B/
+  wget https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/vocab.json -P models/vibevoice/microsoft/VibeVoice-Realtime-0.5B/
+  wget https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/merges.txt -P models/vibevoice/microsoft/VibeVoice-Realtime-0.5B/
+
+  # ===== 1.5B 基础模型 =====
   mkdir -p models/vibevoice/microsoft/VibeVoice-1.5B
   hf download microsoft/VibeVoice-1.5B --local-dir models/vibevoice/microsoft/VibeVoice-1.5B
-  # 补全 Tokenizer (如果没有)
+  # 补全 Tokenizer
   wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/tokenizer.json -P models/vibevoice/microsoft/VibeVoice-1.5B/
   wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/tokenizer_config.json -P models/vibevoice/microsoft/VibeVoice-1.5B/
   wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/vocab.json -P models/vibevoice/microsoft/VibeVoice-1.5B/

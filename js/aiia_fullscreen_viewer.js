@@ -1,7 +1,7 @@
 // 文件: aiia_fullscreen_viewer.js (V2 - 增加滑动和滚动导航)
 
-import { $el } from "/scripts/ui.js";
-import { api } from "/scripts/api.js";
+import { $el } from "../../scripts/ui.js";
+import { api } from "../../scripts/api.js";
 
 // Helper functions
 function getFileUrl(filename, path = "") { const subfolder = path || ""; return api.apiURL(`/view?type=output&subfolder=${encodeURIComponent(subfolder)}&filename=${encodeURIComponent(filename)}`); }
@@ -42,7 +42,7 @@ export class AIIAFullscreenViewer {
         this.filmstripContainer = $el("div.aiia-filmstrip-container");
         this.infoPanel = $el("div.aiia-info-panel");
 
-        const mainContent = $el("div.aiia-fullscreen-main-content", [ this.prevButton, this.mediaContainer, this.nextButton ]);
+        const mainContent = $el("div.aiia-fullscreen-main-content", [this.prevButton, this.mediaContainer, this.nextButton]);
         this.element.append(mainContent, this.infoPanel, this.filmstripContainer, this.closeButton);
         document.body.appendChild(this.element);
 
@@ -51,7 +51,7 @@ export class AIIAFullscreenViewer {
 
     bindEvents() {
         this.closeButton.onclick = () => this.hide();
-        
+
         const setupNavButtonEvents = (button, direction) => {
             const clearTimers = () => {
                 clearTimeout(this.longPressTimeout);
@@ -73,16 +73,16 @@ export class AIIAFullscreenViewer {
                     }, 150);
                 }, 500);
             });
-            
+
             button.addEventListener("mouseup", clearTimers);
             button.addEventListener("mouseleave", clearTimers);
-            
+
             window.addEventListener("blur", clearTimers);
         };
 
         setupNavButtonEvents(this.prevButton, 'prev');
         setupNavButtonEvents(this.nextButton, 'next');
-        
+
         // V2 优化: 增加滑动事件监听
         const handleSwipeStart = (e) => {
             if (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO') return; // 不在视频/音频控件上触发滑动
@@ -106,7 +106,7 @@ export class AIIAFullscreenViewer {
                 }
             }
         };
-        
+
         this.mediaContainer.addEventListener('mousedown', handleSwipeStart);
         this.mediaContainer.addEventListener('mouseup', handleSwipeEnd);
         this.mediaContainer.addEventListener('mouseleave', () => {
@@ -115,7 +115,7 @@ export class AIIAFullscreenViewer {
                 this.mediaContainer.style.cursor = 'grab';
             }
         });
-        
+
         // V2 优化: 增加滚轮事件监听
         this.element.addEventListener('wheel', (e) => {
             e.preventDefault();
@@ -148,7 +148,7 @@ export class AIIAFullscreenViewer {
         };
         this.element.addEventListener('keydown', this.handleKeyDown);
     }
-    
+
     // V2 优化: 新增垂直导航方法
     navigateVertical(direction) {
         const thumb = this.filmstripContainer.querySelector('.aiia-filmstrip-thumb');
@@ -168,7 +168,7 @@ export class AIIAFullscreenViewer {
         } else if (direction === 'down') {
             newIndex += columns;
         }
-        
+
         // 确保新索引在有效范围内
         newIndex = Math.max(0, Math.min(this.items.length - 1, newIndex));
 
@@ -183,7 +183,7 @@ export class AIIAFullscreenViewer {
         this.currentPath = currentPath;
         this.onCloseCallback = onCloseCallback;
         if (this.currentIndex === -1) return;
-        
+
         this.mediaContainer.style.cursor = 'grab'; // V2 优化: 设置初始鼠标手势
 
         this.renderFilmstrip();
@@ -209,10 +209,10 @@ export class AIIAFullscreenViewer {
 
     renderFilmstrip() {
         this.filmstripContainer.innerHTML = "";
-        if(this.filmstripObserver) this.filmstripObserver.disconnect();
-        this.filmstripObserver = new IntersectionObserver(this.handleFilmstripIntersection.bind(this), { 
-            root: this.filmstripContainer, 
-            threshold: 0.1 
+        if (this.filmstripObserver) this.filmstripObserver.disconnect();
+        this.filmstripObserver = new IntersectionObserver(this.handleFilmstripIntersection.bind(this), {
+            root: this.filmstripContainer,
+            threshold: 0.1
         });
 
         this.items.forEach((item, index) => {
@@ -255,11 +255,11 @@ export class AIIAFullscreenViewer {
                 if (mediaType === 'image') {
                     mediaElement = $el("img", { src: url });
                 } else if (mediaType === 'video') {
-                    mediaElement = $el("video", { 
-                        src: url, autoplay: true, muted: true, loop: true, playsinline: true 
+                    mediaElement = $el("video", {
+                        src: url, autoplay: true, muted: true, loop: true, playsinline: true
                     });
                 }
-                
+
                 if (mediaElement) {
                     thumbContent.replaceChildren(mediaElement);
                     this.filmstripObserver.unobserve(thumb);
@@ -277,26 +277,26 @@ export class AIIAFullscreenViewer {
                 $el("span.aiia-info-panel-value", { textContent: value })
             ]));
         };
-        
+
         createMetaRow("Name", item.name);
         createMetaRow("Date", formatDate(item.mtime));
         createMetaRow("Type", item.extension.replace('.', '').toUpperCase());
         createMetaRow("Size", formatBytes(item.size));
-        
+
         const dimensions = extra.dimensions || (item.width && item.height ? `${item.width} x ${item.height}` : null);
         if (dimensions) createMetaRow("Dimensions", dimensions);
-        
+
         if (extra.duration) createMetaRow("Duration", extra.duration);
     }
 
     loadMedia() {
         if (this.currentIndex < 0 || this.currentIndex >= this.items.length) return;
         const item = this.items[this.currentIndex];
-        this.mediaContainer.innerHTML = ""; 
+        this.mediaContainer.innerHTML = "";
 
         const url = getFileUrl(item.name, this.currentPath);
         const mime = getMimeType(item.name);
-        
+
         this.updateInfoPanel(item);
 
         let mediaElement;
@@ -311,7 +311,7 @@ export class AIIAFullscreenViewer {
         } else if (mime === 'audio') {
             mediaElement = $el("div.aiia-fullscreen-audio-wrapper", [
                 $el("div.aiia-fullscreen-audio-icon", { textContent: "🎵" }),
-                $el("audio", { 
+                $el("audio", {
                     src: url, controls: true, autoplay: true,
                     onloadedmetadata: (e) => this.updateInfoPanel(item, { duration: formatDuration(e.target.duration) })
                 })
@@ -335,7 +335,7 @@ export class AIIAFullscreenViewer {
             activeThumb.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
         }
     }
-    
+
     jumpTo(index) {
         if (index >= 0 && index < this.items.length) {
             this.currentIndex = index;
@@ -358,10 +358,10 @@ export class AIIAFullscreenViewer {
         clearTimeout(this.loadMediaTimeout);
         this.loadMediaTimeout = setTimeout(() => this.loadMedia(), 150);
     }
-    
+
     prev() { this.navigate('prev'); }
     next() { this.navigate('next'); }
-    
+
     updateNavButtons() {
         this.prevButton.disabled = this.currentIndex <= 0;
         this.nextButton.disabled = this.currentIndex >= this.items.length - 1;

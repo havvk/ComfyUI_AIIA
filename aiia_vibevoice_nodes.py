@@ -1,414 +1,196 @@
-
 import os
 import sys
 import torch
-import folder_paths
+import numpy as np
 import torchaudio
+from tqdm import tqdm
+from transformers import AutoConfig, AutoModel, AutoTokenizer, Qwen2TokenizerFast
+
+def load_module_from_path_patched(module_name, file_path):
+    """Utility to load a module from a specific file path."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec:
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception as e:
+            # Fallback for some environments
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_code = f.read()
+            exec(source_code, module.__dict__)
+        return module
+    return None
 
 class AIIA_VibeVoice_Loader:
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model_name": (["microsoft/VibeVoice-1.5B", "vibevoice/VibeVoice-7B"],),
-                "precision": (["fp16", "bf16", "fp32"], {"default": "fp16"}),
+                "model_version": (["0.5B (Realtime)", "1.5B (Standard)", "7B (Standard)"], {"default": "1.5B (Standard)"}),
+                "dtype": (["fp16", "bf16", "fp32"], {"default": "fp16"}),
             }
         }
 
     RETURN_TYPES = ("VIBEVOICE_MODEL",)
     RETURN_NAMES = ("vibevoice_model",)
-    FUNCTION = "load_model"
+    FUNCTION = "load_vibevoice"
     CATEGORY = "AIIA/VibeVoice"
 
-    def load_model(self, model_name, precision):
-        print(f"[AIIA] Loading VibeVoice model: {model_name} ({precision})...")
-        
-        try:
-            from transformers import AutoTokenizer, AutoModel, AutoConfig, Qwen2TokenizerFast
-            import transformers
-            print(f"[AIIA] Transformers version: {transformers.__version__}")
-        except ImportError:
-            raise ImportError("Missing dependencies: transformers. Please install it.")
+    @classmethod
+    def load_vibevoice(cls, model_version="1.5B (Standard)", dtype="fp16"):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float16 if dtype == "fp16" else (torch.bfloat16 if dtype == "bf16" else torch.float32)
 
-        # Determine torch dtype
-        if precision == "fp16":
-            dtype = torch.float16
-        elif precision == "bf16":
-            dtype = torch.bfloat16
-        else:
-            dtype = torch.float32
+        # 0. Resolve Paths
+        model_name = "VibeVoice-Realtime-0.5B" if "0.5B" in model_version else ("VibeVoice-7B" if "7B" in model_version else "VibeVoice-1.5B")
+        nodes_path = os.path.dirname(os.path.abspath(__file__))
+        comfy_root = os.path.dirname(os.path.dirname(nodes_path))
+        core_path = os.path.join(nodes_path, "vibevoice_core")
 
-        # Model Paths
-        model_path = os.path.join(folder_paths.models_dir, "vibevoice")
-        if not os.path.exists(model_path):
-            os.makedirs(model_path, exist_ok=True)
-        
-        # Extract organization and model version from model_name 
-        # e.g., "microsoft/VibeVoice-1.5B" -> org="microsoft", version="VibeVoice-1.5B"
-        # e.g., "vibevoice/VibeVoice-7B" -> org="vibevoice", version="VibeVoice-7B"
-        parts = model_name.split("/")
-        org_name = parts[0] if len(parts) > 1 else "microsoft"
-        model_version = parts[-1]  # "VibeVoice-1.5B" or "VibeVoice-7B"
-        
-        # Try to find local first (check org-specific path)
-        local_model_path = os.path.join(model_path, org_name, model_version) 
-        load_path = model_name # Default to HF hub ID
-        
-        if os.path.exists(local_model_path):
-            load_path = local_model_path
-            print(f"[AIIA] Found local model at: {load_path}")
-        else:
-            flat_path = os.path.join(model_path, model_version)
-            if os.path.exists(flat_path):
-                 load_path = flat_path
-                 print(f"[AIIA] Found local model at: {load_path}")
-            else:
-                 print(f"[AIIA] Model not found locally. Downloading from HuggingFace to cache...")
-
-        # Fix for "KeyError: vibevoice":
-        # Strategy: Manually import the model code and register it to AutoConfig/AutoModel
-        
-        sys_path_added = False
-
-        import importlib.util
-        import re
-        import types
-
-        try:
-             # Helper to load module from file WITHOUT patching (we rely on static fixes now)
-            def load_module_from_path_patched(module_name, file_path):
-                if not os.path.exists(file_path):
-                     try:
-                        return importlib.import_module(module_name)
-                     except ImportError:
-                        return None
-                
-                # Get existing or create new module
-                if module_name in sys.modules:
-                    module = sys.modules[module_name]
-                else:
-                    module = types.ModuleType(module_name)
-                    sys.modules[module_name] = module
-                
-                module.__file__ = file_path
-                
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        source_code = f.read()
-                    exec(source_code, module.__dict__)
-                except Exception as e:
-                    print(f"[AIIA ERROR] Failed to exec module {module_name}: {e}")
-                    raise e
-                return module
-
-            # Add VibeVoice core path to sys.path
-            nodes_path = os.path.dirname(os.path.abspath(__file__))
-            core_path = os.path.join(nodes_path, "vibevoice_core")
-            if os.path.exists(core_path):
-                 sys.path.insert(0, core_path) # Insert at 0 to prioritize our bundled code
-                 sys_path_added = True
-                 print(f"[AIIA] Added bundled VibeVoice core to path: {core_path}")
-            else:
-                 sys_path_added = False
-                 print(f"[AIIA WARNING] Bundled VibeVoice core not found at {core_path}")
-
-            # Pre-load dependencies manually from VibeVoice Core
-            # 1. Load Modular files first (as processor depends on them)
-            if os.path.isdir(os.path.join(core_path, "modular")):
-                 modular_path = os.path.join(core_path, "modular")
-                 sys.path.insert(0, modular_path) # Add to path so processed imports (from .config) work
-                 load_module_from_path_patched("modular_vibevoice_tokenizer", os.path.join(modular_path, "modular_vibevoice_tokenizer.py"))
-                 load_module_from_path_patched("modular_vibevoice_text_tokenizer", os.path.join(modular_path, "modular_vibevoice_text_tokenizer.py"))
-                 load_module_from_path_patched("modular_vibevoice_diffusion_head", os.path.join(modular_path, "modular_vibevoice_diffusion_head.py"))
-            
-            # 2. Load Processors from Core
-            load_module_from_path_patched("vibevoice_tokenizer_processor", os.path.join(core_path, "vibevoice_tokenizer_processor.py"))
-            load_module_from_path_patched("vibevoice_processor", os.path.join(core_path, "vibevoice_processor.py"))
-            load_module_from_path_patched("vibevoice_streaming_processor", os.path.join(core_path, "vibevoice_streaming_processor.py"))
-
-            # 3. Load Model files from Core/Modular
-            module_order = [
-                "configuration_vibevoice",
-                "streamer",
-                "configuration_vibevoice_streaming",
-                "modeling_vibevoice_streaming",
-                "modeling_vibevoice_streaming_inference"
-            ]
-            
-            # Load all core modules explicitly
-            for mod_name in module_order:
-                bundled_checks = [
-                    os.path.join(core_path, f"{mod_name}.py"), 
-                    os.path.join(core_path, "modular", f"{mod_name}.py")
-                ]
-                found = False
-                for bp in bundled_checks:
-                    if os.path.exists(bp):
-                        load_module_from_path_patched(mod_name, bp)
-                        print(f"[AIIA] Loaded bundled {mod_name}")
-                        found = True
-                        break
-                if not found:
-                    print(f"[AIIA WARNING] Bundled module {mod_name} not found in core!")
-
-            # 1. Get Config Class - PREFER non-streaming config to match non-streaming model
-            # First try non-streaming configuration_vibevoice
-            config_module = None
-            VibeVoiceConfig = None
-            use_streaming_config = False
-            
-            if "configuration_vibevoice" in sys.modules:
-                config_module = sys.modules["configuration_vibevoice"]
-            
-            if config_module and hasattr(config_module, "VibeVoiceConfig"):
-                VibeVoiceConfig = config_module.VibeVoiceConfig
-                VibeVoiceAcousticTokenizerConfig = getattr(config_module, "VibeVoiceAcousticTokenizerConfig", None)
-                VibeVoiceSemanticTokenizerConfig = getattr(config_module, "VibeVoiceSemanticTokenizerConfig", None)
-                VibeVoiceDiffusionHeadConfig = getattr(config_module, "VibeVoiceDiffusionHeadConfig", None)
-                print("[AIIA] Using non-streaming VibeVoiceConfig")
-            else:
-                # Fallback to streaming config
-                if "configuration_vibevoice_streaming" in sys.modules:
-                    config_module = sys.modules["configuration_vibevoice_streaming"]
-                
-                if config_module and hasattr(config_module, "VibeVoiceStreamingConfig"):
-                    VibeVoiceConfig = config_module.VibeVoiceStreamingConfig
-                    VibeVoiceAcousticTokenizerConfig = getattr(config_module, "VibeVoiceAcousticTokenizerConfig", None)
-                    VibeVoiceSemanticTokenizerConfig = getattr(config_module, "VibeVoiceSemanticTokenizerConfig", None)
-                    VibeVoiceDiffusionHeadConfig = getattr(config_module, "VibeVoiceDiffusionHeadConfig", None)
-                    use_streaming_config = True
-                    print("[AIIA] Using streaming VibeVoiceStreamingConfig (fallback)")
-            
-            if VibeVoiceConfig is None:
-                # Ultimate fallback if manual load failed
-                VibeVoiceConfig = AutoConfig.from_pretrained(load_path, trust_remote_code=True).__class__
-                VibeVoiceAcousticTokenizerConfig = None
-            
-            # PATCH: Force model_type to match "vibevoice"
-            VibeVoiceConfig.model_type = "vibevoice"
-
-            # 2. Register Configs
-            AutoConfig.register("vibevoice", VibeVoiceConfig)
-            
-            # Register auxiliary configs if available
-            if VibeVoiceAcousticTokenizerConfig: AutoConfig.register("vibevoice_acoustic_tokenizer", VibeVoiceAcousticTokenizerConfig)
-            if VibeVoiceSemanticTokenizerConfig: AutoConfig.register("vibevoice_semantic_tokenizer", VibeVoiceSemanticTokenizerConfig)
-            if VibeVoiceDiffusionHeadConfig: AutoConfig.register("vibevoice_diffusion_head", VibeVoiceDiffusionHeadConfig)
-            
-            # 3. Register Tokenizer mapping for this config
-            # VibeVoice uses Qwen2Tokenizer
-            try:
-                from transformers.models.auto.tokenization_auto import TOKENIZER_MAPPING
-                TOKENIZER_MAPPING.register(VibeVoiceConfig, (Qwen2TokenizerFast, None))
-            except: 
-                pass
-
-            # 4. Get Model Class - PREFER non-streaming inference class (as used by TTS-Audio-Suite)
-            # Non-streaming version is more stable and proven to work
-            model_file_path_non_streaming = os.path.join(core_path, "modular", "modeling_vibevoice_inference.py")
-            VibeVoiceClass = None
-            
-            # Try non-streaming first (recommended)
-            if os.path.exists(model_file_path_non_streaming):
-                 if "modeling_vibevoice_inference" in sys.modules:
-                      model_module = sys.modules["modeling_vibevoice_inference"]
-                 else:
-                      model_module = load_module_from_path_patched("modeling_vibevoice_inference", model_file_path_non_streaming)
-                 
-                 if hasattr(model_module, "VibeVoiceForConditionalGenerationInference"):
-                      VibeVoiceClass = model_module.VibeVoiceForConditionalGenerationInference
-                      print("[AIIA] Using non-streaming VibeVoiceForConditionalGenerationInference (recommended)")
-            
-            # Fallback to streaming version
-            if VibeVoiceClass is None:
-                 print("[AIIA] Warning: Falling back to streaming inference class...")
-                 if "modeling_vibevoice_streaming_inference" in sys.modules:
-                      model_module = sys.modules["modeling_vibevoice_streaming_inference"]
-                 else:
-                      model_module = load_module_from_path_patched("modeling_vibevoice_streaming_inference", model_file_path)
-                 
-                 # Identify the correct class
-                 if hasattr(model_module, "VibeVoiceStreamingForConditionalGenerationInference"):
-                      VibeVoiceClass = model_module.VibeVoiceStreamingForConditionalGenerationInference
-                 elif hasattr(model_module, "VibeVoiceForConditionalGeneration"):
-                      VibeVoiceClass = model_module.VibeVoiceForConditionalGeneration
-            
-            if VibeVoiceClass is None:
-                 raise ImportError("Could not find VibeVoice model class.")
-
-            # Retrieve sub-model classes for registration
-            # NOTE: modeling_vibevoice_inference might NOT have these classes imported, so we try checking there first,
-            # but if not found, we load `modeling_vibevoice` which definitely has them.
-            VibeVoiceAcousticTokenizerModel = getattr(model_module, "VibeVoiceAcousticTokenizerModel", None)
-            VibeVoiceSemanticTokenizerModel = getattr(model_module, "VibeVoiceSemanticTokenizerModel", None)
-            VibeVoiceDiffusionHead = getattr(model_module, "VibeVoiceDiffusionHead", None)
-            
-            if not (VibeVoiceAcousticTokenizerModel and VibeVoiceSemanticTokenizerModel):
-                print("[AIIA] Sub-model classes not found in inference module, loading modeling_vibevoice...")
-                try:
-                    if "modeling_vibevoice" in sys.modules:
-                         mod_vv = sys.modules["modeling_vibevoice"]
-                    else:
-                         mod_vv = load_module_from_path_patched("modeling_vibevoice", os.path.join(core_path, "modular", "modeling_vibevoice.py"))
-                    
-                    if mod_vv:
-                        VibeVoiceAcousticTokenizerModel = getattr(mod_vv, "VibeVoiceAcousticTokenizerModel", VibeVoiceAcousticTokenizerModel)
-                        VibeVoiceSemanticTokenizerModel = getattr(mod_vv, "VibeVoiceSemanticTokenizerModel", VibeVoiceSemanticTokenizerModel)
-                        VibeVoiceDiffusionHead = getattr(mod_vv, "VibeVoiceDiffusionHead", VibeVoiceDiffusionHead)
-                except Exception as e:
-                    print(f"[AIIA WARNING] Failed to load modeling_vibevoice for sub-models: {e}")
-
-            # 5. Register Model Classes
-            AutoModel.register(VibeVoiceConfig, VibeVoiceClass)
-            
-            # Register auxiliary model classes
-            if VibeVoiceAcousticTokenizerConfig and VibeVoiceAcousticTokenizerModel:
-                AutoModel.register(VibeVoiceAcousticTokenizerConfig, VibeVoiceAcousticTokenizerModel)
-            if VibeVoiceSemanticTokenizerConfig and VibeVoiceSemanticTokenizerModel:
-                AutoModel.register(VibeVoiceSemanticTokenizerConfig, VibeVoiceSemanticTokenizerModel)
-            if VibeVoiceDiffusionHeadConfig and VibeVoiceDiffusionHead:
-                AutoModel.register(VibeVoiceDiffusionHeadConfig, VibeVoiceDiffusionHead)
-            
-            # 6. Load Model
-            print(f"[AIIA] Loading VibeVoice model: {model_version} using aliased class...")
-            config = VibeVoiceConfig.from_pretrained(load_path)
-            model = VibeVoiceClass.from_pretrained(
-                load_path,
-                config=config,
-                torch_dtype=dtype,
-                device_map="auto",
-                trust_remote_code=False
-            )
-            
-            # 6.1 Load Generation Config (with bundled presets/fallback)
-            try:
-                gen_config_path = os.path.join(load_path, "generation_config.json")
-                from transformers import GenerationConfig
-                
-                if os.path.exists(gen_config_path):
-                    print(f"[AIIA] Loading generation_config.json from model directory: {gen_config_path}")
-                    final_gen_config = GenerationConfig.from_pretrained(load_path)
-                    model.generation_config = final_gen_config
-                else:
-                    # Fallback to internal presets
-                    preset_name = "generation_config.json" # Default
-                    if hasattr(config, "decoder_config") and hasattr(config.decoder_config, "hidden_size"):
-                        h_size = config.decoder_config.hidden_size
-                        if h_size > 2048:
-                            preset_name = "generation_config_7B.json"
-                        elif h_size < 1000:
-                            preset_name = "generation_config_0.5B.json"
-                        else:
-                            preset_name = "generation_config_1.5B.json"
-                    
-                    preset_path = os.path.join(core_path, preset_name)
-                    
-                    if os.path.exists(preset_path):
-                        print(f"[AIIA] Model-specific config not found. Using internal preset: {preset_name}")
-                        import json
-                        with open(preset_path, "r") as f:
-                            gen_dict = json.load(f)
-                        model.generation_config = GenerationConfig.from_dict(gen_dict)
-                    else:
-                        print(f"[AIIA WARNING] Preset {preset_name} not found, using generic fallback.")
-                        model.generation_config = GenerationConfig.from_pretrained(core_path)
-            except Exception as ge:
-                print(f"[AIIA WARNING] Failed to load generation config: {ge}")
-
-            # Cleanup not needed as we didn't add load_path to sys.path
-            # if sys_path_added:
-            #    sys.path.remove(core_path) # We keep core_path for now to ensure sub-modules resolve
-            pass
-
-        except Exception as e:
-            print(f"[AIIA] Manual import/registration failed: {e}")
-            # if 'sys_path_added' in locals() and sys_path_added:
-            #      sys.path.remove(load_path)
-            raise e
-            
-        # 7. Load Tokenizer & Processor
-        # Try finding Qwen tokenizer path
-        tokenizer_load_path = load_path
-        
-        # Check subfolders for Qwen tokenizer files
-        possible_tokenizer_paths = [
-            os.path.join(model_path, "tokenizer"), # ../models/vibevoice/tokenizer
-            os.path.join(load_path, "tokenizer"),  # ../models/vibevoice/VibeVoice-1.5B/tokenizer
-            load_path # Root
+        possible_base_paths = [
+            os.path.join(nodes_path, "models", "vibevoice"),
+            os.path.join(comfy_root, "models", "vibevoice")
         ]
-        
-        tokenizer = None
-        
-        # First try AutoTokenizer with our registration
+
+        load_path = None
+        for base in possible_base_paths:
+            # Try direct match
+            p = os.path.join(base, model_name)
+            if os.path.exists(p):
+                load_path = p
+                break
+            # Try with common vendor prefixes
+            for prefix in ["microsoft", "vibevoice"]:
+                p = os.path.join(base, prefix, model_name)
+                if os.path.exists(p):
+                    load_path = p
+                    break
+            if load_path: break
+
+        if not load_path:
+            raise FileNotFoundError(f"VibeVoice model '{model_name}' not found. Searched in: {possible_base_paths}. Please ensure it is in ComfyUI/models/vibevoice/{model_name}")
+
+        # Add paths to sys.path
+        if core_path not in sys.path: sys.path.insert(0, core_path)
+        modular_path = os.path.join(core_path, "modular")
+        if modular_path not in sys.path: sys.path.insert(0, modular_path)
+
+        # 1. Detect Model Type (Streaming vs Standard)
+        is_streaming_model = False
         try:
-             print("[AIIA] Attempting AutoTokenizer...")
-             print("[AIIA] Attempting AutoTokenizer with trust_remote_code=False...")
-             tokenizer = AutoTokenizer.from_pretrained(tokenizer_load_path, trust_remote_code=False)
-        except Exception as e:
-             print(f"[AIIA] AutoTokenizer failed ({e}), attempting fallback to Qwen2TokenizerFast...")
-             
-             # Try fallback paths
-             for path in possible_tokenizer_paths:
-                 if os.path.exists(path) and (os.path.exists(os.path.join(path, "tokenizer.json")) or os.path.exists(os.path.join(path, "vocab.json"))):
-                     print(f"[AIIA] Found tokenizer files at {path}")
-                     try:
+            import json
+            with open(os.path.join(load_path, "config.json"), "r") as f:
+                cfg_data = json.load(f)
+                h_size = cfg_data.get("decoder_config", {}).get("hidden_size", 0)
+                if 0 < h_size < 1000 or cfg_data.get("model_type") == "vibevoice_streaming":
+                    is_streaming_model = True
+        except: pass
+
+        # Load Core Modules
+        load_module_from_path_patched("vibevoice_tokenizer_processor", os.path.join(core_path, "vibevoice_tokenizer_processor.py"))
+        load_module_from_path_patched("vibevoice_processor", os.path.join(core_path, "vibevoice_processor.py"))
+        load_module_from_path_patched("vibevoice_streaming_processor", os.path.join(core_path, "vibevoice_streaming_processor.py"))
+        
+        module_order = ["configuration_vibevoice", "streamer", "configuration_vibevoice_streaming", 
+                        "modeling_vibevoice_streaming", "modeling_vibevoice_streaming_inference"]
+        for mod_name in module_order:
+            for bp in [os.path.join(core_path, f"{mod_name}.py"), os.path.join(core_path, "modular", f"{mod_name}.py")]:
+                if os.path.exists(bp):
+                    load_module_from_path_patched(mod_name, bp)
+                    break
+
+        VibeVoiceConfig = None
+        VibeVoiceProcessorClass = None
+        VibeVoiceClass = None
+        config_module = None
+        model_module = None
+
+        if is_streaming_model:
+            print("[AIIA] Model identified as Streaming (Realtime) variant.")
+            config_module = sys.modules.get("configuration_vibevoice_streaming")
+            VibeVoiceConfig = getattr(config_module, "VibeVoiceStreamingConfig", None)
+            model_module = sys.modules.get("modeling_vibevoice_streaming_inference")
+            VibeVoiceClass = getattr(model_module, "VibeVoiceStreamingForConditionalGenerationInference", None)
+            VibeVoiceProcessorClass = getattr(sys.modules.get("vibevoice_streaming_processor"), "VibeVoiceStreamingProcessor", None)
+        else:
+            print("[AIIA] Model identified as Standard variant.")
+            config_module = sys.modules.get("configuration_vibevoice")
+            VibeVoiceConfig = getattr(config_module, "VibeVoiceConfig", None)
+            inf_file = os.path.join(core_path, "modular", "modeling_vibevoice_inference.py")
+            if os.path.exists(inf_file):
+                model_module = load_module_from_path_patched("modeling_vibevoice_inference", inf_file)
+            else:
+                model_module = sys.modules.get("modeling_vibevoice_streaming_inference")
+            VibeVoiceClass = getattr(model_module, "VibeVoiceForConditionalGenerationInference", None)
+            VibeVoiceProcessorClass = getattr(sys.modules.get("vibevoice_processor"), "VibeVoiceProcessor", None)
+
+        # Registration
+        VibeVoiceConfig.model_type = "vibevoice"
+        AutoConfig.register("vibevoice", VibeVoiceConfig)
+        
+        # Register Tokenizer mapping
+        try:
+            from transformers.models.auto.tokenization_auto import TOKENIZER_MAPPING
+            TOKENIZER_MAPPING.register(VibeVoiceConfig, (Qwen2TokenizerFast, None))
+        except: pass
+
+        AutoModel.register(VibeVoiceConfig, VibeVoiceClass)
+
+        # 5. Load Model
+        print(f"[AIIA] Loading VibeVoice model variant: {VibeVoiceClass.__name__}")
+        config = VibeVoiceConfig.from_pretrained(load_path)
+        model = VibeVoiceClass.from_pretrained(load_path, config=config, torch_dtype=dtype, device_map="auto", trust_remote_code=False)
+        
+        # Load Generation Config
+        try:
+            from transformers import GenerationConfig
+            gen_config_path = os.path.join(load_path, "generation_config.json")
+            if os.path.exists(gen_config_path):
+                model.generation_config = GenerationConfig.from_pretrained(load_path)
+            else:
+                h_size = config.decoder_config.hidden_size
+                preset = "generation_config_7B.json" if h_size > 2048 else ("generation_config_0.5B.json" if h_size < 1000 else "generation_config_1.5B.json")
+                preset_path = os.path.join(core_path, preset)
+                if os.path.exists(preset_path):
+                    with open(preset_path, "r") as f:
+                        model.generation_config = GenerationConfig.from_dict(json.load(f))
+        except Exception as ge: print(f"[AIIA WARNING] Failed to load generation config: {ge}")
+
+        # 7. Load Tokenizer & Processor
+        tokenizer = None
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(load_path, trust_remote_code=False)
+        except:
+            for path in [os.path.join(load_path, "tokenizer"), load_path]:
+                if os.path.exists(path) and (os.path.exists(os.path.join(path, "tokenizer.json")) or os.path.exists(os.path.join(path, "vocab.json"))):
+                    try:
                         tokenizer = Qwen2TokenizerFast.from_pretrained(path)
                         break
-                     except Exception as te:
-                        print(f"[AIIA] Failed to load tokenizer from {path}: {te}")
+                    except: pass
         
-        if tokenizer is None:
-             raise RuntimeError("Could not load tokenizer. Please ensure Qwen2.5-1.5B tokenizer files (tokenizer.json, vocab.json, merges.txt) are present in the model directory or a 'tokenizer' subdirectory.")
-             
-        print(f"[AIIA] Tokenizer loaded: {tokenizer.__class__.__name__}")
+        if tokenizer is None: raise RuntimeError("Could not load tokenizer.")
         
-        # MONKEY PATCH: Ensure tokenizer has VibeVoice special properties
-        # The VibeVoiceProcessor relies on these attributes which specific VibeVoiceTextTokenizer has.
-        # But since we load generic Qwen2TokenizerFast, we must inject them.
+        # Inject attributes
         if not hasattr(tokenizer, "speech_diffusion_id"):
-            print("[AIIA] Monkey-patching tokenizer with VibeVoice attributes...")
-            
-            # 1. Add Special Tokens if missing
-            special_tokens = ["<|vision_start|>", "<|vision_end|>", "<|vision_pad|>", "<|image_pad|>"]
-            tokenizer.add_tokens(special_tokens, special_tokens=True)
+            tokenizer.add_tokens(["<|vision_start|>", "<|vision_end|>", "<|vision_pad|>", "<|image_pad|>"], special_tokens=True)
+            tokenizer.speech_start_id = tokenizer.convert_tokens_to_ids("<|vision_start|>")
+            tokenizer.speech_end_id = tokenizer.convert_tokens_to_ids("<|vision_end|>")
+            tokenizer.speech_diffusion_id = tokenizer.convert_tokens_to_ids("<|vision_pad|>")
+            tokenizer.pad_id = tokenizer.convert_tokens_to_ids("<|image_pad|>")
 
-            # 2. Get IDs
-            speech_start_id = tokenizer.convert_tokens_to_ids("<|vision_start|>")
-            speech_end_id = tokenizer.convert_tokens_to_ids("<|vision_end|>")
-            speech_diffusion_id = tokenizer.convert_tokens_to_ids("<|vision_pad|>")
-            pad_id = tokenizer.convert_tokens_to_ids("<|image_pad|>")
-            
-            # 3. Inject Properties
-            # We use bound properties or just set attributes depending on how it's accessed (as a property or attr)
-            # The class uses @property, but setting instance attribute shadows class property usually.
-            tokenizer.speech_start_id = speech_start_id
-            tokenizer.speech_end_id = speech_end_id
-            tokenizer.speech_diffusion_id = speech_diffusion_id
-            tokenizer.pad_id = pad_id
-            
-            print(f"[AIIA] Tokenizer Patched: speech_diffusion_id={speech_diffusion_id}")
-        
-        # 8. Init VibeVoiceProcessor
+        # Initialize Processor
         processor = None
-        if "vibevoice_processor" in sys.modules:
-             try:
-                 VibeVoiceProcessor = sys.modules["vibevoice_processor"].VibeVoiceProcessor
-                 # Initialize processor with our loaded tokenizer
-                 # We need to manually initialize audio_processor as well since we are bypassing from_pretrained
-                 if "vibevoice_tokenizer_processor" in sys.modules:
-                     AudioProcessorClass = sys.modules["vibevoice_tokenizer_processor"].VibeVoiceTokenizerProcessor
-                     audio_processor = AudioProcessorClass()
-                     processor = VibeVoiceProcessor(tokenizer=tokenizer, audio_processor=audio_processor)
-                     print("[AIIA] VibeVoiceProcessor initialized successfully.")
-                 else:
-                     print("[AIIA WARNING] vibevoice_tokenizer_processor not found, skipping processor init.")
-             except Exception as pe:
-                 print(f"[AIIA WARNING] Failed to initialize VibeVoiceProcessor: {pe}")
-        
-        model.eval()
-        
-        return ({"model": model, "tokenizer": tokenizer, "processor": processor, "dtype": dtype},)
+        if VibeVoiceProcessorClass:
+            try:
+                AudioProcessorClass = sys.modules["vibevoice_tokenizer_processor"].VibeVoiceTokenizerProcessor
+                processor = VibeVoiceProcessorClass(tokenizer=tokenizer, audio_processor=AudioProcessorClass())
+                print(f"[AIIA] Initialized {VibeVoiceProcessorClass.__name__}")
+            except Exception as pe: print(f"[AIIA WARNING] Failed to initialize processor: {pe}")
 
+        model.eval()
+        return ({"model": model, "tokenizer": tokenizer, "processor": processor, "dtype": dtype, "is_streaming": is_streaming_model},)
 
 class AIIA_VibeVoice_TTS:
     @classmethod
@@ -417,14 +199,14 @@ class AIIA_VibeVoice_TTS:
             "required": {
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
                 "text": ("STRING", {"multiline": True, "default": "Hello, this is a test of VibeVoice."}),
-                "cfg_scale": ("FLOAT", {"default": 1.3, "min": 1.0, "max": 10.0, "step": 0.1, "tooltip": "CFG scale for speech generation. Official baseline is 1.3."}),
-                "ddpm_steps": ("INT", {"default": 20, "min": 10, "max": 100, "step": 1, "tooltip": "Diffusion steps. Official baseline is 20."}),
-                "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1, "tooltip": "Playback speed. >1 = faster, <1 = slower (post-process time-stretch)."}),
-                "normalize_text": ("BOOLEAN", {"default": True, "tooltip": "Apply text normalization (year ranges → 至, remove quotes). Disable for 7B model or custom text."}),
-                "do_sample": (["auto", "true", "false"], {"default": "auto", "tooltip": "Enable sampling. 'auto' uses model-specific defaults (OFF for 1.5B, ON for 7B)."}),
-                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature. Only used if sampling is enabled."}),
-                "top_k": ("INT", {"default": 20, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling. 0 to disable."}),
-                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Top-p (nucleus) sampling."}),
+                "cfg_scale": ("FLOAT", {"default": 1.3, "min": 1.0, "max": 10.0, "step": 0.1}),
+                "ddpm_steps": ("INT", {"default": 20, "min": 10, "max": 100, "step": 1}),
+                "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
+                "normalize_text": ("BOOLEAN", {"default": True}),
+                "do_sample": (["auto", "true", "false"], {"default": "auto"}),
+                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
+                "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0}),
             },
             "optional": {
                 "reference_audio": ("AUDIO",),
@@ -441,194 +223,163 @@ class AIIA_VibeVoice_TTS:
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
+        is_streaming = vibevoice_model.get("is_streaming", False)
         device = model.device 
         
-        if processor is None:
-             raise RuntimeError("VibeVoiceProcessor is missing. Model loading might have been incomplete.")
-             
-        if reference_audio is None:
-             raise ValueError("Reference Audio is REQUIRED for VibeVoice. Please connect an AUDIO input (e.g., Load Audio, Microphone).")
+        if processor is None: raise RuntimeError("Processor is missing.")
+        if reference_audio is None: raise ValueError("Reference Audio is REQUIRED.")
 
-        print(f"[AIIA] Generating VibeVoice TTS... text length: {len(text)}")
+        print(f"[AIIA] Generating... streaming={is_streaming}, text len={len(text)}")
         
-        # Text preprocessing: Normalize problematic punctuation (optional, for 1.5B model)
+        # Text normalization
         import re
         if normalize_text:
-            # 1. Replace hyphens ONLY in year ranges (must have 年 on both sides to be safe)
-            #    e.g., "2025年-2027年" -> "2025年至2027年"
-            #    But "100-50" stays unchanged (could be subtraction)
             text = re.sub(r'(\d+年)\s*[-—–]\s*(\d+年)', r'\1至\2', text)
-            # 2. Remove double quotes that interfere with TTS (both Chinese and English)
-            text = text.replace('"', '').replace('"', '').replace('"', '')
-            text = text.replace("'", '').replace("'", '').replace("'", '')
-            print(f"[AIIA] Normalized text: {text[:80]}...")
-        else:
-            print("[AIIA] Text normalization disabled")
+            text = text.replace('"', '').replace("'", '')
         
-        # FIX: Processor expects script format "Speaker X: text" for raw strings
+        # Default Speaker Tag
         if not re.search(r'^Speaker\s+\d+\s*:', text, re.IGNORECASE | re.MULTILINE):
-            print("[AIIA] No speaker tag found, adding default 'Speaker 1:' prefix")
-            # If multi-line, prefix each line that has content?
-            # Or just wrap the whole thing?
-            # VibeVoice supports multiple speakers. If user gives plain text, assume single speaker.
-            
-            # Simple approach: Prepend Speaker 1: to the whole block?
-            # The processor parsing logic splits by newline.
-            # If I wrap the whole text, newlines inside might be treated as... 
-            # Processor parse_script iterates lines. Each line MUST start with Speaker X:.
-            
             lines = text.split('\n')
-            formatted_lines = []
-            for line in lines:
-                if line.strip():
-                     formatted_lines.append(f"Speaker 1: {line.strip()}")
-            text = "\n".join(formatted_lines)
-            print(f"[AIIA] Formatted input: {text[:50]}...")
-        
-        # Prepare reference audio for processor
-        voice_samples = None
-        if reference_audio is not None:
-             wav = reference_audio["waveform"] # [B, C, T]
-             ref_sample_rate = reference_audio.get("sample_rate", 24000)
-             
-             # Processor expects numpy array or path
-             if wav.ndim == 3:
-                 wav = wav[0] # Take batch 0
-             if wav.shape[0] > 1:
-                 wav = torch.mean(wav, dim=0, keepdim=True) # Mono
-             
-             # Resample to 24000Hz if needed (model expects 24000Hz)
-             target_sample_rate = 24000
-             if ref_sample_rate != target_sample_rate:
-                 print(f"[AIIA] Resampling reference audio from {ref_sample_rate}Hz to {target_sample_rate}Hz")
-                 resampler = torchaudio.transforms.Resample(
-                     orig_freq=ref_sample_rate,
-                     new_freq=target_sample_rate
-                 )
-                 wav = resampler(wav)
-             
-             # Convert to numpy [T]
-             wav_np = wav.squeeze().cpu().numpy()
-             voice_samples = [wav_np] # List for batch processing logic in processor
-        
-        # Use Processor to prepare inputs
+            text = "\n".join([f"Speaker 1: {line.strip()}" for line in lines if line.strip()])
+
+        # Process Reference Audio
+        wav = reference_audio["waveform"]
+        ref_sr = reference_audio.get("sample_rate", 24000)
+        if wav.ndim == 3: wav = wav[0]
+        if wav.shape[0] > 1: wav = torch.mean(wav, dim=0, keepdim=True)
+        if ref_sr != 24000:
+            resampler = torchaudio.transforms.Resample(orig_freq=ref_sr, new_freq=24000)
+            wav = resampler(wav)
+        voice_samples = [wav.squeeze().cpu().numpy()]
+
         try:
-             # Processor returns BatchEncoding
-             inputs = processor(
-                 text=text,
-                 voice_samples=voice_samples,
-                 return_tensors="pt"
-             )
+            with torch.no_grad():
+                if is_streaming:
+                    # 0.5B Streaming Logic
+                    print("[AIIA] Using 0.5B Streaming Inference Path...")
+                    
+                    # 1. We need to split the speaker part from the generation part
+                    # The processor normally handles this, but for streaming we need the prefilled state.
+                    # We'll use a trick: process the WHOLE thing to get tokens, then split.
+                    
+                    # Split into speaker prompt and target script
+                    # Assume single-speaker format from above for simplicity
+                    match = re.match(r'^(Speaker\s+\d+\s*:\s*)(.*)', text, re.DOTALL | re.IGNORECASE)
+                    if not match: raise ValueError("Invalid speaker format")
+                    
+                    speaker_prefix = match.group(1)
+                    target_text = match.group(2)
+                    
+                    # Get tokens for prompt (Speaker Prefix + Voice)
+                    # Use standard VibeVoiceProcessor internal logic to get proper interleaved tokens
+                    # Actually, we can just use the provided processor's internal methods if accessible
+                    # but it's easier to just use the processor with a dummy text to get the voice tokens.
+                    
+                    # 0.5B model's generate() expects all_prefilled_outputs.
+                    # We can use forward_lm and forward_tts_lm to get them.
+                    
+                    # Use the standard processor logic to get inputs for the PROMPT part
+                    # We use the standard processor here (internally it's the same logic for tokenization)
+                    # BUT wait, the model's generate handles the prompt if inputs is passed? 
+                    # No, we saw it needs all_prefilled_outputs.
+                    
+                    # HELPER: Get prefilled state
+                    # We'll use the processor to get prompt tokens
+                    # We use a dummy text for the prompt part
+                    prompt_inputs = processor(text=speaker_prefix, voice_samples=voice_samples, return_tensors="pt")
+                    prompt_input_ids = prompt_inputs["input_ids"].to(device)
+                    prompt_tts_lm_input_ids = prompt_inputs["tts_lm_input_ids"].to(device)
+                    
+                    # Optional: Speech inputs if provided
+                    speech_tensors = prompt_inputs.get("speech_tensors")
+                    if speech_tensors is not None: speech_tensors = speech_tensors.to(device)
+                    speech_masks = prompt_inputs.get("speech_masks")
+                    if speech_masks is not None: speech_masks = speech_masks.to(device)
+                    speech_input_mask = prompt_inputs.get("speech_input_mask")
+                    if speech_input_mask is not None: speech_input_mask = speech_input_mask.to(device)
 
-             # Move all tensors to device
-             # Extract input_ids for positional argument
-             input_ids = inputs["input_ids"].to(device)
-             
-             # Prepare other kwargs
-             input_args = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items() if k != "input_ids"}
-             
-             max_new_tokens = 4096 # Default safe limit
-             
-             # Set max_length_times to a high internal default (10.0)
-             # This ensures the model has enough budget to finish naturally via EOS
-             max_length_times = 10.0
-             
-             # Heuristic for progress bar: 
-             # Chinese characters generate more audio than individual English letters.
-             # ~20 tokens per character is a safe estimation for smooth progress.
-             expected_steps = len(text) * 20
-             
-             # Handle do_sample resolution
-             final_do_sample = do_sample
-             if do_sample == "auto":
-                 final_do_sample = getattr(model.generation_config, "do_sample", False)
-             else:
-                 final_do_sample = (do_sample == "true")
-             
-             # Prepare generation kwargs
-             generation_kwargs = {
-                 "max_new_tokens": max_new_tokens,
-                 "tokenizer": tokenizer, # Model might use it
-                 "bos_token_id": 151643, # Qwen2 BOS
-                 "eos_token_id": tokenizer.eos_token_id, 
-                 "pad_token_id": tokenizer.eos_token_id,
-                 "cfg_scale": cfg_scale, # User-controlled CFG scale for speech generation
-                 "max_length_times": max_length_times, # Safety budget
-                 "do_sample": final_do_sample,
-                 "temperature": temperature,
-                 "top_k": top_k,
-                 "top_p": top_p,
-                 "expected_steps": expected_steps,
-             }
-             
-             # Set diffusion inference steps (crucial for quality/speed tradeoff)
-             if hasattr(model, "set_ddpm_inference_steps"):
-                 model.set_ddpm_inference_steps(num_steps=ddpm_steps)
-                 
-             with torch.no_grad():
-                output_wav = model.generate(
-                    input_ids,
-                    **input_args,
-                    **generation_kwargs
-                )
-             
-             # Format output
-             # output_wav is likely list of numpy arrays or tensors from generate
-             # Check output format from modeling_vibevoice_inference.py:
-             # Returns: VibeVoiceGenerationOutput or tensors. 
-             # Our node implementation of generate returns VibeVoiceGenerationOutput class if return_dict=True (default)
-             
-             # DEBUG: Print reference audio length
-             if reference_audio is not None:
-                 ref_len = reference_audio["waveform"].shape[-1]
-                 ref_sr = reference_audio.get("sample_rate", 24000)
-                 print(f"[AIIA DEBUG] Reference audio: {ref_len} samples @ {ref_sr}Hz = {ref_len/ref_sr:.2f}s")
-             
-             if hasattr(output_wav, "speech_outputs"):
-                 audio_out = output_wav.speech_outputs[0] # List[Tensor]
-                 print(f"[AIIA DEBUG] Got speech_outputs[0], type: {type(audio_out)}")
-             elif isinstance(output_wav, list):
-                 audio_out = output_wav[0]
-                 print(f"[AIIA DEBUG] Got list[0], type: {type(audio_out)}")
-             else:
-                 audio_out = output_wav
-                 print(f"[AIIA DEBUG] Got raw output, type: {type(audio_out)}")
+                    # Get forward outputs
+                    lm_out = model.forward_lm(input_ids=prompt_input_ids, use_cache=True, return_dict=True)
+                    
+                    tts_lm_extra = {
+                        "tts_text_masks": torch.ones_like(prompt_tts_lm_input_ids[:, -1:]),
+                        "lm_last_hidden_state": lm_out.last_hidden_state,
+                        "speech_tensors": speech_tensors,
+                        "speech_masks": speech_masks,
+                        "speech_input_mask": speech_input_mask
+                    }
+                    tts_lm_out = model.forward_tts_lm(input_ids=prompt_tts_lm_input_ids, use_cache=True, return_dict=True, **tts_lm_out_extra if False else tts_lm_extra)
+                    
+                    # Negative Prefill (empty prompt)
+                    neg_input_ids = torch.tensor([[151643]], device=device) # BOS
+                    neg_lm_out = model.forward_lm(input_ids=neg_input_ids, use_cache=True, return_dict=True)
+                    neg_tts_lm_out = model.forward_tts_lm(input_ids=neg_input_ids, use_cache=True, return_dict=True, lm_last_hidden_state=neg_lm_out.last_hidden_state)
+                    
+                    all_prefilled = {
+                        "lm": lm_out, "tts_lm": tts_lm_out,
+                        "neg_lm": neg_lm_out, "neg_tts_lm": neg_tts_lm_out
+                    }
 
-             if audio_out is None:
-                 raise RuntimeError("No audio generated.")
-                 
-             # Ensure tensor format
-             if not isinstance(audio_out, torch.Tensor):
-                 audio_out = torch.from_numpy(audio_out)
-             
-             # DEBUG: Show generated audio length BEFORE any processing
-             print(f"[AIIA DEBUG] Generated audio shape: {audio_out.shape}, samples: {audio_out.shape[-1]}, duration: {audio_out.shape[-1]/24000:.2f}s")
-             
-             # Ensure [C, T] format for processing
-             if audio_out.ndim == 1:
-                 audio_out = audio_out.unsqueeze(0)  # [1, T]
-             elif audio_out.ndim == 3:
-                 audio_out = audio_out.squeeze(0)  # Remove batch dim
-             
-             # Apply speed adjustment via resampling (post-process time-stretch)
-             original_sample_rate = 24000
-             if speed != 1.0:
-                 effective_rate = int(original_sample_rate * speed)
-                 resampler = torchaudio.transforms.Resample(
-                     orig_freq=effective_rate,
-                     new_freq=original_sample_rate
-                 )
-                 audio_out = resampler(audio_out)
-                 print(f"[AIIA] Applied speed adjustment: {speed}x")
-             
-             # Ensure [1, C, T] format for ComfyUI
-             if audio_out.ndim == 2:
-                 audio_out = audio_out.unsqueeze(0)
-             
-             return ({"waveform": audio_out.cpu(), "sample_rate": original_sample_rate},) 
+                    # Target tokens for streaming
+                    target_tokens = tokenizer.encode(target_text.strip() + "\n", return_tensors="pt").to(device)
+                    
+                    # Call Generate
+                    output = model.generate(
+                        all_prefilled_outputs=all_prefilled,
+                        tts_text_ids=target_tokens,
+                        tts_lm_input_ids=prompt_tts_lm_input_ids,
+                        inputs=prompt_input_ids,
+                        cfg_scale=cfg_scale,
+                        tokenizer=tokenizer,
+                        show_progress_bar=True
+                    )
+                else:
+                    # 1.5B/7B Standard Logic
+                    inputs = processor(text=text, voice_samples=voice_samples, return_tensors="pt")
+                    input_ids = inputs["input_ids"].to(device)
+                    input_args = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items() if k != "input_ids"}
+                    
+                    if hasattr(model, "set_ddpm_inference_steps"):
+                        model.set_ddpm_inference_steps(num_steps=ddpm_steps)
+
+                    # Resolution for sampling
+                    f_do_sample = getattr(model.generation_config, "do_sample", False) if do_sample == "auto" else (do_sample == "true")
+                    
+                    output = model.generate(
+                        input_ids,
+                        cfg_scale=cfg_scale,
+                        do_sample=f_do_sample,
+                        temperature=temperature,
+                        top_k=top_k,
+                        top_p=top_p,
+                        expected_steps=len(text)*20,
+                        max_length_times=10.0,
+                        **input_args
+                    )
+                
+                # Format Audio Output
+                if hasattr(output, "speech_outputs"):
+                    audio_out = output.speech_outputs[0]
+                elif isinstance(output, list):
+                    audio_out = output[0]
+                else:
+                    audio_out = output
+
+                if not isinstance(audio_out, torch.Tensor):
+                    audio_out = torch.from_numpy(audio_out)
+                
+                # Reshape to [1, C, T]
+                if audio_out.ndim == 1: audio_out = audio_out.unsqueeze(0)
+                if audio_out.ndim == 3: audio_out = audio_out.squeeze(0)
+                
+                # Speed adj
+                if speed != 1.0:
+                    audio_out = torchaudio.transforms.Resample(orig_freq=int(24000*speed), new_freq=24000)(audio_out)
+                
+                if audio_out.ndim == 2: audio_out = audio_out.unsqueeze(0)
+                return ({"waveform": audio_out.cpu(), "sample_rate": 24000},)
 
         except Exception as e:
-            print(f"[AIIA ERROR] VibeVoice Inference failed: {e}")
             import traceback
             traceback.print_exc()
             raise e
@@ -639,6 +390,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_VibeVoice_Loader": "🎤 VibeVoice Loader (1.5B)",
+    "AIIA_VibeVoice_Loader": "🎤 VibeVoice Loader",
     "AIIA_VibeVoice_TTS": "🗣️ VibeVoice TTS"
 }
