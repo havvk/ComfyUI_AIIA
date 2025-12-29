@@ -487,16 +487,19 @@ class VibeVoiceForConditionalGenerationInference(VibeVoicePreTrainedModel, Gener
         all_speakers_list = kwargs.pop("all_speakers_list", None)
         max_length_times = kwargs.pop("max_length_times", 2)
 
-        if kwargs.get('max_new_tokens', None) is None:
-            kwargs['max_new_tokens'] = self.config.decoder_config.max_position_embeddings - kwargs['input_ids'].shape[-1]
-
+        # FIX: Build config first to get input_ids, then use it for max_new_tokens calculation
         generation_config, model_kwargs, input_ids, logits_processor, stopping_criteria = self._build_generate_config_model_kwargs(
             generation_config, inputs, tokenizer, return_processors=True, **kwargs
         )
         
+        # Now calculate max_new_tokens using the resolved input_ids
+        if kwargs.get('max_new_tokens', None) is None:
+            kwargs['max_new_tokens'] = self.config.decoder_config.max_position_embeddings - input_ids.shape[-1]
+        
+        # FIX: Use resolved `input_ids` instead of kwargs['input_ids'] which may be missing
         negative_kwargs = {
-            'input_ids': torch.full((kwargs['input_ids'].shape[0], 1), tokenizer.speech_start_id, dtype=torch.long, device=kwargs['input_ids'].device),
-            'attention_mask':  torch.ones((kwargs['input_ids'].shape[0], 1), dtype=torch.long, device=kwargs['input_ids'].device),
+            'input_ids': torch.full((input_ids.shape[0], 1), tokenizer.speech_start_id, dtype=torch.long, device=input_ids.device),
+            'attention_mask':  torch.ones((input_ids.shape[0], 1), dtype=torch.long, device=input_ids.device),
             'max_new_tokens': kwargs.get('max_new_tokens', 100) 
         }
         negative_generation_config, negative_model_kwargs, negative_input_ids = self._build_generate_config_model_kwargs(
