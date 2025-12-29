@@ -446,7 +446,7 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
             tts_text_ids = tts_text_ids.to(self.device)
         else:
              # Handle case where tts_text_ids is None (should not happen if logic is correct, but for safety)
-             if verbose: print("Warning: tts_text_ids is None in generate()")
+             logger.warning("Warning: tts_text_ids is None in generate()")
 
         if kwargs.get('max_new_tokens', None) is None:
             kwargs['max_new_tokens'] = self.config.decoder_config.max_position_embeddings - tts_lm_input_ids.shape[-1]
