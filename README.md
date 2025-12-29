@@ -428,11 +428,15 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 #### 3.10 Microsoft VibeVoice (Beta)
 
-- **用途**: 微软最新的 1.5B TTS/音色克隆模型。
+- **用途**: 微软最新的 TTS/音色克隆模型，支持 1.5B 和 7B 两种规格。
 - **当前状态**: ✅ 可用（已通过测试）
+- **支持语言**: **英文 (en) 和 中文 (zh)**（官方仅在这两种语言数据集上训练）
+- **可选模型**:
+  - `microsoft/VibeVoice-1.5B`: 轻量版，适合大多数场景（~3GB 显存）
+  - `microsoft/VibeVoice-7B`: 高质量版，效果更好但需要更多显存（~14GB）
 - **特点**:
   - **即时启动**: 无需预热或编译，首次运行即可使用（CosyVoice 首次需 ~1 分钟编译）。
-  - **多语言自动识别**: 模型会自动识别输入文本的语言（中/英/日等），无需手动指定。
+  - **语言自动识别**: 模型会自动识别中英文文本。
   - **零样本音色克隆**: 输入 `reference_audio` 即可克隆声音。
 - **节点参数**:
   - `cfg_scale` (默认: 3.0): CFG 引导强度。值越高，语音越忠实于文本内容。
@@ -446,10 +450,10 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **模型准备 (Model Preparation)**:
   如果遇到下载问题或分词器报错，请手动下载模型文件到 `models/vibevoice` 目录。
   
-  **必须的文件结构**:
+  **必须的文件结构** (以 1.5B 为例，7B 类似):
   ```text
-  ComfyUI/models/vibevoice/microsoft/VibeVoice-1.5B/
-  ├── model-00001-of-00003.safetensors ... (模型权重)
+  ComfyUI/models/vibevoice/microsoft/VibeVoice-1.5B/  # 或 VibeVoice-7B/
+  ├── model-*.safetensors (模型权重)
   ├── config.json
   └── [Tokenizer Files] (必须包含以下 Qwen 文件!)
       ├── tokenizer.json
@@ -460,18 +464,29 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
   **💡 说明**: 插件已内置并修复了所有 VibeVoice 的 Python 核心代码 (`vibevoice_core`)。你**不需要**也不建议在模型目录中保留 `modeling_vibevoice_*.py` 等 Python 脚本，以避免潜在的冲突。
 
-  **⚠️ 重要提示**: VibeVoice 依赖 **Qwen2.5-1.5B** 的分词器。如果你下载的模型包里没有上面列出的 tokenizer 文件，请手动从 [Qwen/Qwen2.5-1.5B](https://huggingface.co/Qwen/Qwen2.5-1.5B/tree/main) 下载这 4 个文件并放入模型目录。
+  **⚠️ 重要提示**: VibeVoice 依赖 **Qwen2.5** 的分词器。如果模型包里没有 tokenizer 文件，请手动补全：
+  - 1.5B 模型使用 [Qwen/Qwen2.5-1.5B](https://huggingface.co/Qwen/Qwen2.5-1.5B/tree/main) 的 tokenizer
+  - 7B 模型使用 [Qwen/Qwen2.5-7B](https://huggingface.co/Qwen/Qwen2.5-7B/tree/main) 的 tokenizer
 
   **手动下载命令**:
   ```bash
+  # ===== 1.5B 模型 =====
   mkdir -p models/vibevoice/microsoft/VibeVoice-1.5B
-  # 1. 下载模型权重和代码
   hf download microsoft/VibeVoice-1.5B --local-dir models/vibevoice/microsoft/VibeVoice-1.5B
-  # 2. 补全 Tokenizer 文件 (如果没有)
+  # 补全 Tokenizer (如果没有)
   wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/tokenizer.json -P models/vibevoice/microsoft/VibeVoice-1.5B/
   wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/tokenizer_config.json -P models/vibevoice/microsoft/VibeVoice-1.5B/
   wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/vocab.json -P models/vibevoice/microsoft/VibeVoice-1.5B/
   wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/merges.txt -P models/vibevoice/microsoft/VibeVoice-1.5B/
+
+  # ===== 7B 模型 =====
+  mkdir -p models/vibevoice/microsoft/VibeVoice-7B
+  hf download microsoft/VibeVoice-7B --local-dir models/vibevoice/microsoft/VibeVoice-7B
+  # 补全 Tokenizer (如果没有)
+  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/tokenizer.json -P models/vibevoice/microsoft/VibeVoice-7B/
+  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/tokenizer_config.json -P models/vibevoice/microsoft/VibeVoice-7B/
+  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/vocab.json -P models/vibevoice/microsoft/VibeVoice-7B/
+  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/merges.txt -P models/vibevoice/microsoft/VibeVoice-7B/
   ```
 
 ### 4. 图像工具 (Image Utilities)

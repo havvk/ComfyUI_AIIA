@@ -10,7 +10,7 @@ class AIIA_VibeVoice_Loader:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model_name": (["microsoft/VibeVoice-1.5B"],),
+                "model_name": (["microsoft/VibeVoice-1.5B", "microsoft/VibeVoice-7B"],),
                 "precision": (["fp16", "bf16", "fp32"], {"default": "fp16"}),
             }
         }
@@ -42,16 +42,19 @@ class AIIA_VibeVoice_Loader:
         model_path = os.path.join(folder_paths.models_dir, "vibevoice")
         if not os.path.exists(model_path):
             os.makedirs(model_path, exist_ok=True)
-            
-        local_model_path = os.path.join(model_path, "microsoft", "VibeVoice-1.5B") 
-        load_path = model_name # Default to HF hub ID
+        
+        # Extract model version from model_name (e.g., "microsoft/VibeVoice-1.5B" -> "VibeVoice-1.5B")
+        model_version = model_name.split("/")[-1]  # "VibeVoice-1.5B" or "VibeVoice-7B"
         
         # Try to find local first
+        local_model_path = os.path.join(model_path, "microsoft", model_version) 
+        load_path = model_name # Default to HF hub ID
+        
         if os.path.exists(local_model_path):
             load_path = local_model_path
             print(f"[AIIA] Found local model at: {load_path}")
         else:
-            flat_path = os.path.join(model_path, "VibeVoice-1.5B")
+            flat_path = os.path.join(model_path, model_version)
             if os.path.exists(flat_path):
                  load_path = flat_path
                  print(f"[AIIA] Found local model at: {load_path}")
