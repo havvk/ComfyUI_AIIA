@@ -105,12 +105,12 @@ class AIIA_VibeVoice_Loader:
                     print(f"[AIIA] Patched {n_subs} relative imports in {module_name}")
 
                 # PATCH: Fix unsafe .to(device) on potential None types in VibeVoice generation code
-                # This protects unbundled (remote/downloaded) files that we cannot fix on disk.
+                # IDEMPOTENT PATCH: We use negative lookahead to avoid double-patching if the check already exists.
                 
                 # 1. speech_tensors
                 source_code, n_subs = re.subn(
-                    r'(([\"\'])speech_tensors\2\s*:\s*speech_tensors\.to\(.*?\)),?',
-                    r'"speech_tensors": speech_tensors.to(device) if speech_tensors is not None else None,',
+                    r'(([\"\'])speech_tensors\2\s*:\s*speech_tensors\.to\(.*?\))(?!\s*if)',
+                    r'"speech_tensors": speech_tensors.to(device) if speech_tensors is not None else None',
                     source_code,
                     flags=re.DOTALL
                 )
@@ -118,8 +118,8 @@ class AIIA_VibeVoice_Loader:
 
                 # 2. speech_masks
                 source_code, n_subs = re.subn(
-                    r'(([\"\'])speech_masks\2\s*:\s*speech_masks\.to\(.*?\)),?',
-                    r'"speech_masks": speech_masks.to(device) if speech_masks is not None else None,',
+                    r'(([\"\'])speech_masks\2\s*:\s*speech_masks\.to\(.*?\))(?!\s*if)',
+                    r'"speech_masks": speech_masks.to(device) if speech_masks is not None else None',
                     source_code,
                     flags=re.DOTALL
                 )
@@ -127,8 +127,8 @@ class AIIA_VibeVoice_Loader:
 
                 # 3. speech_input_mask
                 source_code, n_subs = re.subn(
-                    r'(([\"\'])speech_input_mask\2\s*:\s*speech_input_mask\.to\(.*?\)),?',
-                    r'"speech_input_mask": speech_input_mask.to(device) if speech_input_mask is not None else None,',
+                    r'(([\"\'])speech_input_mask\2\s*:\s*speech_input_mask\.to\(.*?\))(?!\s*if)',
+                    r'"speech_input_mask": speech_input_mask.to(device) if speech_input_mask is not None else None',
                     source_code,
                     flags=re.DOTALL
                 )
