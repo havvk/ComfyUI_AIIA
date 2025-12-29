@@ -243,7 +243,6 @@ class AIIA_VibeVoice_Loader:
             if VibeVoiceAcousticTokenizerConfig: AutoConfig.register("vibevoice_acoustic_tokenizer", VibeVoiceAcousticTokenizerConfig)
             if VibeVoiceSemanticTokenizerConfig: AutoConfig.register("vibevoice_semantic_tokenizer", VibeVoiceSemanticTokenizerConfig)
             if VibeVoiceDiffusionHeadConfig: AutoConfig.register("vibevoice_diffusion_head", VibeVoiceDiffusionHeadConfig)
-            if VibeVoiceStreamingConfig: AutoConfig.register("vibevoice_streaming", VibeVoiceStreamingConfig)
             
             # 3. Register Tokenizer mapping for this config
             # VibeVoice uses Qwen2Tokenizer
