@@ -12,7 +12,7 @@ import torch
 
 from transformers.tokenization_utils_base import BatchEncoding, PaddingStrategy, PreTokenizedInput, TextInput, TruncationStrategy
 from transformers.utils import TensorType, logging
-from .vibevoice_tokenizer_processor import AudioNormalizer
+from vibevoice_tokenizer_processor import AudioNormalizer
 
 logger = logging.get_logger(__name__)
 
