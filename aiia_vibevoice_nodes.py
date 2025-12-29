@@ -462,13 +462,6 @@ class AIIA_VibeVoice_TTS:
                  voice_samples=voice_samples,
                  return_tensors="pt"
              )
-             
-             print(f"[AIIA DEBUG] Processor output keys: {inputs.keys()}")
-             for k, v in inputs.items():
-                 if v is None:
-                     print(f"[AIIA DEBUG] {k} is None")
-                 else:
-                     print(f"[AIIA DEBUG] {k}: {type(v)} - shape: {v.shape if hasattr(v, 'shape') else 'N/A'}")
 
              # Move all tensors to device
              # Extract input_ids for positional argument
