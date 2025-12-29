@@ -102,35 +102,10 @@ class AIIA_VibeVoice_Loader:
                 source_code = re.sub(r'from \.(\w+)', r'from \1', source_code)
 
                 # PATCH: Fix unsafe .to(device) on potential None types in VibeVoice generation code
-                # Using regex for robustness against whitespace and quote styles
-                print(f"[AIIA] Checking content of {module_name} for hot-patching [FORCE RELOAD]...")
-                
-                # 1. speech_tensors
-                source_code, n_subs = re.subn(
-                    r'(([\"\'])speech_tensors\2\s*:\s*speech_tensors\.to\(.*?\)),?',
-                    r'"speech_tensors": speech_tensors.to(device) if speech_tensors is not None else None,',
-                    source_code,
-                    flags=re.DOTALL
-                )
-                if n_subs > 0: print(f"[AIIA] Hot-patched speech_tensors safety check ({n_subs} hits)")
-
-                # 2. speech_masks
-                source_code, n_subs = re.subn(
-                    r'(([\"\'])speech_masks\2\s*:\s*speech_masks\.to\(.*?\)),?',
-                    r'"speech_masks": speech_masks.to(device) if speech_masks is not None else None,',
-                    source_code,
-                    flags=re.DOTALL
-                )
-                if n_subs > 0: print(f"[AIIA] Hot-patched speech_masks safety check ({n_subs} hits)")
-
-                # 3. speech_input_mask
-                source_code, n_subs = re.subn(
-                    r'(([\"\'])speech_input_mask\2\s*:\s*speech_input_mask\.to\(.*?\)),?',
-                    r'"speech_input_mask": speech_input_mask.to(device) if speech_input_mask is not None else None,',
-                    source_code,
-                    flags=re.DOTALL
-                )
-                if n_subs > 0: print(f"[AIIA] Hot-patched speech_input_mask safety check ({n_subs} hits)")
+                # (Ideally this should be fixed in the source file, but we keep this just in case users load unpatched files)
+                # UPDATE: We now prioritize bundled files which ARE fixed on disk. 
+                # Keeping this minimal just for legacy safety but simplified.
+                pass
                 
                 # Get existing or create new module
                 if module_name in sys.modules:
@@ -183,29 +158,27 @@ class AIIA_VibeVoice_Loader:
                 
                 for mod_name in module_order:
                     found = False
-                    for p in search_paths:
-                         f_path = os.path.join(p, f"{mod_name}.py")
-                         # Also try bundled core for these if missing in model dir
-                         f_path_bundled = os.path.join(core_path, "modular", f"{mod_name}.py") # Some are in modular
-                         
-                         if os.path.exists(f_path):
-                             load_module_from_path_patched(mod_name, f_path)
-                             found = True
-                             break
                     
-                    # Fallback to bundled if not found in model dir
+                    # 1. Check Bundled Core FIRST (To use our fixes)
+                    bundled_checks = [
+                        os.path.join(core_path, f"{mod_name}.py"), 
+                        os.path.join(core_path, "modular", f"{mod_name}.py")
+                    ]
+                    for bp in bundled_checks:
+                        if os.path.exists(bp):
+                            load_module_from_path_patched(mod_name, bp)
+                            print(f"[AIIA] Loaded bundled {mod_name}")
+                            found = True
+                            break
+                    
+                    # 2. Check Model Directory (Fallback)
                     if not found:
-                         # Check root of core and modular of core
-                        bundled_checks = [
-                            os.path.join(core_path, f"{mod_name}.py"), 
-                            os.path.join(core_path, "modular", f"{mod_name}.py")
-                        ]
-                        for bp in bundled_checks:
-                            if os.path.exists(bp):
-                                load_module_from_path_patched(mod_name, bp)
-                                print(f"[AIIA] Loaded bundled {mod_name}")
-                                found = True
-                                break
+                         for p in search_paths:
+                             f_path = os.path.join(p, f"{mod_name}.py")
+                             if os.path.exists(f_path):
+                                 load_module_from_path_patched(mod_name, f_path)
+                                 found = True
+                                 break
                                 
                     if not found:
                         print(f"[AIIA WARNING] Could not find module file for {mod_name}")

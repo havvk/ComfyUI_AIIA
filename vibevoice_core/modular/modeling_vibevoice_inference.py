@@ -581,6 +581,7 @@ class VibeVoiceForConditionalGenerationInference(VibeVoicePreTrainedModel, Gener
                 active_samples = (~finished_tags).sum().item()
                 progress_bar.set_description(f"Generating (active: {active_samples}/{batch_size})")
 
+            # Forward pass through the model
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
             if is_prefill:
                 # we process the speech inputs only during the first generation step
