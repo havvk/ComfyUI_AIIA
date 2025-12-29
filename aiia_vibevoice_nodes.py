@@ -102,39 +102,42 @@ class AIIA_VibeVoice_Loader:
                 # Our bundled files are already statically fixed on disk. Patching them causes SyntaxErrors due to double-checks.
                 # Only patch external files (e.g. from model usage) that we don't control.
                 if core_path not in os.path.abspath(file_path):
+                    # Debug: Print lines containing speech_tensors to help diagnose matching failure
+                    if "speech_tensors" in source_code:
+                        print(f"[AIIA DEBUG] Found 'speech_tensors' in {module_name}. Snippet:")
+                        for line in source_code.split('\n'):
+                            if "speech_tensors" in line:
+                                print(f"    {line.strip()[:100]}")
+
                     # PATCH: Convert relative imports to absolute
-                    # Regex handles "from .module" with variable spacing
                     source_code, n_subs = re.subn(r'from\s+\.(\w+)', r'from \1', source_code)
                     if n_subs > 0:
                         print(f"[AIIA] Patched {n_subs} relative imports in {module_name}")
 
                     # PATCH: Fix unsafe .to(device) on potential None types in VibeVoice generation code
-                    # IDEMPOTENT PATCH: We use negative lookahead to avoid double-patching if the check already exists.
+                    # GENERIC PATCH: Matches any usage of variable.to(...) and wraps it safely
                     
                     # 1. speech_tensors
                     source_code, n_subs = re.subn(
-                        r'(([\"\'])speech_tensors\2\s*:\s*speech_tensors\.to\(.*?\))(?!\s*if)',
-                        r'"speech_tensors": speech_tensors.to(device) if speech_tensors is not None else None',
-                        source_code,
-                        flags=re.DOTALL
+                        r'(speech_tensors\.to\(([^)]+)\))(?!\s*if)',
+                        r'(\1 if speech_tensors is not None else None)',
+                        source_code
                     )
                     if n_subs > 0: print(f"[AIIA] Hot-patched speech_tensors safety check ({n_subs} hits)")
 
                     # 2. speech_masks
                     source_code, n_subs = re.subn(
-                        r'(([\"\'])speech_masks\2\s*:\s*speech_masks\.to\(.*?\))(?!\s*if)',
-                        r'"speech_masks": speech_masks.to(device) if speech_masks is not None else None',
-                        source_code,
-                        flags=re.DOTALL
+                        r'(speech_masks\.to\(([^)]+)\))(?!\s*if)',
+                        r'(\1 if speech_masks is not None else None)',
+                        source_code
                     )
                     if n_subs > 0: print(f"[AIIA] Hot-patched speech_masks safety check ({n_subs} hits)")
 
                     # 3. speech_input_mask
                     source_code, n_subs = re.subn(
-                        r'(([\"\'])speech_input_mask\2\s*:\s*speech_input_mask\.to\(.*?\))(?!\s*if)',
-                        r'"speech_input_mask": speech_input_mask.to(device) if speech_input_mask is not None else None',
-                        source_code,
-                        flags=re.DOTALL
+                        r'(speech_input_mask\.to\(([^)]+)\))(?!\s*if)',
+                        r'(\1 if speech_input_mask is not None else None)',
+                        source_code
                     )
                     if n_subs > 0: print(f"[AIIA] Hot-patched speech_input_mask safety check ({n_subs} hits)")
                 else:
