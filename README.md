@@ -482,13 +482,13 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/merges.txt -P models/vibevoice/microsoft/VibeVoice-1.5B/
 
   # ===== 7B 模型 =====
-  mkdir -p models/vibevoice/microsoft/VibeVoice-7B
-  hf download microsoft/VibeVoice-7B --local-dir models/vibevoice/microsoft/VibeVoice-7B
+  mkdir -p models/vibevoice/vibevoice/VibeVoice-7B
+  hf download vibevoice/VibeVoice-7B --local-dir models/vibevoice/vibevoice/VibeVoice-7B
   # 补全 Tokenizer (如果没有)
-  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/tokenizer.json -P models/vibevoice/microsoft/VibeVoice-7B/
-  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/tokenizer_config.json -P models/vibevoice/microsoft/VibeVoice-7B/
-  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/vocab.json -P models/vibevoice/microsoft/VibeVoice-7B/
-  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/merges.txt -P models/vibevoice/microsoft/VibeVoice-7B/
+  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/tokenizer.json -P models/vibevoice/vibevoice/VibeVoice-7B/
+  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/tokenizer_config.json -P models/vibevoice/vibevoice/VibeVoice-7B/
+  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/vocab.json -P models/vibevoice/vibevoice/VibeVoice-7B/
+  wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/merges.txt -P models/vibevoice/vibevoice/VibeVoice-7B/
   ```
 
 ### 4. 图像工具 (Image Utilities)
