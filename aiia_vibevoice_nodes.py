@@ -291,27 +291,27 @@ class AIIA_VibeVoice_Loader:
                     model.generation_config = final_gen_config
                 else:
                     # Fallback to internal presets
-                    is_7b = False
+                    preset_name = "generation_config.json" # Default
                     if hasattr(config, "decoder_config") and hasattr(config.decoder_config, "hidden_size"):
-                        is_7b = config.decoder_config.hidden_size > 2048
+                        h_size = config.decoder_config.hidden_size
+                        if h_size > 2048:
+                            preset_name = "generation_config_7B.json"
+                        elif h_size < 1000:
+                            preset_name = "generation_config_0.5B.json"
+                        else:
+                            preset_name = "generation_config_1.5B.json"
                     
-                    preset_name = "generation_config_7B.json" if is_7b else "generation_config_1.5B.json"
                     preset_path = os.path.join(core_path, preset_name)
                     
                     if os.path.exists(preset_path):
                         print(f"[AIIA] Model-specific config not found. Using internal preset: {preset_name}")
-                        # We need to load it manually or use from_pretrained on the file path if possible
                         import json
                         with open(preset_path, "r") as f:
                             gen_dict = json.load(f)
                         model.generation_config = GenerationConfig.from_dict(gen_dict)
                     else:
-                        bundled_gen_config_path = os.path.join(core_path, "generation_config.json")
-                        if os.path.exists(bundled_gen_config_path):
-                            print(f"[AIIA] Using generic bundled fallback: generation_config.json")
-                            model.generation_config = GenerationConfig.from_pretrained(core_path)
-                        else:
-                            print("[AIIA WARNING] No generation_config.json found (local or bundled).")
+                        print(f"[AIIA WARNING] Preset {preset_name} not found, using generic fallback.")
+                        model.generation_config = GenerationConfig.from_pretrained(core_path)
             except Exception as ge:
                 print(f"[AIIA WARNING] Failed to load generation config: {ge}")
 
