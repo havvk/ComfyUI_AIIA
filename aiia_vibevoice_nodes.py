@@ -102,36 +102,73 @@ class AIIA_VibeVoice_Loader:
                 
                 exec(source_code, module.__dict__)
                 return module
+        try:
+            # Add VibeVoice core path to sys.path
+            nodes_path = os.path.dirname(os.path.abspath(__file__))
+            core_path = os.path.join(nodes_path, "vibevoice_core")
+            if os.path.exists(core_path):
+                 sys.path.insert(0, core_path) # Insert at 0 to prioritize our bundled code
+                 sys_path_added = True
+                 print(f"[AIIA] Added bundled VibeVoice core to path: {core_path}")
+            else:
+                 sys_path_added = False
+                 print(f"[AIIA WARNING] Bundled VibeVoice core not found at {core_path}")
 
             # Pre-load dependencies manually
+            # 1. Load Modular files first (as processor depends on them)
+            if os.path.isdir(os.path.join(core_path, "modular")):
+                 modular_path = os.path.join(core_path, "modular")
+                 load_module_from_path_patched("modular_vibevoice_tokenizer", os.path.join(modular_path, "modular_vibevoice_tokenizer.py"))
+                 load_module_from_path_patched("modular_vibevoice_text_tokenizer", os.path.join(modular_path, "modular_vibevoice_text_tokenizer.py"))
+                 load_module_from_path_patched("modular_vibevoice_diffusion_head", os.path.join(modular_path, "modular_vibevoice_diffusion_head.py"))
+            
+            # 2. Load Processors from Core
+            load_module_from_path_patched("vibevoice_tokenizer_processor", os.path.join(core_path, "vibevoice_tokenizer_processor.py"))
+            load_module_from_path_patched("vibevoice_processor", os.path.join(core_path, "vibevoice_processor.py"))
+
+            # 3. Load Model files (Try from Model Dir first for Config, or Bundled if generic)
             module_order = [
                 "configuration_vibevoice",
-                "modular_vibevoice_tokenizer",
-                "modular_vibevoice_text_tokenizer",
                 "streamer",
                 "configuration_vibevoice_streaming",
-                "modular_vibevoice_diffusion_head",
-                "vibevoice_tokenizer_processor", # Dependency for processor
-                "vibevoice_processor",           # Main processor
                 "modeling_vibevoice_streaming",
                 "modeling_vibevoice_streaming_inference"
             ]
             
             if os.path.isdir(load_path):
-                # Search in root and subdirectories like 'modular' and 'processor'
-                # Standardize paths roughly based on typical repo structure or flat structure
-                search_paths = [load_path, os.path.join(load_path, "modular"), os.path.join(load_path, "processor")]
+                # Search in root and subdirectories
+                search_paths = [load_path, os.path.join(load_path, "modular")]
                 
                 for mod_name in module_order:
                     found = False
                     for p in search_paths:
-                        f_path = os.path.join(p, f"{mod_name}.py")
-                        if os.path.exists(f_path):
+                         f_path = os.path.join(p, f"{mod_name}.py")
+                         # Also try bundled core for these if missing in model dir
+                         f_path_bundled = os.path.join(core_path, "modular", f"{mod_name}.py") # Some are in modular
+                         
+                         if os.path.exists(f_path):
                              load_module_from_path_patched(mod_name, f_path)
                              found = True
                              break
+                    
+                    # Fallback to bundled if not found in model dir
+                    if not found:
+                         # Check root of core and modular of core
+                        bundled_checks = [
+                            os.path.join(core_path, f"{mod_name}.py"), 
+                            os.path.join(core_path, "modular", f"{mod_name}.py")
+                        ]
+                        for bp in bundled_checks:
+                            if os.path.exists(bp):
+                                load_module_from_path_patched(mod_name, bp)
+                                print(f"[AIIA] Loaded bundled {mod_name}")
+                                found = True
+                                break
+                                
                     if not found:
                         print(f"[AIIA WARNING] Could not find module file for {mod_name}")
+            
+
 
             # 1. Get Config Class
             if "configuration_vibevoice_streaming" in sys.modules:
