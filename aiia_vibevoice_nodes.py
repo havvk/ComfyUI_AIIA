@@ -68,85 +68,17 @@ class AIIA_VibeVoice_Loader:
         import types
 
         try:
-            # Paths to search
-            config_file_path = os.path.join(load_path if os.path.isdir(load_path) else ".", "configuration_vibevoice_streaming.py") 
-            if not os.path.exists(config_file_path):
-                 config_file_path = os.path.join(load_path, "configuration_vibevoice.py")
-                 
-            model_file_path = os.path.join(load_path, "modeling_vibevoice_streaming_inference.py")
-            if not os.path.exists(model_file_path):
-                 model_file_path = os.path.join(load_path, "modeling_vibevoice.py")
-            
-            # Ensure sys.path has the load_path so absolute imports work
-            if os.path.isdir(load_path) and load_path not in sys.path:
-                sys.path.append(load_path)
-                sys_path_added = True
-
-            # Helper to load module from file with SOURCE PATCHING
+             # Helper to load module from file WITHOUT patching (we rely on static fixes now)
             def load_module_from_path_patched(module_name, file_path):
-                # NOTE: We intentionally DO NOT check sys.modules early return here for some modules
-                # to ensure our hot-patches are applied even if the module was loaded by other means.
-                # However, completely reloading might break isinstance checks if classes are recreated.
-                # So we try to reuse the module object but EXECUTE the patched source into it.
-                
                 if not os.path.exists(file_path):
                      try:
                         return importlib.import_module(module_name)
                      except ImportError:
                         return None
                 
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    source_code = f.read()
-                
-                # SKIP PATCHING FOR BUNDLED FILES
-                # Our bundled files are already statically fixed on disk. Patching them causes SyntaxErrors due to double-checks.
-                # Only patch external files (e.g. from model usage) that we don't control.
-                if core_path not in os.path.abspath(file_path):
-                    # Debug: Print lines containing speech_tensors to help diagnose matching failure
-                    if "speech_tensors" in source_code:
-                        print(f"[AIIA DEBUG] Found 'speech_tensors' in {module_name}. Snippet:")
-                        for line in source_code.split('\n'):
-                            if "speech_tensors" in line:
-                                print(f"    {line.strip()[:100]}")
-
-                    # PATCH: Convert relative imports to absolute
-                    source_code, n_subs = re.subn(r'from\s+\.(\w+)', r'from \1', source_code)
-                    if n_subs > 0:
-                        print(f"[AIIA] Patched {n_subs} relative imports in {module_name}")
-
-                    # PATCH: Fix unsafe .to(device) on potential None types in VibeVoice generation code
-                    # GENERIC PATCH: Matches any usage of variable.to(...) and wraps it safely
-                    
-                    # 1. speech_tensors
-                    source_code, n_subs = re.subn(
-                        r'(speech_tensors\.to\(([^)]+)\))(?!\s*if)',
-                        r'(\1 if speech_tensors is not None else None)',
-                        source_code
-                    )
-                    if n_subs > 0: print(f"[AIIA] Hot-patched speech_tensors safety check ({n_subs} hits)")
-
-                    # 2. speech_masks
-                    source_code, n_subs = re.subn(
-                        r'(speech_masks\.to\(([^)]+)\))(?!\s*if)',
-                        r'(\1 if speech_masks is not None else None)',
-                        source_code
-                    )
-                    if n_subs > 0: print(f"[AIIA] Hot-patched speech_masks safety check ({n_subs} hits)")
-
-                    # 3. speech_input_mask
-                    source_code, n_subs = re.subn(
-                        r'(speech_input_mask\.to\(([^)]+)\))(?!\s*if)',
-                        r'(\1 if speech_input_mask is not None else None)',
-                        source_code
-                    )
-                    if n_subs > 0: print(f"[AIIA] Hot-patched speech_input_mask safety check ({n_subs} hits)")
-                else:
-                    print(f"[AIIA] Skipping hot-patching for bundled module: {module_name}")
-                
                 # Get existing or create new module
                 if module_name in sys.modules:
                     module = sys.modules[module_name]
-                    print(f"[AIIA] Updating existing module: {module_name}")
                 else:
                     module = types.ModuleType(module_name)
                     sys.modules[module_name] = module
@@ -154,20 +86,14 @@ class AIIA_VibeVoice_Loader:
                 module.__file__ = file_path
                 
                 try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        source_code = f.read()
                     exec(source_code, module.__dict__)
                 except Exception as e:
                     print(f"[AIIA ERROR] Failed to exec module {module_name}: {e}")
-                    # Print context around error line if possible
-                    if hasattr(e, 'lineno'):
-                        lines = source_code.split('\n')
-                        start = max(0, e.lineno - 5)
-                        end = min(len(lines), e.lineno + 5)
-                        print(f"[AIIA DEBUG] Context around line {e.lineno}:")
-                        for i in range(start, end):
-                            indicator = ">>" if i + 1 == e.lineno else "  "
-                            print(f"{indicator} {i+1}: {lines[i]}")
                     raise e
                 return module
+
             # Add VibeVoice core path to sys.path
             nodes_path = os.path.dirname(os.path.abspath(__file__))
             core_path = os.path.join(nodes_path, "vibevoice_core")
@@ -179,7 +105,7 @@ class AIIA_VibeVoice_Loader:
                  sys_path_added = False
                  print(f"[AIIA WARNING] Bundled VibeVoice core not found at {core_path}")
 
-            # Pre-load dependencies manually
+            # Pre-load dependencies manually from VibeVoice Core
             # 1. Load Modular files first (as processor depends on them)
             if os.path.isdir(os.path.join(core_path, "modular")):
                  modular_path = os.path.join(core_path, "modular")
@@ -191,8 +117,9 @@ class AIIA_VibeVoice_Loader:
             # 2. Load Processors from Core
             load_module_from_path_patched("vibevoice_tokenizer_processor", os.path.join(core_path, "vibevoice_tokenizer_processor.py"))
             load_module_from_path_patched("vibevoice_processor", os.path.join(core_path, "vibevoice_processor.py"))
+            load_module_from_path_patched("vibevoice_streaming_processor", os.path.join(core_path, "vibevoice_streaming_processor.py"))
 
-            # 3. Load Model files (Try from Model Dir first for Config, or Bundled if generic)
+            # 3. Load Model files from Core/Modular
             module_order = [
                 "configuration_vibevoice",
                 "streamer",
@@ -201,96 +128,28 @@ class AIIA_VibeVoice_Loader:
                 "modeling_vibevoice_streaming_inference"
             ]
             
-            if os.path.isdir(load_path):
-                # Search in root and subdirectories
-                search_paths = [load_path, os.path.join(load_path, "modular")]
-                
-                for mod_name in module_order:
-                    found = False
-                    
-                    # 1. Check Bundled Core FIRST (To use our fixes)
-                    bundled_checks = [
-                        os.path.join(core_path, f"{mod_name}.py"), 
-                        os.path.join(core_path, "modular", f"{mod_name}.py")
-                    ]
-                    for bp in bundled_checks:
-                        if os.path.exists(bp):
-                            load_module_from_path_patched(mod_name, bp)
-                            print(f"[AIIA] Loaded bundled {mod_name}")
-                            found = True
-                            break
-                    
-                    # 2. Check Model Directory (Fallback)
-                    if not found:
-                         for p in search_paths:
-                             f_path = os.path.join(p, f"{mod_name}.py")
-                             if os.path.exists(f_path):
-                                 load_module_from_path_patched(mod_name, f_path)
-                                 found = True
-                                 break
-                                
-                    if not found:
-                        print(f"[AIIA WARNING] Could not find module file for {mod_name}")
-
-            # PRE-PATCH: Explicitly patch dependency modules that contain logic (like generate)
-            # which might be imported by the main model file. Standard imports won't use our patched loader!
-            # PRE-PATCH: Explicitly patch dependency modules that contain logic (like generate)
-            # which might be imported by the main model file. Standard imports won't use our patched loader!
-            pre_patch_modules = [
-                "modeling_vibevoice_inference", 
-                "modeling_vibevoice_streaming",
-                "modeling_vibevoice_streaming_inference", # Added this to pre-patch list
-                "streamer"
-            ]
-            for mod in pre_patch_modules:
-                if mod not in sys.modules:
-                    # Look for it in core
-                    p_path = os.path.join(core_path, "modular", f"{mod}.py")
-                    if os.path.exists(p_path):
-                         load_module_from_path_patched(mod, p_path)
-            
-            # CRITICAL: Forcefully patch specific remote files ON DISK if they exist.
-            # This is necessary because AutoModel loads them directly, bypassing our runtime hook.
-            def _patch_file_on_disk(file_path):
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        code = f.read()
-                    
-                    patched = False
-                    # Apply generic safety patch for .to(device)
-                    # 1. speech_tensors
-                    code, n = re.subn(r'(speech_tensors\.to\(([^)]+)\))(?!\s*if)', r'(\1 if speech_tensors is not None else None)', code)
-                    if n > 0: patched = True
-                    
-                    # 2. speech_masks
-                    code, n = re.subn(r'(speech_masks\.to\(([^)]+)\))(?!\s*if)', r'(\1 if speech_masks is not None else None)', code)
-                    if n > 0: patched = True
-                    
-                    # 3. speech_input_mask
-                    code, n = re.subn(r'(speech_input_mask\.to\(([^)]+)\))(?!\s*if)', r'(\1 if speech_input_mask is not None else None)', code)
-                    if n > 0: patched = True
-
-                    if patched:
-                        print(f"[AIIA] Patching remote file on disk: {file_path}")
-                        with open(file_path, 'w', encoding='utf-8') as f:
-                            f.write(code)
-                except Exception as e:
-                    print(f"[AIIA WARNING] Failed to patch remote file {file_path}: {e}")
-
-            if os.path.isdir(load_path):
-                 target_file = os.path.join(load_path, "modeling_vibevoice_streaming_inference.py")
-                 if os.path.exists(target_file):
-                     _patch_file_on_disk(target_file)
-                 # Check subdirs too if needed, but usually flat structure
-                 target_file_mod = os.path.join(load_path, "modular", "modeling_vibevoice_streaming_inference.py")
-                 if os.path.exists(target_file_mod):
-                     _patch_file_on_disk(target_file_mod)
+            # Load all core modules explicitly
+            for mod_name in module_order:
+                bundled_checks = [
+                    os.path.join(core_path, f"{mod_name}.py"), 
+                    os.path.join(core_path, "modular", f"{mod_name}.py")
+                ]
+                found = False
+                for bp in bundled_checks:
+                    if os.path.exists(bp):
+                        load_module_from_path_patched(mod_name, bp)
+                        print(f"[AIIA] Loaded bundled {mod_name}")
+                        found = True
+                        break
+                if not found:
+                    print(f"[AIIA WARNING] Bundled module {mod_name} not found in core!")
 
             # 1. Get Config Class
             if "configuration_vibevoice_streaming" in sys.modules:
                 config_module = sys.modules["configuration_vibevoice_streaming"]
             else:
-                 config_module = load_module_from_path_patched("configuration_vibevoice_streaming", config_file_path)
+                 # Fallback but should not happen
+                 config_module = None
 
             if config_module and hasattr(config_module, "VibeVoiceStreamingConfig"):
                 VibeVoiceConfig = config_module.VibeVoiceStreamingConfig
@@ -382,7 +241,8 @@ class AIIA_VibeVoice_Loader:
                 load_path,
                 config=config,
                 torch_dtype=dtype,
-                device_map="auto"
+                device_map="auto",
+                trust_remote_code=False
             )
             
             if sys_path_added:
@@ -410,7 +270,8 @@ class AIIA_VibeVoice_Loader:
         # First try AutoTokenizer with our registration
         try:
              print("[AIIA] Attempting AutoTokenizer...")
-             tokenizer = AutoTokenizer.from_pretrained(tokenizer_load_path, trust_remote_code=True)
+             print("[AIIA] Attempting AutoTokenizer with trust_remote_code=False...")
+             tokenizer = AutoTokenizer.from_pretrained(tokenizer_load_path, trust_remote_code=False)
         except Exception as e:
              print(f"[AIIA] AutoTokenizer failed ({e}), attempting fallback to Qwen2TokenizerFast...")
              
