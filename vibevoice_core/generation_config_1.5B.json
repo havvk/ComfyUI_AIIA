@@ -4,7 +4,7 @@
     "max_new_tokens": 40500,
     "max_length": 65536,
     "n_diffusion_steps": 20,
-    "do_sample": true,
+    "do_sample": false,
     "temperature": 1.0,
     "top_p": 1.0,
     "noise_scheduler_class": "DPMSolverMultistepScheduler",

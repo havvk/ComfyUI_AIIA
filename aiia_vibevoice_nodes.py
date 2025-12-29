@@ -421,8 +421,8 @@ class AIIA_VibeVoice_TTS:
                 "ddpm_steps": ("INT", {"default": 20, "min": 10, "max": 100, "step": 1, "tooltip": "Diffusion steps. Official baseline is 20."}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1, "tooltip": "Playback speed. >1 = faster, <1 = slower (post-process time-stretch)."}),
                 "normalize_text": ("BOOLEAN", {"default": True, "tooltip": "Apply text normalization (year ranges → 至, remove quotes). Disable for 7B model or custom text."}),
-                "do_sample": ("BOOLEAN", {"default": True, "tooltip": "Enable sampling for more expressive audio. Highly recommended for 7B model."}),
-                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature. Higher = more diversity/expressiveness, lower = more stable."}),
+                "do_sample": (["auto", "true", "false"], {"default": "auto", "tooltip": "Enable sampling. 'auto' uses model-specific defaults (OFF for 1.5B, ON for 7B)."}),
+                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature. Only used if sampling is enabled."}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling. 0 to disable."}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Top-p (nucleus) sampling."}),
             },
@@ -538,6 +538,13 @@ class AIIA_VibeVoice_TTS:
              # ~20 tokens per character is a safe estimation for smooth progress.
              expected_steps = len(text) * 20
              
+             # Handle do_sample resolution
+             final_do_sample = do_sample
+             if do_sample == "auto":
+                 final_do_sample = getattr(model.generation_config, "do_sample", False)
+             else:
+                 final_do_sample = (do_sample == "true")
+             
              # Prepare generation kwargs
              generation_kwargs = {
                  "max_new_tokens": max_new_tokens,
@@ -547,7 +554,7 @@ class AIIA_VibeVoice_TTS:
                  "pad_token_id": tokenizer.eos_token_id,
                  "cfg_scale": cfg_scale, # User-controlled CFG scale for speech generation
                  "max_length_times": max_length_times, # Safety budget
-                 "do_sample": do_sample,
+                 "do_sample": final_do_sample,
                  "temperature": temperature,
                  "top_k": top_k,
                  "top_p": top_p,
