@@ -346,6 +346,9 @@ class AIIA_VibeVoice_TTS:
         
         if processor is None:
              raise RuntimeError("VibeVoiceProcessor is missing. Model loading might have been incomplete.")
+             
+        if reference_audio is None:
+             raise ValueError("Reference Audio is REQUIRED for VibeVoice. Please connect an AUDIO input (e.g., Load Audio, Microphone).")
 
         print(f"[AIIA] Generating VibeVoice TTS... text length: {len(text)}")
         
