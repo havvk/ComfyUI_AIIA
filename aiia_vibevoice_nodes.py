@@ -10,7 +10,7 @@ class AIIA_VibeVoice_Loader:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model_name": (["microsoft/VibeVoice-1.5B", "microsoft/VibeVoice-7B"],),
+                "model_name": (["microsoft/VibeVoice-1.5B", "vibevoice/VibeVoice-7B"],),
                 "precision": (["fp16", "bf16", "fp32"], {"default": "fp16"}),
             }
         }
@@ -398,6 +398,7 @@ class AIIA_VibeVoice_TTS:
                 "cfg_scale": ("FLOAT", {"default": 3.0, "min": 1.0, "max": 10.0, "step": 0.5, "tooltip": "CFG scale for speech generation. Higher = more faithful to text."}),
                 "ddpm_steps": ("INT", {"default": 50, "min": 10, "max": 100, "step": 10, "tooltip": "Diffusion steps. Higher = better quality but slower."}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1, "tooltip": "Playback speed. >1 = faster, <1 = slower (post-process time-stretch)."}),
+                "max_length_times": ("FLOAT", {"default": 5.0, "min": 2.0, "max": 20.0, "step": 1.0, "tooltip": "Max generation length = input_length × this. Increase if audio cuts off early."}),
             },
             "optional": {
                 "reference_audio": ("AUDIO",),
@@ -409,7 +410,7 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, reference_audio=None):
+    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, max_length_times, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -484,6 +485,7 @@ class AIIA_VibeVoice_TTS:
                  "eos_token_id": tokenizer.eos_token_id, 
                  "pad_token_id": tokenizer.eos_token_id,
                  "cfg_scale": cfg_scale, # User-controlled CFG scale for speech generation
+                 "max_length_times": max_length_times, # Control max generation length (input_length × this)
              }
              
              # Set diffusion inference steps (crucial for quality/speed tradeoff)
