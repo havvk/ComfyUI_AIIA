@@ -267,9 +267,26 @@ class AIIA_VibeVoice_Loader:
                  raise ImportError("Could not find VibeVoice model class.")
 
             # Retrieve sub-model classes for registration
+            # NOTE: modeling_vibevoice_inference might NOT have these classes imported, so we try checking there first,
+            # but if not found, we load `modeling_vibevoice` which definitely has them.
             VibeVoiceAcousticTokenizerModel = getattr(model_module, "VibeVoiceAcousticTokenizerModel", None)
             VibeVoiceSemanticTokenizerModel = getattr(model_module, "VibeVoiceSemanticTokenizerModel", None)
             VibeVoiceDiffusionHead = getattr(model_module, "VibeVoiceDiffusionHead", None)
+            
+            if not (VibeVoiceAcousticTokenizerModel and VibeVoiceSemanticTokenizerModel):
+                print("[AIIA] Sub-model classes not found in inference module, loading modeling_vibevoice...")
+                try:
+                    if "modeling_vibevoice" in sys.modules:
+                         mod_vv = sys.modules["modeling_vibevoice"]
+                    else:
+                         mod_vv = load_module_from_path_patched("modeling_vibevoice", os.path.join(core_path, "modular", "modeling_vibevoice.py"))
+                    
+                    if mod_vv:
+                        VibeVoiceAcousticTokenizerModel = getattr(mod_vv, "VibeVoiceAcousticTokenizerModel", VibeVoiceAcousticTokenizerModel)
+                        VibeVoiceSemanticTokenizerModel = getattr(mod_vv, "VibeVoiceSemanticTokenizerModel", VibeVoiceSemanticTokenizerModel)
+                        VibeVoiceDiffusionHead = getattr(mod_vv, "VibeVoiceDiffusionHead", VibeVoiceDiffusionHead)
+                except Exception as e:
+                    print(f"[AIIA WARNING] Failed to load modeling_vibevoice for sub-models: {e}")
 
             # 5. Register Model Classes
             AutoModel.register(VibeVoiceConfig, VibeVoiceClass)
