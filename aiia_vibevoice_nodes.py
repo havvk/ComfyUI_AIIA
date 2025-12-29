@@ -399,6 +399,7 @@ class AIIA_VibeVoice_TTS:
                 "ddpm_steps": ("INT", {"default": 50, "min": 10, "max": 100, "step": 10, "tooltip": "Diffusion steps. Higher = better quality but slower."}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1, "tooltip": "Playback speed. >1 = faster, <1 = slower (post-process time-stretch)."}),
                 "max_length_times": ("FLOAT", {"default": 5.0, "min": 2.0, "max": 20.0, "step": 1.0, "tooltip": "Max generation length = input_length × this. Increase if audio cuts off early."}),
+                "normalize_text": ("BOOLEAN", {"default": True, "tooltip": "Apply text normalization (year ranges → 至, remove quotes). Disable for 7B model or custom text."}),
             },
             "optional": {
                 "reference_audio": ("AUDIO",),
@@ -410,7 +411,7 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, max_length_times, reference_audio=None):
+    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, max_length_times, normalize_text, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -424,16 +425,19 @@ class AIIA_VibeVoice_TTS:
 
         print(f"[AIIA] Generating VibeVoice TTS... text length: {len(text)}")
         
-        # Text preprocessing: Normalize problematic punctuation
+        # Text preprocessing: Normalize problematic punctuation (optional, for 1.5B model)
         import re
-        # 1. Replace hyphens ONLY in year ranges (must have 年 on both sides to be safe)
-        #    e.g., "2025年-2027年" -> "2025年至2027年"
-        #    But "100-50" stays unchanged (could be subtraction)
-        text = re.sub(r'(\d+年)\s*[-—–]\s*(\d+年)', r'\1至\2', text)
-        # 2. Remove double quotes that interfere with TTS (both Chinese and English)
-        text = text.replace('"', '').replace('"', '').replace('"', '')
-        text = text.replace("'", '').replace("'", '').replace("'", '')
-        print(f"[AIIA] Normalized text: {text[:80]}...")
+        if normalize_text:
+            # 1. Replace hyphens ONLY in year ranges (must have 年 on both sides to be safe)
+            #    e.g., "2025年-2027年" -> "2025年至2027年"
+            #    But "100-50" stays unchanged (could be subtraction)
+            text = re.sub(r'(\d+年)\s*[-—–]\s*(\d+年)', r'\1至\2', text)
+            # 2. Remove double quotes that interfere with TTS (both Chinese and English)
+            text = text.replace('"', '').replace('"', '').replace('"', '')
+            text = text.replace("'", '').replace("'", '').replace("'", '')
+            print(f"[AIIA] Normalized text: {text[:80]}...")
+        else:
+            print("[AIIA] Text normalization disabled")
         
         # FIX: Processor expects script format "Speaker X: text" for raw strings
         if not re.search(r'^Speaker\s+\d+\s*:', text, re.IGNORECASE | re.MULTILINE):
