@@ -187,18 +187,37 @@ class AIIA_VibeVoice_Loader:
             except: 
                 pass
 
-            # 4. Get Model Class
-            if "modeling_vibevoice_streaming_inference" in sys.modules:
-                 model_module = sys.modules["modeling_vibevoice_streaming_inference"]
-            else:
-                 model_module = load_module_from_path_patched("modeling_vibevoice_streaming_inference", model_file_path)
+            # 4. Get Model Class - PREFER non-streaming inference class (as used by TTS-Audio-Suite)
+            # Non-streaming version is more stable and proven to work
+            model_file_path_non_streaming = os.path.join(core_path, "modular", "modeling_vibevoice_inference.py")
+            VibeVoiceClass = None
             
-            # Identify the correct class
-            if hasattr(model_module, "VibeVoiceStreamingForConditionalGenerationInference"):
-                 VibeVoiceClass = model_module.VibeVoiceStreamingForConditionalGenerationInference
-            elif hasattr(model_module, "VibeVoiceForConditionalGeneration"):
-                 VibeVoiceClass = model_module.VibeVoiceForConditionalGeneration
-            else:
+            # Try non-streaming first (recommended)
+            if os.path.exists(model_file_path_non_streaming):
+                 if "modeling_vibevoice_inference" in sys.modules:
+                      model_module = sys.modules["modeling_vibevoice_inference"]
+                 else:
+                      model_module = load_module_from_path_patched("modeling_vibevoice_inference", model_file_path_non_streaming)
+                 
+                 if hasattr(model_module, "VibeVoiceForConditionalGenerationInference"):
+                      VibeVoiceClass = model_module.VibeVoiceForConditionalGenerationInference
+                      print("[AIIA] Using non-streaming VibeVoiceForConditionalGenerationInference (recommended)")
+            
+            # Fallback to streaming version
+            if VibeVoiceClass is None:
+                 print("[AIIA] Warning: Falling back to streaming inference class...")
+                 if "modeling_vibevoice_streaming_inference" in sys.modules:
+                      model_module = sys.modules["modeling_vibevoice_streaming_inference"]
+                 else:
+                      model_module = load_module_from_path_patched("modeling_vibevoice_streaming_inference", model_file_path)
+                 
+                 # Identify the correct class
+                 if hasattr(model_module, "VibeVoiceStreamingForConditionalGenerationInference"):
+                      VibeVoiceClass = model_module.VibeVoiceStreamingForConditionalGenerationInference
+                 elif hasattr(model_module, "VibeVoiceForConditionalGeneration"):
+                      VibeVoiceClass = model_module.VibeVoiceForConditionalGeneration
+            
+            if VibeVoiceClass is None:
                  raise ImportError("Could not find VibeVoice model class.")
 
             # Retrieve sub-model classes for registration
@@ -463,6 +482,10 @@ class AIIA_VibeVoice_TTS:
              # Add sampling params if enabled (currently deterministic by default in this node but we can add later)
              # For now, just basic generation
              
+             # Set diffusion inference steps (crucial for quality/speed)
+             if hasattr(model, "set_ddpm_inference_steps"):
+                 model.set_ddpm_inference_steps(num_steps=50) # Use 50 for better quality default, reference used 20
+                 
              with torch.no_grad():
                 output_wav = model.generate(
                     input_ids,

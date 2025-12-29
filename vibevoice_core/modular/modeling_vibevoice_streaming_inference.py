@@ -455,9 +455,10 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
             generation_config, inputs, tokenizer, return_processors=True, **kwargs
         )
         
+        # FIX: Use `input_ids` returned by helper instead of kwargs['input_ids'] (which might be missing if passed positionally)
         negative_kwargs = {
-            'input_ids': torch.full((kwargs['input_ids'].shape[0], 1), neg_text_input_id, dtype=torch.long, device=kwargs['input_ids'].device),
-            'attention_mask':  torch.ones((kwargs['input_ids'].shape[0], 1), dtype=torch.long, device=kwargs['input_ids'].device),
+            'input_ids': torch.full((input_ids.shape[0], 1), neg_text_input_id, dtype=torch.long, device=input_ids.device),
+            'attention_mask':  torch.ones((input_ids.shape[0], 1), dtype=torch.long, device=input_ids.device),
             'max_new_tokens': kwargs.get('max_new_tokens', 100) 
         }
         negative_generation_config, negative_model_kwargs, negative_input_ids = self._build_generate_config_model_kwargs(
@@ -474,8 +475,8 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
         )
 
         tts_lm_negative_kwargs = {
-            'input_ids': torch.full((kwargs['input_ids'].shape[0], 1), neg_text_input_id, dtype=torch.long, device=kwargs['input_ids'].device),
-            'attention_mask':  torch.ones((kwargs['input_ids'].shape[0], 1), dtype=torch.long, device=kwargs['input_ids'].device),
+            'input_ids': torch.full((input_ids.shape[0], 1), neg_text_input_id, dtype=torch.long, device=input_ids.device),
+            'attention_mask':  torch.ones((input_ids.shape[0], 1), dtype=torch.long, device=input_ids.device),
             'max_new_tokens': kwargs.get('max_new_tokens', 100) 
         }
         tts_lm_negative_generation_config, tts_lm_negative_model_kwargs, tts_lm_negative_input_ids = self._build_generate_config_model_kwargs(
