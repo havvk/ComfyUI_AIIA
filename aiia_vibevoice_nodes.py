@@ -100,19 +100,32 @@ class AIIA_VibeVoice_Loader:
                 source_code = re.sub(r'from \.(\w+)', r'from \1', source_code)
 
                 # PATCH: Fix unsafe .to(device) on potential None types in VibeVoice generation code
-                # The original code blindly calls .to() on optional tensors which might be None
-                source_code = source_code.replace(
-                    '"speech_tensors": speech_tensors.to(device=device),',
-                    '"speech_tensors": speech_tensors.to(device=device) if speech_tensors is not None else None,'
+                # Using regex for robustness against whitespace
+                
+                # 1. speech_tensors
+                source_code, n_subs = re.subn(
+                    r'("speech_tensors"\s*:\s*speech_tensors\.to\(device=device\)),',
+                    r'"speech_tensors": speech_tensors.to(device=device) if speech_tensors is not None else None,',
+                    source_code
                 )
-                source_code = source_code.replace(
-                    '"speech_masks": speech_masks.to(device),',
-                    '"speech_masks": speech_masks.to(device) if speech_masks is not None else None,'
+                if n_subs > 0: print(f"[AIIA] Hot-patched speech_tensors safety check ({n_subs} hits)")
+                else: print("[AIIA] WARNING: Could not find speech_tensors pattern to patch!")
+
+                # 2. speech_masks
+                source_code, n_subs = re.subn(
+                    r'("speech_masks"\s*:\s*speech_masks\.to\(device\)),',
+                    r'"speech_masks": speech_masks.to(device) if speech_masks is not None else None,',
+                    source_code
                 )
-                source_code = source_code.replace(
-                    '"speech_input_mask": speech_input_mask.to(device),',
-                    '"speech_input_mask": speech_input_mask.to(device) if speech_input_mask is not None else None,'
+                if n_subs > 0: print(f"[AIIA] Hot-patched speech_masks safety check ({n_subs} hits)")
+
+                # 3. speech_input_mask
+                source_code, n_subs = re.subn(
+                    r'("speech_input_mask"\s*:\s*speech_input_mask\.to\(device\)),',
+                    r'"speech_input_mask": speech_input_mask.to(device) if speech_input_mask is not None else None,',
+                    source_code
                 )
+                if n_subs > 0: print(f"[AIIA] Hot-patched speech_input_mask safety check ({n_subs} hits)")
                 
                 module = types.ModuleType(module_name)
                 module.__file__ = file_path
