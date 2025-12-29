@@ -425,9 +425,11 @@ class AIIA_VibeVoice_TTS:
         print(f"[AIIA] Generating VibeVoice TTS... text length: {len(text)}")
         
         # Text preprocessing: Normalize problematic punctuation
-        # 1. Replace hyphens/dashes between numbers with "至" (e.g., "2025年-2027年" -> "2025年至2027年")
         import re
-        text = re.sub(r'(\d+年?)\s*[-—–]\s*(\d+年?)', r'\1至\2', text)
+        # 1. Replace hyphens ONLY in year ranges (must have 年 on both sides to be safe)
+        #    e.g., "2025年-2027年" -> "2025年至2027年"
+        #    But "100-50" stays unchanged (could be subtraction)
+        text = re.sub(r'(\d+年)\s*[-—–]\s*(\d+年)', r'\1至\2', text)
         # 2. Remove double quotes that interfere with TTS (both Chinese and English)
         text = text.replace('"', '').replace('"', '').replace('"', '')
         text = text.replace("'", '').replace("'", '').replace("'", '')
