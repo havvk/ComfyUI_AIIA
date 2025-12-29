@@ -441,6 +441,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **节点参数**:
   - `cfg_scale` (默认: 3.0): CFG 引导强度。值越高，语音越忠实于文本内容。
   - `ddpm_steps` (默认: 50): 扩散推理步数。越高质量越好但越慢（推荐 30-100）。
+  - `speed` (默认: 1.0): 播放速度。>1 = 更快, <1 = 更慢（后处理时间拉伸，保持音调）。
 - **环境要求**:
   - **Flash Attention 2**: 强烈推荐安装（否则速度较慢）。
   - **Transformers**: `>= 4.51`（重要: 旧版本不支持该模型）。

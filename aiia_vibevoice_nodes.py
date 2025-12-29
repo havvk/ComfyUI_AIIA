@@ -397,6 +397,7 @@ class AIIA_VibeVoice_TTS:
                 "text": ("STRING", {"multiline": True, "default": "Hello, this is a test of VibeVoice."}),
                 "cfg_scale": ("FLOAT", {"default": 3.0, "min": 1.0, "max": 10.0, "step": 0.5, "tooltip": "CFG scale for speech generation. Higher = more faithful to text."}),
                 "ddpm_steps": ("INT", {"default": 50, "min": 10, "max": 100, "step": 10, "tooltip": "Diffusion steps. Higher = better quality but slower."}),
+                "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1, "tooltip": "Playback speed. >1 = faster, <1 = slower (post-process time-stretch)."}),
             },
             "optional": {
                 "reference_audio": ("AUDIO",),
@@ -408,7 +409,7 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, reference_audio=None):
+    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -512,16 +513,32 @@ class AIIA_VibeVoice_TTS:
              if audio_out is None:
                  raise RuntimeError("No audio generated.")
                  
+             # Ensure tensor format
+             if not isinstance(audio_out, torch.Tensor):
+                 audio_out = torch.from_numpy(audio_out)
+             
+             # Ensure [C, T] format for processing
+             if audio_out.ndim == 1:
+                 audio_out = audio_out.unsqueeze(0)  # [1, T]
+             elif audio_out.ndim == 3:
+                 audio_out = audio_out.squeeze(0)  # Remove batch dim
+             
+             # Apply speed adjustment via resampling (post-process time-stretch)
+             original_sample_rate = 24000
+             if speed != 1.0:
+                 effective_rate = int(original_sample_rate * speed)
+                 resampler = torchaudio.transforms.Resample(
+                     orig_freq=effective_rate,
+                     new_freq=original_sample_rate
+                 )
+                 audio_out = resampler(audio_out)
+                 print(f"[AIIA] Applied speed adjustment: {speed}x")
+             
              # Ensure [1, C, T] format for ComfyUI
-             if isinstance(audio_out, torch.Tensor):
-                 if audio_out.ndim == 1:
-                     audio_out = audio_out.unsqueeze(0).unsqueeze(0)
-                 elif audio_out.ndim == 2:
-                     audio_out = audio_out.unsqueeze(0)
-                 return ({"waveform": audio_out.cpu(), "sample_rate": 24000},) 
-             else:
-                 # Numpy fallback
-                 return ({"waveform": torch.from_numpy(audio_out).unsqueeze(0).unsqueeze(0), "sample_rate": 24000},) 
+             if audio_out.ndim == 2:
+                 audio_out = audio_out.unsqueeze(0)
+             
+             return ({"waveform": audio_out.cpu(), "sample_rate": original_sample_rate},) 
 
         except Exception as e:
             print(f"[AIIA ERROR] VibeVoice Inference failed: {e}")
