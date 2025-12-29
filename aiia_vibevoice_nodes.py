@@ -144,27 +144,36 @@ class AIIA_VibeVoice_Loader:
                 if not found:
                     print(f"[AIIA WARNING] Bundled module {mod_name} not found in core!")
 
-            # 1. Get Config Class
-            if "configuration_vibevoice_streaming" in sys.modules:
-                config_module = sys.modules["configuration_vibevoice_streaming"]
-            else:
-                 # Fallback but should not happen
-                 config_module = None
-
-            if config_module and hasattr(config_module, "VibeVoiceStreamingConfig"):
-                VibeVoiceConfig = config_module.VibeVoiceStreamingConfig
-                VibeVoiceAcousticTokenizerConfig = getattr(config_module, "VibeVoiceAcousticTokenizerConfig", None)
-                VibeVoiceSemanticTokenizerConfig = getattr(config_module, "VibeVoiceSemanticTokenizerConfig", None)
-                VibeVoiceDiffusionHeadConfig = getattr(config_module, "VibeVoiceDiffusionHeadConfig", None)
-                VibeVoiceStreamingConfig = getattr(config_module, "VibeVoiceStreamingConfig", None)
-            elif config_module and hasattr(config_module, "VibeVoiceConfig"):
+            # 1. Get Config Class - PREFER non-streaming config to match non-streaming model
+            # First try non-streaming configuration_vibevoice
+            config_module = None
+            VibeVoiceConfig = None
+            use_streaming_config = False
+            
+            if "configuration_vibevoice" in sys.modules:
+                config_module = sys.modules["configuration_vibevoice"]
+            
+            if config_module and hasattr(config_module, "VibeVoiceConfig"):
                 VibeVoiceConfig = config_module.VibeVoiceConfig
                 VibeVoiceAcousticTokenizerConfig = getattr(config_module, "VibeVoiceAcousticTokenizerConfig", None)
                 VibeVoiceSemanticTokenizerConfig = getattr(config_module, "VibeVoiceSemanticTokenizerConfig", None)
                 VibeVoiceDiffusionHeadConfig = getattr(config_module, "VibeVoiceDiffusionHeadConfig", None)
-                VibeVoiceStreamingConfig = getattr(config_module, "VibeVoiceStreamingConfig", None)
+                print("[AIIA] Using non-streaming VibeVoiceConfig")
             else:
-                # Fallback if manual load failed
+                # Fallback to streaming config
+                if "configuration_vibevoice_streaming" in sys.modules:
+                    config_module = sys.modules["configuration_vibevoice_streaming"]
+                
+                if config_module and hasattr(config_module, "VibeVoiceStreamingConfig"):
+                    VibeVoiceConfig = config_module.VibeVoiceStreamingConfig
+                    VibeVoiceAcousticTokenizerConfig = getattr(config_module, "VibeVoiceAcousticTokenizerConfig", None)
+                    VibeVoiceSemanticTokenizerConfig = getattr(config_module, "VibeVoiceSemanticTokenizerConfig", None)
+                    VibeVoiceDiffusionHeadConfig = getattr(config_module, "VibeVoiceDiffusionHeadConfig", None)
+                    use_streaming_config = True
+                    print("[AIIA] Using streaming VibeVoiceStreamingConfig (fallback)")
+            
+            if VibeVoiceConfig is None:
+                # Ultimate fallback if manual load failed
                 VibeVoiceConfig = AutoConfig.from_pretrained(load_path, trust_remote_code=True).__class__
                 VibeVoiceAcousticTokenizerConfig = None
             
