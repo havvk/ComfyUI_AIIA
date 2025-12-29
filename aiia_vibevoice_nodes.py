@@ -424,8 +424,16 @@ class AIIA_VibeVoice_TTS:
 
         print(f"[AIIA] Generating VibeVoice TTS... text length: {len(text)}")
         
-        # FIX: Processor expects script format "Speaker X: text" for raw strings
+        # Text preprocessing: Normalize problematic punctuation
+        # 1. Replace hyphens/dashes between numbers with "至" (e.g., "2025年-2027年" -> "2025年至2027年")
         import re
+        text = re.sub(r'(\d+年?)\s*[-—–]\s*(\d+年?)', r'\1至\2', text)
+        # 2. Remove double quotes that interfere with TTS (both Chinese and English)
+        text = text.replace('"', '').replace('"', '').replace('"', '')
+        text = text.replace("'", '').replace("'", '').replace("'", '')
+        print(f"[AIIA] Normalized text: {text[:80]}...")
+        
+        # FIX: Processor expects script format "Speaker X: text" for raw strings
         if not re.search(r'^Speaker\s+\d+\s*:', text, re.IGNORECASE | re.MULTILINE):
             print("[AIIA] No speaker tag found, adding default 'Speaker 1:' prefix")
             # If multi-line, prefix each line that has content?
