@@ -218,17 +218,32 @@ class AIIA_VibeVoice_Loader:
 
             if config_module and hasattr(config_module, "VibeVoiceStreamingConfig"):
                 VibeVoiceConfig = config_module.VibeVoiceStreamingConfig
+                VibeVoiceAcousticTokenizerConfig = getattr(config_module, "VibeVoiceAcousticTokenizerConfig", None)
+                VibeVoiceSemanticTokenizerConfig = getattr(config_module, "VibeVoiceSemanticTokenizerConfig", None)
+                VibeVoiceDiffusionHeadConfig = getattr(config_module, "VibeVoiceDiffusionHeadConfig", None)
+                VibeVoiceStreamingConfig = getattr(config_module, "VibeVoiceStreamingConfig", None)
             elif config_module and hasattr(config_module, "VibeVoiceConfig"):
                 VibeVoiceConfig = config_module.VibeVoiceConfig
+                VibeVoiceAcousticTokenizerConfig = getattr(config_module, "VibeVoiceAcousticTokenizerConfig", None)
+                VibeVoiceSemanticTokenizerConfig = getattr(config_module, "VibeVoiceSemanticTokenizerConfig", None)
+                VibeVoiceDiffusionHeadConfig = getattr(config_module, "VibeVoiceDiffusionHeadConfig", None)
+                VibeVoiceStreamingConfig = getattr(config_module, "VibeVoiceStreamingConfig", None)
             else:
                 # Fallback if manual load failed
                 VibeVoiceConfig = AutoConfig.from_pretrained(load_path, trust_remote_code=True).__class__
+                VibeVoiceAcousticTokenizerConfig = None
             
             # PATCH: Force model_type to match "vibevoice"
             VibeVoiceConfig.model_type = "vibevoice"
 
-            # 2. Register Config
+            # 2. Register Configs
             AutoConfig.register("vibevoice", VibeVoiceConfig)
+            
+            # Register auxiliary configs if available
+            if VibeVoiceAcousticTokenizerConfig: AutoConfig.register("vibevoice_acoustic_tokenizer", VibeVoiceAcousticTokenizerConfig)
+            if VibeVoiceSemanticTokenizerConfig: AutoConfig.register("vibevoice_semantic_tokenizer", VibeVoiceSemanticTokenizerConfig)
+            if VibeVoiceDiffusionHeadConfig: AutoConfig.register("vibevoice_diffusion_head", VibeVoiceDiffusionHeadConfig)
+            if VibeVoiceStreamingConfig: AutoConfig.register("vibevoice_streaming", VibeVoiceStreamingConfig)
             
             # 3. Register Tokenizer mapping for this config
             # VibeVoice uses Qwen2Tokenizer
