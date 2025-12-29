@@ -84,6 +84,9 @@ class AIIA_VibeVoice_Loader:
 
             # Helper to load module from file with SOURCE PATCHING
             def load_module_from_path_patched(module_name, file_path):
+                if module_name in sys.modules:
+                    return sys.modules[module_name]
+
                 if not os.path.exists(file_path):
                      try:
                         return importlib.import_module(module_name)
@@ -117,6 +120,7 @@ class AIIA_VibeVoice_Loader:
             # 1. Load Modular files first (as processor depends on them)
             if os.path.isdir(os.path.join(core_path, "modular")):
                  modular_path = os.path.join(core_path, "modular")
+                 sys.path.insert(0, modular_path) # Add to path so processed imports (from .config) work
                  load_module_from_path_patched("modular_vibevoice_tokenizer", os.path.join(modular_path, "modular_vibevoice_tokenizer.py"))
                  load_module_from_path_patched("modular_vibevoice_text_tokenizer", os.path.join(modular_path, "modular_vibevoice_text_tokenizer.py"))
                  load_module_from_path_patched("modular_vibevoice_diffusion_head", os.path.join(modular_path, "modular_vibevoice_diffusion_head.py"))
