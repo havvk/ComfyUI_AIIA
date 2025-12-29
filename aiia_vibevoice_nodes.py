@@ -449,11 +449,23 @@ class AIIA_VibeVoice_TTS:
         voice_samples = None
         if reference_audio is not None:
              wav = reference_audio["waveform"] # [B, C, T]
+             ref_sample_rate = reference_audio.get("sample_rate", 24000)
+             
              # Processor expects numpy array or path
              if wav.ndim == 3:
                  wav = wav[0] # Take batch 0
              if wav.shape[0] > 1:
                  wav = torch.mean(wav, dim=0, keepdim=True) # Mono
+             
+             # Resample to 24000Hz if needed (model expects 24000Hz)
+             target_sample_rate = 24000
+             if ref_sample_rate != target_sample_rate:
+                 print(f"[AIIA] Resampling reference audio from {ref_sample_rate}Hz to {target_sample_rate}Hz")
+                 resampler = torchaudio.transforms.Resample(
+                     orig_freq=ref_sample_rate,
+                     new_freq=target_sample_rate
+                 )
+                 wav = resampler(wav)
              
              # Convert to numpy [T]
              wav_np = wav.squeeze().cpu().numpy()
