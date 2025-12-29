@@ -270,6 +270,32 @@ class AIIA_VibeVoice_Loader:
              
         print(f"[AIIA] Tokenizer loaded: {tokenizer.__class__.__name__}")
         
+        # MONKEY PATCH: Ensure tokenizer has VibeVoice special properties
+        # The VibeVoiceProcessor relies on these attributes which specific VibeVoiceTextTokenizer has.
+        # But since we load generic Qwen2TokenizerFast, we must inject them.
+        if not hasattr(tokenizer, "speech_diffusion_id"):
+            print("[AIIA] Monkey-patching tokenizer with VibeVoice attributes...")
+            
+            # 1. Add Special Tokens if missing
+            special_tokens = ["<|vision_start|>", "<|vision_end|>", "<|vision_pad|>", "<|image_pad|>"]
+            tokenizer.add_tokens(special_tokens, special_tokens=True)
+
+            # 2. Get IDs
+            speech_start_id = tokenizer.convert_tokens_to_ids("<|vision_start|>")
+            speech_end_id = tokenizer.convert_tokens_to_ids("<|vision_end|>")
+            speech_diffusion_id = tokenizer.convert_tokens_to_ids("<|vision_pad|>")
+            pad_id = tokenizer.convert_tokens_to_ids("<|image_pad|>")
+            
+            # 3. Inject Properties
+            # We use bound properties or just set attributes depending on how it's accessed (as a property or attr)
+            # The class uses @property, but setting instance attribute shadows class property usually.
+            tokenizer.speech_start_id = speech_start_id
+            tokenizer.speech_end_id = speech_end_id
+            tokenizer.speech_diffusion_id = speech_diffusion_id
+            tokenizer.pad_id = pad_id
+            
+            print(f"[AIIA] Tokenizer Patched: speech_diffusion_id={speech_diffusion_id}")
+        
         # 8. Init VibeVoiceProcessor
         processor = None
         if "vibevoice_processor" in sys.modules:
