@@ -443,21 +443,26 @@ class AIIA_VibeVoice_TTS:
                      print(f"[AIIA DEBUG] {k}: {type(v)} - shape: {v.shape if hasattr(v, 'shape') else 'N/A'}")
 
              # Move all tensors to device
-             input_args = {
-                 "input_ids": inputs["input_ids"].to(device),
-                 "attention_mask": inputs["attention_mask"].to(device) if "attention_mask" in inputs else None,
-                 "tts_text_ids": inputs["tts_text_ids"].to(device) if "tts_text_ids" in inputs else None,
-                 "tts_lm_input_ids": inputs["tts_lm_input_ids"].to(device) if "tts_lm_input_ids" in inputs else None,
-                 "tts_lm_attention_mask": inputs["tts_lm_attention_mask"].to(device) if "tts_lm_attention_mask" in inputs else None,
-                 "speech_tensors": inputs["speech_tensors"].to(device) if inputs.get("speech_tensors") is not None else None,
-                 "speech_masks": inputs["speech_masks"].to(device) if inputs.get("speech_masks") is not None else None,
-                 "speech_input_mask": inputs["speech_input_mask"].to(device) if inputs.get("speech_input_mask") is not None else None,
-                 "tokenizer": tokenizer, # Pass tokenizer as required by model.generate logic
+             input_args = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
+             
+             max_new_tokens = 4096 # Default safe limit
+             
+             # Prepare generation kwargs
+             generation_kwargs = {
+                 "max_new_tokens": max_new_tokens,
+                 "tokenizer": tokenizer, # Model might use it
+                 "bos_token_id": 151643, # Qwen2 BOS
+                 "eos_token_id": tokenizer.eos_token_id, 
+                 "pad_token_id": tokenizer.eos_token_id,
              }
+             
+             # Add sampling params if enabled (currently deterministic by default in this node but we can add later)
+             # For now, just basic generation
              
              with torch.no_grad():
                 output_wav = model.generate(
-                    **input_args
+                    **input_args,
+                    **generation_kwargs
                 )
              
              # Format output
