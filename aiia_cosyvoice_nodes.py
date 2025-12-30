@@ -4,6 +4,14 @@ import os
 import random
 import tempfile
 import soundfile as sf
+import warnings
+
+# Suppress annoying warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="torch.nn.utils.weight_norm")
+warnings.filterwarnings("ignore", category=FutureWarning, module="torch.amp.autocast")
+warnings.filterwarnings("ignore", message="Specified provider 'CUDAExecutionProvider' is not in available provider names")
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["ONNXRUNTIME_QUIET"] = "1"
 from typing import Dict, Any, Tuple, List
 import sys
 import subprocess
