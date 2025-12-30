@@ -124,7 +124,7 @@ class AIIA_CosyVoice_ModelLoader:
     FUNCTION = "load_model"
     CATEGORY = "AIIA/Loaders"
 
-    def load_model(self, model_name, use_fp16, use_rl_model=False):
+    def load_model(self, model_name, use_fp16, use_rl_model=True):
         _install_cosyvoice_if_needed()
         
         # Ensure paths are in sys.path even if installed previously (e.g. reload)
@@ -568,6 +568,8 @@ class AIIA_CosyVoice_TTS:
                         raise FileNotFoundError(f"Internal seed audio not found at {ref_path}. Please check installation.")
 
                     if is_v3 or is_v2:
+                        print(f"[AIIA] CosyVoice V3/V2 Core: Multi-modal Inference. Description: {instruct_text[:30]}...")
+                        # Ensure we use inference_instruct2 which is the correct way for Instruct-ZeroShot (0.5B)
                         output = cosyvoice_model.inference_instruct2(
                             tts_text=tts_text, 
                             instruct_text=instruct_text, 
