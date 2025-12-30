@@ -265,10 +265,44 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
             # Will be replaced with lm_last_hidden_state
             inputs_embeds = self.model.get_input_embeddings()(input_ids)
         
-        # Replace the last part of inputs_embeds with lm_last_hidden_state
-        start_idx = inputs_embeds.shape[1] - lm_last_hidden_state.shape[1]
-        inputs_embeds[:, start_idx:, :] = lm_last_hidden_state
-        
+        # Replace the parts of inputs_embeds marked as text (or aligned speech) with lm_last_hidden_state
+        # Logic: 
+        # 1. Total Count Match: If len(hidden) == len(mask), overwrite ALL (covers Text-Only or Single Speech Step).
+        # 2. Text Count Match: If len(hidden) == sum(mask), scatter into Text positions (covers Sandwich Prompt).
+        # 3. Fallback: Tail Overwrite.
+        if lm_last_hidden_state is not None and tts_text_masks is not None:
+            mask = tts_text_masks.bool() # (B, S) - True for Text
+            
+            num_lm_tokens = lm_last_hidden_state.numel() // lm_last_hidden_state.shape[-1]
+            num_total_tokens = mask.numel()
+            num_text_tokens = mask.sum()
+            
+            if num_total_tokens == num_lm_tokens:
+                 # Case 1: Perfect Alignment (e.g. Single Speech Step or Full Text)
+                 inputs_embeds = lm_last_hidden_state.view(inputs_embeds.shape)
+                 if self.config.use_return_dict and inputs_embeds.numel() < 1000: # Light debug
+                     print(f"[AIIA Debug] Full Injection! Shape {inputs_embeds.shape} Mean {inputs_embeds.mean().item():.3f}")
+            elif num_text_tokens == num_lm_tokens:
+                 # Case 2: Sparse Text Alignment (Sandwich Prompt)
+                 # Flatten for scatter (B*S, H) handling is complex, iterating per batch is safer if B>1
+                 for b in range(inputs_embeds.shape[0]):
+                     b_mask = mask[b] # (S)
+                     b_lm = lm_last_hidden_state[b] # (S_text, H)
+                     if b_mask.sum() == b_lm.shape[0]:
+                         inputs_embeds[b, b_mask, :] = b_lm
+                         print(f"[AIIA Debug] Text Injection! Batch {b} Count {b_mask.sum()}")
+                     else:
+                         # Fallback for batch mismatch
+                         start_idx = inputs_embeds.shape[1] - lm_last_hidden_state.shape[1]
+                         if start_idx >= 0:
+                             inputs_embeds[b, start_idx:, :] = b_lm
+                             print(f"[AIIA Debug] Batch Fallback Injection!")
+            else:
+                 # Case 3: Fallback (Tail Overwrite)
+                 start_idx = inputs_embeds.shape[1] - lm_last_hidden_state.shape[1]
+                 if start_idx >= 0:
+                     inputs_embeds[:, start_idx:, :] = lm_last_hidden_state
+
         # Adds type embedding via `tts_text_masks`.
         inputs_embeds = inputs_embeds + self.model.tts_input_types(tts_text_masks.long())
 
@@ -492,6 +526,8 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
 
         # Initialize audio chunks storage for each sample
         audio_chunks = [[] for _ in range(batch_size)]
+        
+
         tts_text_window_index = 0
         reach_max_step_sample = torch.zeros(batch_size, dtype=torch.bool, device=device)
         first_text_window_size = TTS_TEXT_WINDOW_SIZE if tts_text_ids.shape[1] >= TTS_TEXT_WINDOW_SIZE else tts_text_ids.shape[1]

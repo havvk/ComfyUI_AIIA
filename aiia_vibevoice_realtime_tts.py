@@ -1,3 +1,6 @@
+import os
+import torch
+import torchaudio
 
 class AIIA_VibeVoice_Realtime_TTS:
     @classmethod
@@ -35,7 +38,7 @@ class AIIA_VibeVoice_Realtime_TTS:
     CATEGORY = "AIIA/VibeVoice"
 
     def generate(self, vibevoice_model, text, voice_preset, ddpm_steps, speed, normalize_text, 
-                 do_sample, temperature, top_k, top_p, cfg_scale, voice_preset_input=None): # cfg_scale added based on standard
+                 do_sample, temperature, top_k, top_p, cfg_scale, voice_preset_input=None): 
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -71,38 +74,55 @@ class AIIA_VibeVoice_Realtime_TTS:
                 print(f"[AIIA] Using 0.5B Streaming Inference with preset: {voice_preset_name}")
                 
                 # Load Preset
-                # Preset path already resolved
                 if not os.path.exists(preset_path):
                     raise FileNotFoundError(f"Preset file not found at: {preset_path}")
 
                 preset_data = torch.load(preset_path, map_location=device)
                 
-                # Helper to get attributes safe and move to device
+                # Helper to get attributes safe and move to device + cast to dtype (Recursive for tuples/lists)
                 def get_tensor(obj, key):
                      val = obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
-                     if isinstance(val, torch.Tensor): return val.to(device)
                      return val
                 
-                # Extract Caches
+                # Extract Caches & Hidden States
                 lm_cache = get_tensor(preset_data.get('lm'), 'past_key_values')
-                tts_lm_cache = get_tensor(preset_data.get('tts_lm'), 'past_key_values')
                 lm_last_hidden = get_tensor(preset_data.get('lm'), 'last_hidden_state')
                 
+                tts_lm_cache = get_tensor(preset_data.get('tts_lm'), 'past_key_values')
+                tts_lm_last_hidden = get_tensor(preset_data.get('tts_lm'), 'last_hidden_state')
+                
+                # Extract Speech Tensors (Critical for Cross-Attention)
+                speech_data = preset_data.get('speech')
+                if speech_data:
+                    speech_tensors = get_tensor(speech_data, 'speech_tensors')
+                    speech_masks = get_tensor(speech_data, 'speech_masks')
+                    speech_input_mask = get_tensor(speech_data, 'speech_input_mask')
+                else:
+                    # Fallback for old presets (might fail if model needs them)
+                    speech_tensors, speech_masks, speech_input_mask = None, None, None
+
                 if lm_cache is None or tts_lm_cache is None:
                     raise ValueError(f"Invalid preset file: {voice_preset}. Missing cache data.")
 
                 # Extract Negative Caches (if present) or Create Dummy
                 if 'neg_lm' in preset_data:
                      neg_lm_cache = get_tensor(preset_data.get('neg_lm'), 'past_key_values')
+                     neg_lm_last_hidden = get_tensor(preset_data.get('neg_lm'), 'last_hidden_state')
+                     
                      neg_tts_lm_cache = get_tensor(preset_data.get('neg_tts_lm'), 'past_key_values')
+                     neg_tts_lm_last_hidden = get_tensor(preset_data.get('neg_tts_lm'), 'last_hidden_state')
                 else:
                      print("[AIIA] Preset missing negative cache, generating on fly...")
                      seq_len = lm_cache[0][0].shape[2]
                      neg_input_id = tokenizer.convert_tokens_to_ids("<|image_pad|>")
                      neg_input_ids = torch.full((1, seq_len), neg_input_id, device=device)
                      
+                     # Note: This logic assumes model.forward_lm/tts_lm handles everything
+                     # But for robustness we should use try/except block if model methods fail? 
+                     # Assuming original code was functional for this part.
                      neg_lm_o = model.forward_lm(input_ids=neg_input_ids, attention_mask=torch.ones_like(neg_input_ids), use_cache=True, return_dict=True)
                      neg_lm_cache = neg_lm_o.past_key_values
+                     neg_lm_last_hidden = neg_lm_o.last_hidden_state
                      
                      neg_tts_lm_o = model.forward_tts_lm(
                         input_ids=neg_input_ids, 
@@ -110,17 +130,94 @@ class AIIA_VibeVoice_Realtime_TTS:
                         use_cache=True, 
                         return_dict=True, 
                         lm_last_hidden_state=neg_lm_o.last_hidden_state, 
-                        tts_text_masks=torch.ones_like(neg_input_ids)
+                        tts_text_masks=torch.zeros_like(neg_input_ids)
                     )
                      neg_tts_lm_cache = neg_tts_lm_o.past_key_values
+                     neg_tts_lm_last_hidden = neg_tts_lm_o.last_hidden_state
 
-                # Wrap in SimpleNamespace
-                from types import SimpleNamespace
+                # Universal casting helper
+                def cast_recursive(item, dtype, device):
+                    if isinstance(item, torch.Tensor):
+                         if item.is_floating_point():
+                             return item.to(device=device, dtype=dtype)
+                         return item.to(device)
+                    
+                    # Handle DynamicCache by casting internals IN PLACE (preserving object type)
+                    try:
+                        from transformers.cache_utils import DynamicCache
+                        if isinstance(item, DynamicCache):
+                             # Qwen2 Strictness: Must be a Cache object. Convert data inside.
+                             if hasattr(item, 'key_cache'):
+                                 item.key_cache = [cast_recursive(k, dtype, device) for k in item.key_cache]
+                             if hasattr(item, 'value_cache'):
+                                 item.value_cache = [cast_recursive(v, dtype, device) for v in item.value_cache]
+                             return item
+                    except:
+                        pass
+
+                    if isinstance(item, (list, tuple)):
+                         return type(item)(cast_recursive(x, dtype, device) for x in item)
+                    return item
+
+                # Robustly get model dtype
+                def get_deep_dtype(model_obj):
+                    try:
+                        return model_obj.model.language_model.model.layers[0].self_attn.q_proj.weight.dtype
+                    except:
+                        pass
+                    try:
+                        return model_obj.model.language_model.dtype
+                    except:
+                        pass
+                    try:
+                        return next(model_obj.parameters()).dtype
+                    except:
+                        return model_obj.dtype
+
+                target_dtype = get_deep_dtype(model)
+                
+                # Force Cast ALL caches to model dtype (Crucial for FP16/Mixed Precision)
+                lm_cache = cast_recursive(lm_cache, target_dtype, device)
+                tts_lm_cache = cast_recursive(tts_lm_cache, target_dtype, device)
+                
+                # Handle Negative Cache Variables
+                if 'neg_lm_cache' in locals():
+                    neg_lm_cache = cast_recursive(neg_lm_cache, target_dtype, device)
+                if 'neg_tts_lm_cache' in locals():
+                    neg_tts_lm_cache = cast_recursive(neg_tts_lm_cache, target_dtype, device)
+                
+                # Cast Hidden States
+                lm_last_hidden = cast_recursive(lm_last_hidden, target_dtype, device)
+                if 'tts_lm_last_hidden' in locals() and tts_lm_last_hidden is not None:
+                     tts_lm_last_hidden = cast_recursive(tts_lm_last_hidden, target_dtype, device)
+                if 'neg_lm_last_hidden' in locals() and neg_lm_last_hidden is not None:
+                     neg_lm_last_hidden = cast_recursive(neg_lm_last_hidden, target_dtype, device)
+                if 'neg_tts_lm_last_hidden' in locals() and neg_tts_lm_last_hidden is not None:
+                     neg_tts_lm_last_hidden = cast_recursive(neg_tts_lm_last_hidden, target_dtype, device)
+                
+                # Cast Speech Tensors
+                if 'speech_tensors' in locals() and speech_tensors is not None:
+                     speech_tensors = cast_recursive(speech_tensors, target_dtype, device)
+                if 'speech_masks' in locals() and speech_masks is not None:
+                     speech_masks = cast_recursive(speech_masks, torch.bool, device)
+                if 'speech_input_mask' in locals() and speech_input_mask is not None:
+                     speech_input_mask = cast_recursive(speech_input_mask, torch.bool, device)
+
+                # Use ModelOutput (fixes BOTH 'not iterable' and 'has no attribute' errors)
+                from transformers.modeling_outputs import ModelOutput
+                
+
+                # Helper to create ModelOutput safe
+                def create_output(cache, hidden):
+                    if hidden is not None:
+                        return ModelOutput(past_key_values=cache, last_hidden_state=hidden)
+                    return ModelOutput(past_key_values=cache)
+
                 all_prefilled = {
-                    "lm": SimpleNamespace(past_key_values=lm_cache, last_hidden_state=lm_last_hidden),
-                    "tts_lm": SimpleNamespace(past_key_values=tts_lm_cache),
-                    "neg_lm": SimpleNamespace(past_key_values=neg_lm_cache),
-                    "neg_tts_lm": SimpleNamespace(past_key_values=neg_tts_lm_cache)
+                    "lm": create_output(lm_cache, lm_last_hidden),
+                    "tts_lm": create_output(tts_lm_cache, tts_lm_last_hidden),
+                    "neg_lm": create_output(neg_lm_cache, neg_lm_last_hidden),
+                    "neg_tts_lm": create_output(neg_tts_lm_cache, neg_tts_lm_last_hidden)
                 }
 
                 # Target tokens
@@ -128,17 +225,45 @@ class AIIA_VibeVoice_Realtime_TTS:
                 target_tokens = tokenizer.encode(target_text.strip() + "\n", add_special_tokens=False, return_tensors="pt").to(device)
                 
                 # Dummy inputs
-                cache_len = lm_cache[0][0].shape[2]
-                dummy_ids = torch.zeros((1, cache_len), dtype=torch.long, device=device)
+                # Fix: LM and TTS_LM have DIFFERENT cache lengths. Must track separately.
+                
+                # Helper to get cache length regardless of tuple or DynamicCache
+                def get_cache_len(cache_item):
+                     if isinstance(cache_item, (list, tuple)):
+                         return cache_item[0][0].shape[2]
+                     elif hasattr(cache_item, 'key_cache'): # DynamicCache
+                         return cache_item.key_cache[0].shape[2]
+                     return 0
+
+                lm_cache_len = get_cache_len(lm_cache)
+                tts_cache_len = get_cache_len(tts_lm_cache)
+                
+                # Main LM inputs (matches lm_cache)
+                lm_dummy_ids = torch.zeros((1, lm_cache_len), dtype=torch.long, device=device)
+                lm_dummy_mask = torch.ones((1, lm_cache_len), dtype=torch.long, device=device)
+                
+                # TTS LM inputs (matches tts_lm_cache)
+                tts_dummy_ids = torch.zeros((1, tts_cache_len), dtype=torch.long, device=device)
+                tts_dummy_mask = torch.ones((1, tts_cache_len), dtype=torch.long, device=device)
                 
                 # Resolution for sampling
-                f_do_sample = getattr(model.generation_config, "do_sample", False) if do_sample == "auto" else (do_sample == "false")
+                f_do_sample = getattr(model.generation_config, "do_sample", False) if do_sample == "auto" else (do_sample == "true")
                 
+                # ComfyUI Progress Bar
+                from comfy.utils import ProgressBar
+                total_steps = len(text) * 20 # Rough estimate
+                pbar = ProgressBar(total_steps)
+
+                def progress_callback(step_increment):
+                    pbar.update(step_increment)
+
                 output = model.generate(
                     all_prefilled_outputs=all_prefilled,
                     tts_text_ids=target_tokens,
-                    tts_lm_input_ids=dummy_ids,
-                    input_ids=dummy_ids,
+                    tts_lm_input_ids=tts_dummy_ids,
+                    tts_lm_attention_mask=tts_dummy_mask,
+                    input_ids=lm_dummy_ids,
+                    attention_mask=lm_dummy_mask,
                     max_new_tokens=4000,
                     cfg_scale=cfg_scale,
                     do_sample=f_do_sample,
@@ -147,7 +272,14 @@ class AIIA_VibeVoice_Realtime_TTS:
                     top_p=top_p,
                     expected_steps=len(text)*20,
                     max_length_times=10.0,
-                    show_progress_bar=True
+                    show_progress_bar=True,
+                    tokenizer=tokenizer,
+                    progress_callback=progress_callback,
+                    
+                    # Pass Acoustic Conditioning - REMOVED (Official presets don't use this during gen)
+                    # speech_tensors=speech_tensors,
+                    # speech_masks=speech_masks,
+                    # speech_input_mask=speech_input_mask
                 )
                 
                 # Format Audio Output

@@ -1,3 +1,4 @@
+import os
 
 class AIIA_VibeVoice_Preset_Maker:
     @classmethod
@@ -47,48 +48,91 @@ class AIIA_VibeVoice_Preset_Maker:
         # `_create_voice_prompt` calls `self.audio_feature_extractor`.
         # Taking a cue from `AIIA_VibeVoice_TTS`, raw audio is fine if we pass it correctly.
         
+        
         # We need numpy array for processor
-        if waveform.ndim == 3: # [B, C, T]
-            waveform = waveform.mean(dim=1) # Mix to mono
+        # ComfyUI AUDIO is typically [Batch, Samples, Channels] or [Batch, Samples]
+        if waveform.ndim == 3: 
+            # Check heuristic: if dim 2 is small (channels) and dim 1 is large (time) -> [B, T, C]
+            if waveform.shape[2] < waveform.shape[1]:
+                # Input is [B, T, C]. Mix query channels (dim 2) to mono
+                waveform = waveform.mean(dim=2) # -> [B, T]
+            else:
+                 # Input is [B, C, T]. Mix query channels (dim 1) to mono
+                 waveform = waveform.mean(dim=1) # -> [B, T]
+                 
         if waveform.ndim == 2: # [B, T] -> [T] (take first batch)
-             audio_np = waveform[0].cpu().numpy()
-        else:
-             audio_np = waveform.cpu().numpy()
-             
-        # Resample if needed (processor expects specific SR? Usually handled by feature extractor, but let's assume raw is okay if passed properly)
-        # Actually, in `AIIA_VibeVoice_TTS`, we verified 0.5B doesn't use `reference_audio` which is why we are here.
-        # But the processor CAN handle it.
+             waveform = waveform[0]
+        
+        # Resample to Processor's expected SR
+        target_sr = 22050 # Default for VibeVoice / Encodec
+        if hasattr(processor, "feature_extractor") and hasattr(processor.feature_extractor, "sampling_rate"):
+            target_sr = processor.feature_extractor.sampling_rate
+            
+        if sample_rate != target_sr:
+            print(f"[AIIA] Resampling audio from {sample_rate} to {target_sr}")
+            resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=target_sr)
+            waveform = waveform.cpu() # ensure cpu for torchaudio transforms usually
+            if waveform.dim() == 1: waveform = waveform.unsqueeze(0) # [1, T]
+            waveform = resampler(waveform)
+            waveform = waveform.squeeze(0) # [T]
+            
+        audio_np = waveform.cpu().numpy()
+        
+        # KEY FIX: Normalize audio explicitly for consistency with processor
+        # _create_voice_prompt normalizes internally, but prepare_speech_inputs DOES NOT.
+        # We must normalize here so both share the same volume level (-25dB).
+        if hasattr(processor, "audio_normalizer") and processor.audio_normalizer:
+             print("[AIIA] Normalizing audio volume to -25dB...")
+             audio_np = processor.audio_normalizer(audio_np)
         
         # 3. Construct Prompt (Imitating `_process_single`)
         # System Prompt
         system_prompt = " Transform the text provided by various speakers into speech output, utilizing the distinct voice of each respective speaker.\n"
-        system_tokens = tokenizer.encode(system_prompt, add_special_tokens=False) # Qwen tokenizer adds BOS? `_process_single` doesn't explicitly add=False, likely default True? 
-        # Wait, `tokenizer.encode(system_prompt)` in `_process_single` line 226.
-        # `_process_single` line 360 calls `tokenizer.encode(..., add_special_tokens=False)`.
-        # Let's assume standard encode for system prompt uses defaults (likely adds BOS).
-        
+        system_tokens = tokenizer.encode(system_prompt, add_special_tokens=False) 
+
         # Voice Prompt
         # We need to call internal `_create_voice_prompt`
-        # It expects `voice_samples` as list of strings (paths) or arrays.
         voice_tokens, voice_speech_inputs, voice_speech_masks = processor._create_voice_prompt([audio_np])
+        
+        # Debug Voice Tokens
+        if len(voice_tokens) > 0:
+             print(f"[AIIA] Generated {len(voice_tokens)} Voice Tokens. Range: [{min(voice_tokens)}, {max(voice_tokens)}]")
+        else:
+             print("[AIIA] WARNING: Generated 0 Voice Tokens! Input audio might be silent or too short.")
         
         # Header
         header_text = ' Text input:\n'
         header_tokens = tokenizer.encode(header_text, add_special_tokens=False)
         
-        # Combine for MAIN Prompt (Input IDs)
-        # System + Voice + Header
-        prompt_tokens = system_tokens + voice_tokens + header_tokens
         
-        # Masks
-        # System (text) + Voice (speech) + Header (text)
-        # Text parts are False in speech_input_mask
-        speech_input_masks = [False] * len(system_tokens) + voice_speech_masks + [False] * len(header_tokens)
+        # Add " Speaker 0:" suffix (Crucial for prompt continuity!)
+        prefix_text = " Speaker 0:"
+        prefix_tokens = tokenizer.encode(prefix_text, add_special_tokens=False)
+        
+        # KEY FIX: Separate inputs for LM and TTS_LM
+        # LM (Semantic) sees ONLY text. TTS_LM sees Text + Speech.
+        # This explains the cache size discrepancy (108 vs 316) in official presets.
+        
+        # LM Input: System + Header + Prefix
+        lm_tokens = system_tokens + header_tokens + prefix_tokens
+        
+        # TTS LM Input: System + Voice + Header + Prefix
+        tts_lm_tokens = system_tokens + voice_tokens + header_tokens + prefix_tokens
+        
+        # Masks (aligned with tts_lm_tokens)
+        # System (text) + Voice (speech) + Header (text) + Prefix (text)
+        # speech_input_masks: Text=False, Speech=True
+        # tts_text_masks:     Text=1,     Speech=0
+        speech_input_masks = [False] * len(system_tokens) + voice_speech_masks + [False] * len(header_tokens) + [False] * len(prefix_tokens)
+        tts_text_masks_list = [1] * len(system_tokens) + [0] * len(voice_tokens) + [1] * len(header_tokens) + [1] * len(prefix_tokens)
 
         # 4. Prepare Batch for Forward Pass
         # We need to wrap this into batch encoding format
-        input_ids = torch.tensor([prompt_tokens], device=device, dtype=torch.long)
+        input_ids = torch.tensor([lm_tokens], device=device, dtype=torch.long) # For LM
+        tts_lm_input_ids = torch.tensor([tts_lm_tokens], device=device, dtype=torch.long) # For TTS LM
+        
         speech_input_mask_tensor = torch.tensor([speech_input_masks], device=device, dtype=torch.bool)
+        tts_text_masks_tensor = torch.tensor([tts_text_masks_list], device=device, dtype=torch.long)
         
         # Prepare speech tensors
         speech_dict = processor.prepare_speech_inputs([audio_np], return_tensors="pt", device=device)
@@ -114,29 +158,29 @@ class AIIA_VibeVoice_Preset_Maker:
             
             # TTS LM Forward
             # We need to pass `speech_tensors`, `speech_masks`, `speech_input_mask`
-            # `tts_text_masks`? prompt doesn't have TTS text yet.
-            # In streaming processor `__call__`, it calls `_batch_encode` which sets up inputs.
-            # Let's look at `model.forward_tts_lm` signature or usage.
-            # It usually takes `input_ids` (same as LM), `lm_last_hidden_state`, `speech_tensors`...
             
+            # Ensure speech_tensors match model dtype (Half/Float16)
+            if speech_tensors is not None:
+                speech_tensors = speech_tensors.to(dtype=model.dtype, device=model.device)
+
             tts_lm_out = model.forward_tts_lm(
-                input_ids=input_ids,
-                attention_mask=torch.ones_like(input_ids),
+                input_ids=tts_lm_input_ids, # Use TTS_LM specific input (includes speech tokens)
+                attention_mask=torch.ones_like(tts_lm_input_ids),
                 lm_last_hidden_state=lm_last_hidden,
                 speech_tensors=speech_tensors,
                 speech_masks=speech_masks,
                 speech_input_mask=speech_input_mask_tensor,
-                # tts_text_masks=None, # Prompt doesn't contain TTS text yet
+                tts_text_masks=tts_text_masks_tensor, # Prompt mixed mask (System/Header=1, Voice=0)
                 use_cache=True,
                 return_dict=True
             )
             tts_lm_cache = tts_lm_out.past_key_values
+            tts_lm_last_hidden = tts_lm_out.last_hidden_state
 
         # 6. Negative Cache (Standard "<|image_pad|>" for unconditioned)
         neg_input_id = tokenizer.convert_tokens_to_ids("<|image_pad|>")
-        # Length must match Positive Cache to align positions!
-        seq_len = input_ids.shape[1]
-        neg_input_ids = torch.full((1, seq_len), neg_input_id, device=device, dtype=torch.long)
+        # FIX: Negative Cache should be length 1 (as seen in official presets), not prompt length!
+        neg_input_ids = torch.full((1, 1), neg_input_id, device=device, dtype=torch.long)
         
         with torch.no_grad():
              neg_lm_o = model.forward_lm(
@@ -146,6 +190,7 @@ class AIIA_VibeVoice_Preset_Maker:
                  return_dict=True
              )
              neg_lm_cache = neg_lm_o.past_key_values
+             neg_lm_last_hidden = neg_lm_o.last_hidden_state
              
              neg_tts_lm_o = model.forward_tts_lm(
                 input_ids=neg_input_ids, 
@@ -153,9 +198,12 @@ class AIIA_VibeVoice_Preset_Maker:
                 use_cache=True, 
                 return_dict=True, 
                 lm_last_hidden_state=neg_lm_o.last_hidden_state, 
-                tts_text_masks=torch.ones_like(neg_input_ids) # Treat all as "text" (mask=1) for negative?
+                # FIX: Negative Cache (Padding) is TEXT (Type 1), not Speech (0). 
+                # Marking it as Speech prevents Scatter from working (0!=1) and adds wrong Type Embedding.
+                tts_text_masks=torch.ones_like(neg_input_ids) 
             )
              neg_tts_lm_cache = neg_tts_lm_o.past_key_values
+             neg_tts_lm_last_hidden = neg_tts_lm_o.last_hidden_state
 
         # 7. Save to PT
         # Convert to CPU before saving
@@ -181,13 +229,16 @@ class AIIA_VibeVoice_Preset_Maker:
                 'last_hidden_state': recursive_to_cpu(lm_last_hidden)
             },
             'tts_lm': {
-                'past_key_values': recursive_to_cpu(tts_lm_cache)
+                'past_key_values': recursive_to_cpu(tts_lm_cache),
+                'last_hidden_state': recursive_to_cpu(tts_lm_last_hidden)
             },
             'neg_lm': {
-                'past_key_values': recursive_to_cpu(neg_lm_cache)
+                'past_key_values': recursive_to_cpu(neg_lm_cache),
+                'last_hidden_state': recursive_to_cpu(neg_lm_last_hidden)
             },
             'neg_tts_lm': {
-                 'past_key_values': recursive_to_cpu(neg_tts_lm_cache)
+                'past_key_values': recursive_to_cpu(neg_tts_lm_cache),
+                'last_hidden_state': recursive_to_cpu(neg_tts_lm_last_hidden)
             }
         }
         
