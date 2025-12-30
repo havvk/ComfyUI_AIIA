@@ -280,8 +280,6 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
             if num_total_tokens == num_lm_tokens:
                  # Case 1: Perfect Alignment (e.g. Single Speech Step or Full Text)
                  inputs_embeds = lm_last_hidden_state.view(inputs_embeds.shape)
-                 if self.config.use_return_dict and inputs_embeds.numel() < 1000: # Light debug
-                     print(f"[AIIA Debug] Full Injection! Shape {inputs_embeds.shape} Mean {inputs_embeds.mean().item():.3f}")
             elif num_text_tokens == num_lm_tokens:
                  # Case 2: Sparse Text Alignment (Sandwich Prompt)
                  # Flatten for scatter (B*S, H) handling is complex, iterating per batch is safer if B>1
