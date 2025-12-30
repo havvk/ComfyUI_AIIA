@@ -197,12 +197,27 @@ class AIIA_VibeVoice_Loader:
 class AIIA_VibeVoice_TTS:
     @classmethod
     def INPUT_TYPES(cls):
-
+        # 0. Scan for Standard Voices (WAV/MP3)
+        nodes_path = os.path.dirname(os.path.abspath(__file__))
+        comfy_root = os.path.dirname(os.path.dirname(nodes_path))
+        
+        voice_dirs = [
+            os.path.join(nodes_path, "voices", "standard"),
+            os.path.join(comfy_root, "models", "vibevoice", "voices", "standard")
+        ]
+        
+        voices = ["None"]
+        for d in voice_dirs:
+            if os.path.exists(d):
+                for f in os.listdir(d):
+                    if f.lower().endswith((".wav", ".mp3", ".flac")):
+                        voices.append(f)
+        
         return {
             "required": {
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
                 "text": ("STRING", {"multiline": True, "default": "Hello, this is a test of VibeVoice."}),
-                "reference_audio": ("AUDIO",),
+                "voice": (voices, {"default": "None"}),
                 "cfg_scale": ("FLOAT", {"default": 1.3, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "ddpm_steps": ("INT", {"default": 20, "min": 10, "max": 100, "step": 1}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
@@ -211,6 +226,9 @@ class AIIA_VibeVoice_TTS:
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0}),
+            },
+            "optional": {
+                "reference_audio": ("AUDIO",),
             }
         }
 
@@ -219,8 +237,8 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def generate(self, vibevoice_model, text, reference_audio, cfg_scale, ddpm_steps, speed, normalize_text, 
-                 do_sample, temperature, top_k, top_p):
+    def generate(self, vibevoice_model, text, voice, cfg_scale, ddpm_steps, speed, normalize_text, 
+                 do_sample, temperature, top_k, top_p, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -247,14 +265,44 @@ class AIIA_VibeVoice_TTS:
             text = "\n".join([f"Speaker 1: {line.strip()}" for line in lines if line.strip()])
 
         # Process Reference Audio
-        wav = reference_audio["waveform"]
-        ref_sr = reference_audio.get("sample_rate", 24000)
-        if wav.ndim == 3: wav = wav[0]
-        if wav.shape[0] > 1: wav = torch.mean(wav, dim=0, keepdim=True)
-        if ref_sr != 24000:
-            resampler = torchaudio.transforms.Resample(orig_freq=ref_sr, new_freq=24000)
-            wav = resampler(wav)
-        voice_samples = [wav.squeeze().cpu().numpy()]
+        voice_samples = None
+        
+        # 1. Check explicitly connected audio (Priority)
+        if reference_audio is not None:
+            wav = reference_audio["waveform"]
+            ref_sr = reference_audio.get("sample_rate", 24000)
+            if wav.ndim == 3: wav = wav[0]
+            if wav.shape[0] > 1: wav = torch.mean(wav, dim=0, keepdim=True)
+            if ref_sr != 24000:
+                resampler = torchaudio.transforms.Resample(orig_freq=ref_sr, new_freq=24000)
+                wav = resampler(wav)
+            voice_samples = [wav.squeeze().cpu().numpy()]
+        
+        # 2. Check dropdown selection if no audio connected
+        elif voice != "None":
+            nodes_path = os.path.dirname(os.path.abspath(__file__))
+            comfy_root = os.path.dirname(os.path.dirname(nodes_path))
+            voice_dirs = [
+                os.path.join(nodes_path, "voices", "standard"),
+                os.path.join(comfy_root, "models", "vibevoice", "voices", "standard")
+            ]
+            
+            voice_path = None
+            for d in voice_dirs:
+                p = os.path.join(d, voice)
+                if os.path.exists(p):
+                    voice_path = p
+                    break
+            
+            if voice_path:
+                wav, sr = torchaudio.load(voice_path)
+                if wav.shape[0] > 1: wav = torch.mean(wav, dim=0, keepdim=True)
+                if sr != 24000:
+                    wav = torchaudio.transforms.Resample(orig_freq=sr, new_freq=24000)(wav)
+                voice_samples = [wav.squeeze().cpu().numpy()]
+        
+        if voice_samples is None:
+            raise ValueError("You must either connect 'reference_audio' or select a 'voice' from the dropdown.")
 
         try:
             with torch.no_grad():
