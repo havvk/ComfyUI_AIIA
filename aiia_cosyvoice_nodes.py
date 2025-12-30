@@ -508,45 +508,58 @@ class AIIA_CosyVoice_TTS:
         final_waveform = None
 
         try:
-            # Detect Model Type for specific logic
+            # Detect Model Type
             is_v3 = "CosyVoice3" in type(cosyvoice_model).__name__
             is_v2 = "CosyVoice2" in type(cosyvoice_model).__name__
-
-            # 1. Identity Validation
-            available_spks = list(cosyvoice_model.frontend.spk2info.keys())
             
-            # Case A: User specified a Speaker ID
+            # --- Speaker Identity Validation & Fallback ---
+            available_spks = list(cosyvoice_model.frontend.spk2info.keys())
+            use_seed_fallback = False
+            
             if spk_id:
                 if spk_id not in available_spks:
                     raise ValueError(f"Speaker ID '{spk_id}' not found. Available: {available_spks if available_spks else 'None (Zero-Shot model)'}")
-            
-            # Case B: No ID and no Audio
             elif reference_audio is None:
                 if available_spks:
                     spk_id = available_spks[0]
                     print(f"[AIIA] Auto-selecting first available speaker: {spk_id}")
                 else:
-                    # 0.5B models typically have no spk2info
-                    raise ValueError("此模型 (CosyVoice 0.5B/V3) 没有内置音色库。请连接 'reference_audio' 进行零样本克隆或生成。")
+                    # 0.5B models typically have no spk2info. Use internal neutral seed for "Pure Instruct"
+                    use_seed_fallback = True
+                    print("[AIIA] No Identity provided for Zero-Shot model. Falling back to internal 'Neutral Canvas' seed.")
 
-            # 2. Hybrid / Cross-Lingual / Zero-Shot (Reference Audio provided)
-            if reference_audio is not None:
-                ref_wav = reference_audio["waveform"]
-                if reference_audio["sample_rate"] != sample_rate:
-                    import torchaudio
-                    ref_wav = torchaudio.transforms.Resample(reference_audio["sample_rate"], sample_rate)(ref_wav)
-                
-                if ref_wav.abs().max() > 1.0: ref_wav = ref_wav / ref_wav.abs().max()
-                
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_ref:
-                    ref_path = tmp_ref.name
-                    ref_np = ref_wav.squeeze().cpu().numpy()
-                    if ref_np.ndim == 2: ref_np = ref_np.T
-                    sf.write(ref_path, ref_np, sample_rate, subtype='FLOAT')
-                
+            # 1. Hybrid / Cross-Lingual / Zero-Shot / Pure Instruct (Audio-driven Logic)
+            if reference_audio is not None or use_seed_fallback:
+                if reference_audio is not None:
+                    print(f"[AIIA] CosyVoice: Audio provided ({'Hybrid' if instruct_text else 'Zero-Shot'}).")
+                    ref_wav = reference_audio["waveform"]
+                    if reference_audio["sample_rate"] != sample_rate:
+                        import torchaudio
+                        ref_wav = torchaudio.transforms.Resample(reference_audio["sample_rate"], sample_rate)(ref_wav)
+                    
+                    if ref_wav.abs().max() > 1.0: ref_wav = ref_wav / ref_wav.abs().max()
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_ref:
+                        ref_path = tmp_ref.name
+                        ref_np = ref_wav.squeeze().cpu().numpy()
+                        if ref_np.ndim == 2: ref_np = ref_np.T
+                        sf.write(ref_path, ref_np, sample_rate, subtype='FLOAT')
+                        cleanup_ref = True
+                else:
+                    # Pure Instruct Fallback: Use built-in asset
+                    print(f"[AIIA] CosyVoice: Pure Instruct Mode using neutral seed.")
+                    ref_path = os.path.join(os.path.dirname(__file__), "libs", "CosyVoice", "asset", "zero_shot_prompt.wav")
+                    if not os.path.exists(ref_path):
+                        # Fallback for server structure if different
+                        alt_path = "/app/ComfyUI/custom_nodes/ComfyUI_AIIA/libs/CosyVoice/asset/zero_shot_prompt.wav"
+                        ref_path = alt_path if os.path.exists(alt_path) else ref_path
+                    cleanup_ref = False
+
                 try:
+                    if not os.path.exists(ref_path):
+                        raise FileNotFoundError(f"Internal seed audio not found at {ref_path}. Please check installation.")
+
                     if is_v3 or is_v2:
-                        print(f"[AIIA] CosyVoice V3/V2: Hybrid/Zero-Shot Mode. Instruct: {instruct_text[:20]}...")
                         output = cosyvoice_model.inference_instruct2(
                             tts_text=tts_text, 
                             instruct_text=instruct_text, 
@@ -556,7 +569,6 @@ class AIIA_CosyVoice_TTS:
                             speed=speed
                         )
                     else:
-                        print("[AIIA] CosyVoice V1: Zero-Shot / Cross-Lingual Mode")
                         if hasattr(cosyvoice_model, 'inference_zero_shot'):
                              output = cosyvoice_model.inference_zero_shot(tts_text, ref_path, stream=False, speed=speed)
                         else:
@@ -565,12 +577,12 @@ class AIIA_CosyVoice_TTS:
                     all_speech = [chunk['tts_speech'] for chunk in output]
                     final_waveform = torch.cat(all_speech, dim=-1)
                 finally:
-                    if os.path.exists(ref_path): os.unlink(ref_path)
+                    if cleanup_ref and os.path.exists(ref_path): os.unlink(ref_path)
 
-            # 3. Instruct / SFT / Random (No Reference Audio, verified we have spk_id)
+            # 2. SFT / Instruct (Fixed Speaker ID, No Reference Audio)
             else:
+                print(f"[AIIA] CosyVoice: Fixed Identity Mode (SFT/ID). Speaker: {spk_id}")
                 if is_v3 or is_v2:
-                    print(f"[AIIA] CosyVoice V3/V2: Instruct Generation. Description: {instruct_text[:20]}...")
                     output = cosyvoice_model.inference_instruct2(
                         tts_text=tts_text, 
                         instruct_text=instruct_text, 
@@ -580,7 +592,6 @@ class AIIA_CosyVoice_TTS:
                         speed=speed
                     )
                 else:
-                    print(f"[AIIA] CosyVoice V1: SFT/Instruct. Speaker ID: {spk_id}")
                     if "SFT" in type(cosyvoice_model).__name__ or spk_id:
                         output = cosyvoice_model.inference_sft(tts_text, spk_id, stream=False, speed=speed)
                     else:
@@ -590,8 +601,10 @@ class AIIA_CosyVoice_TTS:
                 final_waveform = torch.cat(all_speech, dim=-1)
 
         except Exception as e:
-            if isinstance(e, ValueError): raise e
+            if isinstance(e, (ValueError, FileNotFoundError)): raise e
             raise RuntimeError(f"CosyVoice generation failed: {e}")
+
+        return ({"waveform": final_waveform.unsqueeze(0).cpu(), "sample_rate": sample_rate},)
 
         return ({"waveform": final_waveform.unsqueeze(0).cpu(), "sample_rate": sample_rate},)
 
