@@ -107,7 +107,7 @@ class AIIA_CosyVoice_ModelLoader:
                     "CosyVoice-ttsfrd"
                 ],),
                 "use_fp16": ("BOOLEAN", {"default": True}),
-                "use_rl_model": ("BOOLEAN", {"default": False, "tooltip": "Use llm.rl.pt (Reinforcement Learning optimized) if available. Only for V3/V2 models."}),
+                "use_rl_model": ("BOOLEAN", {"default": True, "tooltip": "Use llm.rl.pt (Reinforcement Learning optimized) if available. Only for V3/V2 models."}),
             }
         }
 
@@ -147,6 +147,12 @@ class AIIA_CosyVoice_ModelLoader:
              repo_id = f"FunAudioLLM/{model_name}"
 
         model_dir = os.path.join(cosyvoice_path, local_name)
+        
+        # --- Override: Check specific server path for Fun-CosyVoice3 ---
+        server_v3_path = "/app/ComfyUI/models/cosyvoice/Fun-CosyVoice3-0.5B-2512"
+        if local_name == "Fun-CosyVoice3-0.5B-2512" and os.path.exists(server_v3_path):
+             model_dir = server_v3_path
+             print(f"[AIIA] Using server cache for CosyVoice3: {model_dir}")
         
         # Validation logic for V1/V2 vs V3
         yaml_path = os.path.join(model_dir, "cosyvoice.yaml")
@@ -469,11 +475,120 @@ class AIIA_CosyVoice_VoiceConversion:
         finally:
             if os.path.exists(source_path): os.unlink(source_path)
 
+class AIIA_CosyVoice_TTS:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("COSYVOICE_MODEL",),
+                "tts_text": ("STRING", {"multiline": True, "default": "你好，这是 CosyVoice 3.0 的全能模式测试。"}),
+                "instruct_text": ("STRING", {"multiline": True, "default": "一个沉稳、磁性的成熟男性声音，语法标准，情感饱满。"}),
+                "spk_id": ("STRING", {"default": "pure_1", "tooltip": "V1/V2 时代的固定 ID，如 pure_1, joy_1 等。如果提供参考音频且非 SFT 模型，此项可能被忽略。"}),
+                "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
+                "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
+            },
+            "optional": {
+                "reference_audio": ("AUDIO",),
+            }
+        }
+
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
+    FUNCTION = "generate"
+    CATEGORY = "AIIA/Synthesis"
+
+    def generate(self, model, tts_text, instruct_text, spk_id, speed, seed, reference_audio=None):
+        cosyvoice_model = model["model"]
+        sample_rate = cosyvoice_model.sample_rate
+
+        if seed >= 0:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed)
+
+        final_waveform = None
+
+        try:
+            # Detect Model Type for specific logic
+            is_v3 = "CosyVoice3" in type(cosyvoice_model).__name__
+            is_v2 = "CosyVoice2" in type(cosyvoice_model).__name__
+
+            # 1. Hybrid / Cross-Lingual / Zero-Shot (Reference Audio provided)
+            if reference_audio is not None:
+                ref_wav = reference_audio["waveform"]
+                if reference_audio["sample_rate"] != sample_rate:
+                    import torchaudio
+                    ref_wav = torchaudio.transforms.Resample(reference_audio["sample_rate"], sample_rate)(ref_wav)
+                
+                if ref_wav.abs().max() > 1.0: ref_wav = ref_wav / ref_wav.abs().max()
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_ref:
+                    ref_path = tmp_ref.name
+                    ref_np = ref_wav.squeeze().cpu().numpy()
+                    if ref_np.ndim == 2: ref_np = ref_np.T
+                    sf.write(ref_path, ref_np, sample_rate, subtype='FLOAT')
+                
+                try:
+                    if is_v3 or is_v2:
+                        # V3/V2: Support Instruct + Audio (Hybrid Mode)
+                        print(f"[AIIA] CosyVoice V3/V2: Hybrid/Zero-Shot Mode. Instruct: {instruct_text[:20]}...")
+                        output = cosyvoice_model.inference_instruct2(
+                            tts_text=tts_text, 
+                            instruct_text=instruct_text, 
+                            prompt_wav=ref_path, 
+                            zero_shot_spk_id=spk_id, # Optional placeholder
+                            stream=False, 
+                            speed=speed
+                        )
+                    else:
+                        # V1: Source-Prompt based inference
+                        print("[AIIA] CosyVoice V1: Zero-Shot / Cross-Lingual Mode")
+                        # Some versions use inference_vc or inference_zero_shot
+                        if hasattr(cosyvoice_model, 'inference_zero_shot'):
+                             output = cosyvoice_model.inference_zero_shot(tts_text, ref_path, stream=False, speed=speed)
+                        else:
+                             output = cosyvoice_model.inference_vc(source_wav=None, prompt_wav=ref_path, stream=False, speed=speed)
+                    
+                    all_speech = [chunk['tts_speech'] for chunk in output]
+                    final_waveform = torch.cat(all_speech, dim=-1)
+                finally:
+                    if os.path.exists(ref_path): os.unlink(ref_path)
+
+            # 2. Instruct / SFT / Random (No Reference Audio)
+            else:
+                if is_v3 or is_v2:
+                    print(f"[AIIA] CosyVoice V3/V2: Instruct Generation. Description: {instruct_text[:20]}...")
+                    # For pure generation in V3, prompt_wav can be None
+                    output = cosyvoice_model.inference_instruct2(
+                        tts_text=tts_text, 
+                        instruct_text=instruct_text, 
+                        prompt_wav=None, 
+                        zero_shot_spk_id=spk_id, 
+                        stream=False, 
+                        speed=speed
+                    )
+                else:
+                    # V1 SFT / Instruct
+                    print(f"[AIIA] CosyVoice V1: SFT/Instruct. Speaker ID: {spk_id}")
+                    if "SFT" in type(cosyvoice_model).__name__ or spk_id:
+                        output = cosyvoice_model.inference_sft(tts_text, spk_id, stream=False, speed=speed)
+                    else:
+                        output = cosyvoice_model.inference_instruct(tts_text, spk_id, instruct_text, stream=False, speed=speed)
+                
+                all_speech = [chunk['tts_speech'] for chunk in output]
+                final_waveform = torch.cat(all_speech, dim=-1)
+
+        except Exception as e:
+            raise RuntimeError(f"CosyVoice generation failed: {e}")
+
+        return ({"waveform": final_waveform.unsqueeze(0).cpu(), "sample_rate": sample_rate},)
+
 NODE_CLASS_MAPPINGS = {
     "AIIA_CosyVoice_ModelLoader": AIIA_CosyVoice_ModelLoader,
-    "AIIA_CosyVoice_VoiceConversion": AIIA_CosyVoice_VoiceConversion
+    "AIIA_CosyVoice_VoiceConversion": AIIA_CosyVoice_VoiceConversion,
+    "AIIA_CosyVoice_TTS": AIIA_CosyVoice_TTS
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AIIA_CosyVoice_ModelLoader": "CosyVoice Model Loader (AIIA)",
-    "AIIA_CosyVoice_VoiceConversion": "Voice Conversion (AIIA Unlimited)"
+    "AIIA_CosyVoice_VoiceConversion": "Voice Conversion (AIIA Unlimited)",
+    "AIIA_CosyVoice_TTS": "CosyVoice 3.0 TTS (AIIA)"
 }

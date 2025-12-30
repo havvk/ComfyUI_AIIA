@@ -308,7 +308,23 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `chunk_size`: 目标切片大小（默认 25 秒）。
   - `overlap_size`: 重叠大小，用于平滑衔接。
 
-#### 3.5 智能音频增强 (Audio AI Enhance) (推荐)
+#### 3.5 CosyVoice 3.0 TTS (AIIA) (文本转语音/生成)
+
+- **用途**: CosyVoice 3.0 全能文本转语音节点，支持纯文字描述生成音色。
+- **🔥 五种核心生成模式**:
+  1. **描述生成 (Instruct)**: **文字 + 描述**。无需音频输入，直接根据文字描述（如“磁性的中年男声”）生成全新音色。
+  2. **音色克隆 (Zero-Shot)**: **文字 + 3秒音频**。模仿参考音频的音色。
+  3. **混合控制 (Hybrid)**: **音频 + 描述**。在克隆音色的基础上，通过描述词改变情感或表现力。
+  4. **跨语言 (Cross-Lingual)**: 让中文音频开口说地道的英文、日文等 9 种语言。
+  5. **固定 ID (SFT)**: 通过 `spk_id` 指定固定官方音色（如 pure_1, joy_1）。
+- **参数说明**:
+  - `tts_text`: 说的内容。
+  - `instruct_text`: 对声音风格、情感、口音的文字描述。
+  - `spk_id`: 传统的固定音色 ID（选填）。
+  - `reference_audio`: 外部参考音频（选填，用于克隆/混合/跨语言）。
+  - `seed`: 随机种子。固定种子可以“锁定”通过描述生成的那种随机音色。
+
+#### 3.6 智能音频增强 (Audio AI Enhance) (推荐)
 
 - **用途**: 专为 CosyVoice 等生成式语音设计的增强器。它基于 `resemble-enhance` 强大的 **Conditional Flow Matching (CFM)** 模型，能同时完成后处理降噪和超分辨率（Bandwidth Extension）。
 - **核心能力**: 将任意低采样率（如 22kHz, 16kHz）的输入音频，重构为 **44.1kHz** 的高保真音频。
@@ -353,7 +369,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 - **依赖**: 首次运行会自动安装 `resemble-enhance`。
 
-#### 3.6 智能音频降噪 (VoiceFixer) (Legacy)
+#### 3.7 智能音频降噪 (VoiceFixer) (Legacy)
 
 - **用途**: 用于修复**严重受损**的音频（如老电影、严重削波或极强背景噪）。
 - **注意**: 对于 CosyVoice 生成的较干净语音，**不推荐**使用此节点，因为它通过重构方式修复，容易在干净语音上引入伪影（Spectral Stripes）。请优先使用 `Audio AI Enhance`。
@@ -396,7 +412,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   hf download Diogodiogod/VoiceFixer-model.ckpt-1490000_trimed.pt model.ckpt-1490000_trimed.pt --local-dir synthesis_module/44100
   ```
 
-#### 3.7 Audio Post-Process (Resample/Fade/Norm)
+#### 3.8 Audio Post-Process (Resample/Fade/Norm)
 
 - **用途**: 音频后期处理“母带”节点。
 - **功能**:
@@ -407,7 +423,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - **Normalize**: 将音量标准化至 -1dB，确保输出响度饱满且不破音。
 - **场景**: 建议串联在 `Voice Conversion` 节点之后使用。
 
-#### 3.8 Audio Splice Analyzer (AIIA Debug)
+#### 3.9 Audio Splice Analyzer (AIIA Debug)
 
 - **用途**: 可视化验证音频拼接质量。
 - **功能**:
@@ -416,7 +432,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - 帮助用户直观地检查拼接点是否位于静音区，以及是否有明显的频谱断裂。
 - **依赖**: 需要 `matplotlib` 库。如果未安装，节点会生成一张提示错误的图片，不会导致工作流崩溃。
 
-#### 3.9 音频信息查看 (Audio Info & Metadata)
+#### 3.10 音频信息查看 (Audio Info & Metadata)
 
 - **用途**: 实时查看音频流的元数据，确保你的采样率符合预期。
 - **输入**: `AUDIO` 张量。
@@ -426,7 +442,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `duration`: 时长秒数 (FLOAT)。
   - `channels`: 通道数 (INT)。
 
-#### 3.10 Microsoft VibeVoice (Beta)
+#### 3.11 Microsoft VibeVoice (Beta)
 
 - **用途**: 微软最新的 TTS/音色克隆模型，支持 1.5B 和 7B 两种规格。
 - **当前状态**: ✅ 可用（已通过测试）
