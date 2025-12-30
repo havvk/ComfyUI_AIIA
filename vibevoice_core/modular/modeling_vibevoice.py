@@ -157,8 +157,9 @@ class VibeVoiceModel(VibeVoicePreTrainedModel):
         self.language_model = AutoModel.from_config(lm_config)
         
         # Initialize speech components if needed
-        self.acoustic_tokenizer = AutoModel.from_config(config.acoustic_tokenizer_config).to(dtype)
-        self.semantic_tokenizer = AutoModel.from_config(config.semantic_tokenizer_config).to(dtype)
+        # Replaced AutoModel.from_config with explicit class instantiation (fixes Unrecognized configuration class error)
+        self.acoustic_tokenizer = VibeVoiceAcousticTokenizerModel(config.acoustic_tokenizer_config).to(dtype)
+        self.semantic_tokenizer = VibeVoiceSemanticTokenizerModel(config.semantic_tokenizer_config).to(dtype)
 
         self.acoustic_connector = SpeechConnector(config.acoustic_vae_dim, lm_config.hidden_size).to(dtype)
         self.semantic_connector = SpeechConnector(config.semantic_vae_dim, lm_config.hidden_size).to(dtype)
@@ -168,7 +169,7 @@ class VibeVoiceModel(VibeVoicePreTrainedModel):
         self.register_buffer('speech_bias_factor', torch.tensor(float('nan')))
 
         # Initialize prediction head for speech generation
-        self.prediction_head = AutoModel.from_config(config.diffusion_head_config).to(dtype)
+        self.prediction_head = VibeVoiceDiffusionHead(config.diffusion_head_config).to(dtype)
 
         # Initialize noise scheduler
         self.noise_scheduler = DPMSolverMultistepScheduler(

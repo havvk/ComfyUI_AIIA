@@ -450,13 +450,27 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `temperature` (默认: 0.8): 采样温度。仅在 `do_sample` 开启时有效。
   - `top_k / top_p`: 采样约束。
   - `speed` (默认: 1.0): 播放速度。
-- **💡 0.5B Realtime (新) 实时多语言建议**:
+
   - `do_sample`: **"auto"** (或 `false`) - 保证极速和绝对稳定。
   - `normalize_text`: **True** - 帮助处理各种语言的特殊符号。
   - **特点**: 该模型支持包括**韩语、日语**在内的更多语种，速度极快。
 
-#### 💡 7B 模型音质“全开”指南
+#### 💡 用户实测与模型对比 (User Observations)
+经过深度测试，我们在三个模型版本中观察到以下特性：
+
+1.  **0.5B 实时版**:
+    - **频谱特征**: 在静音区域（Silence）可能在全部频率范围内观察到较高的能量分布，尤其在中频区域。
+    - **听感**: 尽管频谱显示有能量，但**实际听感比较干净**，只有轻微的底噪。这表明其声码器可能存在某种特征泄露，但不影响实用性。
+    - **迭代次数**: 由于基于音素（Phoneme）和流式切片处理，其显示的迭代次数（Total Steps）通常多于标准版，这是正常的。
+
+2.  **1.5B vs 7B 对比**:
+    - **音质与风格**: 在参数调整得当（如开启 `do_sample`）的情况下，1.5B 模型生成的语音内容、风格和音质与 7B 模型**几乎无法区分**。
+    - **性价比**: 1.5B 模型的推理速度约为 7B 的 **2倍**，显存占用仅为 1/4。除非对极细微的表达有极致要求，否则 **1.5B 是生产环境的最佳选择**。
+    - **迭代差异**: 1.5B 的迭代次数（Token数）可能略少于 7B，这反映了不同模型对同一文本编码的简洁程度差异，属正常现象。
+
+### 💡 7B 模型音质“全开”指南
 要达到官方 Benchmark 的水准，请对 7B 模型尝试以下组合：
+
 - `do_sample`: **True** (开启采样)
 - `temperature`: **0.8 - 0.9**
 - `cfg_scale`: **1.3 - 1.8**
@@ -489,7 +503,32 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - 1.5B 模型使用 [Qwen/Qwen2.5-1.5B](https://huggingface.co/Qwen/Qwen2.5-1.5B/tree/main) 的 tokenizer
   - 7B 模型使用 [Qwen/Qwen2.5-7B](https://huggingface.co/Qwen/Qwen2.5-7B/tree/main) 的 tokenizer
 
+### 💡 VibeVoice 使用指南 (Node Usage Guide)
+
+由于模型架构不同，我们现在提供 **两个独立的 TTS 节点** 以优化体验：
+
+#### 1. 🗣️ VibeVoice TTS (Standard)
+
+- **适用模型**: `VibeVoice-1.5B`, `VibeVoice-7B`
+- **必选参数**: `reference_audio` (参考音频) - **必须连接**。
+- **功能**: 支持零样本音色克隆 (Zero-shot Cloning)。输入任何音频，它都会模仿该音色。
+- **不支持**: `voice_preset` (预设)。
+
+#### 2. 🗣️ VibeVoice TTS (Realtime 0.5B)
+
+- **适用模型**: `VibeVoice-Realtime-0.5B`
+- **必选参数**: `voice_preset` (音色预设) - **必须选择**。
+- **功能**: 极速实时生成。基于预计算的 `.pt` 缓存文件生成语音。
+- **不支持**: `reference_audio` (直接克隆)。
+- **如何获取中文预设?**: 请使用配套的 `🎤 VibeVoice Preset Maker` 节点自行制作。
+
+#### 3. 🎤 VibeVoice Preset Maker (0.5B)
+- **用途**: 制作 0.5B 模型专用的 `.pt` 音色预设。
+- **流程**: 连接参考音频 -> 运行节点 ->生成预设 -> 重启 ComfyUI -> 在 `Realtime 0.5B` 节点中使用。
+
+
   **手动下载命令**:
+
   ```bash
   # ===== 0.5B 实时多语言模型 (Realtime) =====
   mkdir -p models/vibevoice/microsoft/VibeVoice-Realtime-0.5B
@@ -499,6 +538,26 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   wget https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/tokenizer_config.json -P models/vibevoice/microsoft/VibeVoice-Realtime-0.5B/
   wget https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/vocab.json -P models/vibevoice/microsoft/VibeVoice-Realtime-0.5B/
   wget https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/merges.txt -P models/vibevoice/microsoft/VibeVoice-Realtime-0.5B/
+
+  # 🔥 [重要] 下载 0.5B 官方音色库 (Voices Presets) 🔥
+  # 0.5B 模型必须配合官方音色预设使用，不支持零样本克隆。
+  # 请务必将以下文件下载到 `models/vibevoice/voices/streaming_model` 目录：
+  mkdir -p models/vibevoice/voices/streaming_model
+  cd models/vibevoice/voices/streaming_model
+
+  # 下载核心音色 (仅示例，全部音色请参考官方 GitHub)
+  # ⚠️ 注意：官方仓库目前暂未提供中文 (.pt) 预设，建议使用英文或日韩文测试，或自行制作预设。
+  
+  # 英文 (English)
+  wget -N --no-check-certificate https://github.com/microsoft/VibeVoice/raw/main/demo/voices/streaming_model/en-Carter_man.pt
+  wget -N --no-check-certificate https://github.com/microsoft/VibeVoice/raw/main/demo/voices/streaming_model/en-Emma_woman.pt
+  # 日语 (Japanese)
+  wget -N --no-check-certificate https://github.com/microsoft/VibeVoice/raw/main/demo/voices/streaming_model/jp-Spk0_man.pt
+  wget -N --no-check-certificate https://github.com/microsoft/VibeVoice/raw/main/demo/voices/streaming_model/jp-Spk1_woman.pt
+  # 韩语 (Korean)
+  wget -N --no-check-certificate https://github.com/microsoft/VibeVoice/raw/main/demo/voices/streaming_model/kr-Spk0_woman.pt
+  wget -N --no-check-certificate https://github.com/microsoft/VibeVoice/raw/main/demo/voices/streaming_model/kr-Spk1_man.pt
+  # 更多语言 (德语 de, 法语 fr, 意大利语 it, 西班牙语 sp/es, 葡萄牙语 pt 等) 均支持！
 
   # ===== 1.5B 基础模型 =====
   mkdir -p models/vibevoice/microsoft/VibeVoice-1.5B

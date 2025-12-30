@@ -156,16 +156,157 @@ class VibeVoiceStreamingProcessor:
         
         logger.info(f"Processor configuration saved in {config_path}")
     
-    def __call__(self) -> BatchEncoding:
+    def __call__(
+        self,
+        text: Optional[Union[str, List[str], TextInput, PreTokenizedInput, List[TextInput], List[PreTokenizedInput]]] = None,
+        voice_samples: Optional[Union[List[Union[str, np.ndarray]], List[List[Union[str, np.ndarray]]]]] = None,
+        padding: Union[bool, str, PaddingStrategy] = True,
+        truncation: Union[bool, str, TruncationStrategy] = False,
+        max_length: Optional[int] = None,
+        return_tensors: Optional[Union[str, TensorType]] = None,
+        return_attention_mask: bool = True,
+        **kwargs,
+    ) -> BatchEncoding:
         """
-        Note:
-            This method is intentionally not implemented in the streaming processor.
-            Use `process_input_with_cached_prompt` for streaming use cases.
+        Main method to process one or more scripts with optional voice samples for initial prompt encoding.
         """
-        raise NotImplementedError(
-            "VibeVoiceStreamingProcessor.__call__ is not implemented. "
-            "Use process_input_with_cached_prompt for streaming inputs."
+        # Handle single vs batch input
+        if isinstance(text, str) or (isinstance(text, list) and len(text) > 0 and not isinstance(text[0], str)):
+            # Single input
+            texts = [text]
+            is_batched = False
+        else:
+            # Batch input
+            texts = text
+            is_batched = True
+            
+        # Handle voice samples
+        if voice_samples is not None:
+            if not is_batched or (isinstance(voice_samples[0], (str, np.ndarray))):
+                # Single set of voice samples
+                voice_samples_list = [voice_samples]
+            else:
+                # Batch of voice samples
+                voice_samples_list = voice_samples
+        else:
+            voice_samples_list = [None] * len(texts)
+        
+        # Process each input
+        all_encodings = []
+        for text_input, voice_input in zip(texts, voice_samples_list):
+            encoding = self._process_single(text_input, voice_input)
+            all_encodings.append(encoding)
+            
+        # Combine batch
+        batch_encoding = self._batch_encode(
+            all_encodings,
+            padding=padding,
+            truncation=truncation,
+            max_length=max_length,
+            return_tensors=return_tensors,
+            return_attention_mask=return_attention_mask,
         )
+        
+        return batch_encoding
+
+    def _process_single(
+        self,
+        text: Union[str, TextInput],
+        voice_samples: Optional[List[Union[str, np.ndarray]]] = None,
+    ) -> Dict[str, Any]:
+        """Process a single script for prompt encoding."""
+        script = text
+        
+        # Simple single speaker prefix handling
+        if "Speaker 0:" in script:
+            script = script.replace("Speaker 0:", "").strip()
+        
+        # Create system prompt
+        system_prompt = " Transform the text provided by various speakers into speech output, utilizing the distinct voice of each respective speaker.\n"
+        system_tokens = self.tokenizer.encode(system_prompt)
+        
+        # Process voice samples
+        if voice_samples:
+            voice_tokens, voice_speech_inputs, voice_speech_masks = self._create_voice_prompt(voice_samples[:1])
+        else:
+            voice_tokens, voice_speech_inputs, voice_speech_masks = [], [], []
+        
+        # Build prompt: System + Voice + " Text input:\n"
+        # We STOP before the actual text because the loop appends it.
+        header_text = ' Text input:\n'
+        header_tokens = self.tokenizer.encode(header_text, add_special_tokens=False)
+        
+        full_tokens = system_tokens + voice_tokens + header_tokens
+        speech_input_mask = [False] * len(system_tokens) + voice_speech_masks + [False] * len(header_tokens)
+        
+        # Add " Speaker 0:" prefix to start the text section
+        prefix_text = " Speaker 0:"
+        prefix_tokens = self.tokenizer.encode(prefix_text, add_special_tokens=False)
+        
+        full_tokens += prefix_tokens
+        speech_input_mask += [False] * len(prefix_tokens)
+        
+        return {
+            "input_ids": full_tokens,
+            "tts_lm_input_ids": full_tokens,
+            "tts_text_ids": [], # Empty for prompt
+            "speech_inputs": voice_speech_inputs if voice_speech_inputs else None,
+            "speech_input_mask": speech_input_mask,
+        }
+        
+        # For streaming, we also need tts_lm_input_ids to be the same size in some contexts
+        # but here we just return the full sequence for pre-filling.
+        
+        return {
+            "input_ids": full_tokens,
+            "tts_lm_input_ids": full_tokens, # For pre-fill they are often identical
+            "tts_text_ids": [], # Empty for prompt encoding
+            "speech_inputs": voice_speech_inputs if voice_speech_inputs else None,
+            "speech_input_mask": speech_input_mask,
+        }
+
+    def _create_voice_prompt(
+        self, 
+        speaker_samples: List[Union[str, np.ndarray]]
+    ) -> Tuple[List[int], List[np.ndarray], List[bool]]:
+        """Create voice prompt tokens and process audio samples."""
+        vae_token_id = self.tokenizer.speech_diffusion_id
+        
+        voice_full_tokens = self.tokenizer.encode(' Voice input:\n', add_special_tokens=False)
+        voice_speech_inputs = []
+        voice_speech_masks = [False] * len(voice_full_tokens)
+        
+        for speaker_id, speaker_audio in enumerate(speaker_samples):
+            prefix_tokens = self.tokenizer.encode(f" Speaker {speaker_id}:", add_special_tokens=False)
+            
+            # Process audio
+            if isinstance(speaker_audio, str):
+                wav = self.audio_processor._load_audio_from_path(speaker_audio)
+            else:
+                wav = np.array(speaker_audio, dtype=np.float32)
+            
+            if self.db_normalize and self.audio_normalizer:
+                wav = self.audio_normalizer(wav)
+            
+            vae_tok_len = math.ceil(wav.shape[0] / self.speech_tok_compress_ratio)
+            
+            speaker_tokens = (prefix_tokens + 
+                            [self.tokenizer.speech_start_id] + 
+                            [vae_token_id] * vae_tok_len + 
+                            [self.tokenizer.speech_end_id] + 
+                            self.tokenizer.encode('\n', add_special_tokens=False))
+            
+            vae_input_mask = ([False] * len(prefix_tokens) + 
+                            [False] + 
+                            [True] * vae_tok_len + 
+                            [False] + 
+                            [False])
+            
+            voice_full_tokens.extend(speaker_tokens)
+            voice_speech_masks.extend(vae_input_mask)
+            voice_speech_inputs.append(wav)
+            
+        return voice_full_tokens, voice_speech_inputs, voice_speech_masks
 
     def process_input_with_cached_prompt(
         self,

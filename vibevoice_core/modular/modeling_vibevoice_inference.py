@@ -548,9 +548,12 @@ class VibeVoiceForConditionalGenerationInference(VibeVoicePreTrainedModel, Gener
         expected_steps = kwargs.get("expected_steps", max_steps)
         # Use expected_steps for a smoother bar, but cap it at max_steps for safety
         bar_total = min(expected_steps, max_steps)
+        # Fallback: if calculated total is 0 but we know max_steps > 0, assume max_steps
+        if bar_total <= 0 and max_steps > 0:
+            bar_total = max_steps
         
         if kwargs.get("show_progress_bar", True):
-            progress_bar = tqdm(range(max_steps), total=bar_total, desc="Generating", leave=False)
+            progress_bar = tqdm(range(max_steps), total=bar_total, desc="Generating", leave=True)
         else:
             progress_bar = range(max_steps)
         
@@ -573,11 +576,12 @@ class VibeVoiceForConditionalGenerationInference(VibeVoicePreTrainedModel, Gener
             
             if finished_tags.all():
                 if hasattr(progress_bar, 'set_description'):
-                    progress_bar.set_description("Generation complete")
+                    progress_bar.set_description("Done")
                 # Ensure the progress bar looks 100% complete
                 if hasattr(progress_bar, 'total'):
                     progress_bar.total = progress_bar.n
                     progress_bar.refresh()
+                    progress_bar.close()
                 break
 
             if input_ids.shape[-1] >= generation_config.max_length:
@@ -590,7 +594,12 @@ class VibeVoiceForConditionalGenerationInference(VibeVoicePreTrainedModel, Gener
             # Update progress bar description with active samples
             if hasattr(progress_bar, 'set_description'):
                 active_samples = (~finished_tags).sum().item()
-                progress_bar.set_description(f"Generating (active: {active_samples}/{batch_size})")
+                if active_samples > 0:
+                     progress_bar.set_description(f"Generating (active: {active_samples}/{batch_size})")
+
+            # Update external callback
+            if kwargs.get('progress_callback') is not None:
+                kwargs['progress_callback'](1)
 
             # Forward pass through the model
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)

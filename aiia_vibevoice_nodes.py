@@ -3,6 +3,8 @@ import sys
 import torch
 import numpy as np
 import torchaudio
+import folder_paths
+print(f"\n[AIIA DEBUG] Loaded aiia_vibevoice_nodes.py from: {os.path.abspath(__file__)}\n")
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer, Qwen2TokenizerFast
 
@@ -195,10 +197,12 @@ class AIIA_VibeVoice_Loader:
 class AIIA_VibeVoice_TTS:
     @classmethod
     def INPUT_TYPES(cls):
+
         return {
             "required": {
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
                 "text": ("STRING", {"multiline": True, "default": "Hello, this is a test of VibeVoice."}),
+                "reference_audio": ("AUDIO",),
                 "cfg_scale": ("FLOAT", {"default": 1.3, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "ddpm_steps": ("INT", {"default": 20, "min": 10, "max": 100, "step": 1}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
@@ -207,9 +211,6 @@ class AIIA_VibeVoice_TTS:
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0}),
-            },
-            "optional": {
-                "reference_audio": ("AUDIO",),
             }
         }
 
@@ -218,8 +219,8 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, normalize_text, 
-                 do_sample, temperature, top_k, top_p, reference_audio=None):
+    def generate(self, vibevoice_model, text, reference_audio, cfg_scale, ddpm_steps, speed, normalize_text, 
+                 do_sample, temperature, top_k, top_p):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -227,7 +228,10 @@ class AIIA_VibeVoice_TTS:
         device = model.device 
         
         if processor is None: raise RuntimeError("Processor is missing.")
-        if reference_audio is None: raise ValueError("Reference Audio is REQUIRED.")
+        
+        # Validation
+        if is_streaming:
+             raise ValueError("You are using a 0.5B (Realtime) model with the Standard TTS node. Please use the 'VibeVoice TTS (Realtime 0.5B)' node instead.")
 
         print(f"[AIIA] Generating... streaming={is_streaming}, text len={len(text)}")
         
@@ -254,108 +258,38 @@ class AIIA_VibeVoice_TTS:
 
         try:
             with torch.no_grad():
-                if is_streaming:
-                    # 0.5B Streaming Logic
-                    print("[AIIA] Using 0.5B Streaming Inference Path...")
-                    
-                    # 1. We need to split the speaker part from the generation part
-                    # The processor normally handles this, but for streaming we need the prefilled state.
-                    # We'll use a trick: process the WHOLE thing to get tokens, then split.
-                    
-                    # Split into speaker prompt and target script
-                    # Assume single-speaker format from above for simplicity
-                    match = re.match(r'^(Speaker\s+\d+\s*:\s*)(.*)', text, re.DOTALL | re.IGNORECASE)
-                    if not match: raise ValueError("Invalid speaker format")
-                    
-                    speaker_prefix = match.group(1)
-                    target_text = match.group(2)
-                    
-                    # Get tokens for prompt (Speaker Prefix + Voice)
-                    # Use standard VibeVoiceProcessor internal logic to get proper interleaved tokens
-                    # Actually, we can just use the provided processor's internal methods if accessible
-                    # but it's easier to just use the processor with a dummy text to get the voice tokens.
-                    
-                    # 0.5B model's generate() expects all_prefilled_outputs.
-                    # We can use forward_lm and forward_tts_lm to get them.
-                    
-                    # Use the standard processor logic to get inputs for the PROMPT part
-                    # We use the standard processor here (internally it's the same logic for tokenization)
-                    # BUT wait, the model's generate handles the prompt if inputs is passed? 
-                    # No, we saw it needs all_prefilled_outputs.
-                    
-                    # HELPER: Get prefilled state
-                    # We'll use the processor to get prompt tokens
-                    # We use a dummy text for the prompt part
-                    prompt_inputs = processor(text=speaker_prefix, voice_samples=voice_samples, return_tensors="pt")
-                    prompt_input_ids = prompt_inputs["input_ids"].to(device)
-                    prompt_tts_lm_input_ids = prompt_inputs["tts_lm_input_ids"].to(device)
-                    
-                    # Optional: Speech inputs if provided
-                    speech_tensors = prompt_inputs.get("speech_tensors")
-                    if speech_tensors is not None: speech_tensors = speech_tensors.to(device)
-                    speech_masks = prompt_inputs.get("speech_masks")
-                    if speech_masks is not None: speech_masks = speech_masks.to(device)
-                    speech_input_mask = prompt_inputs.get("speech_input_mask")
-                    if speech_input_mask is not None: speech_input_mask = speech_input_mask.to(device)
+                # 1.5B/7B Standard Logic
+                inputs = processor(text=text, voice_samples=voice_samples, return_tensors="pt")
+                input_ids = inputs["input_ids"].to(device)
+                input_args = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items() if k != "input_ids"}
+                
+                if hasattr(model, "set_ddpm_inference_steps"):
+                    model.set_ddpm_inference_steps(num_steps=ddpm_steps)
 
-                    # Get forward outputs
-                    lm_out = model.forward_lm(input_ids=prompt_input_ids, use_cache=True, return_dict=True)
-                    
-                    tts_lm_extra = {
-                        "tts_text_masks": torch.ones_like(prompt_tts_lm_input_ids[:, -1:]),
-                        "lm_last_hidden_state": lm_out.last_hidden_state,
-                        "speech_tensors": speech_tensors,
-                        "speech_masks": speech_masks,
-                        "speech_input_mask": speech_input_mask
-                    }
-                    tts_lm_out = model.forward_tts_lm(input_ids=prompt_tts_lm_input_ids, use_cache=True, return_dict=True, **tts_lm_out_extra if False else tts_lm_extra)
-                    
-                    # Negative Prefill (empty prompt)
-                    neg_input_ids = torch.tensor([[151643]], device=device) # BOS
-                    neg_lm_out = model.forward_lm(input_ids=neg_input_ids, use_cache=True, return_dict=True)
-                    neg_tts_lm_out = model.forward_tts_lm(input_ids=neg_input_ids, use_cache=True, return_dict=True, lm_last_hidden_state=neg_lm_out.last_hidden_state)
-                    
-                    all_prefilled = {
-                        "lm": lm_out, "tts_lm": tts_lm_out,
-                        "neg_lm": neg_lm_out, "neg_tts_lm": neg_tts_lm_out
-                    }
+                # Resolution for sampling
+                f_do_sample = getattr(model.generation_config, "do_sample", False) if do_sample == "auto" else (do_sample == "true")
+                
+                # ComfyUI Progress Bar
+                from comfy.utils import ProgressBar
+                total_steps = len(text) * 20 # Rough estimate
+                pbar = ProgressBar(total_steps)
 
-                    # Target tokens for streaming
-                    target_tokens = tokenizer.encode(target_text.strip() + "\n", return_tensors="pt").to(device)
-                    
-                    # Call Generate
-                    output = model.generate(
-                        all_prefilled_outputs=all_prefilled,
-                        tts_text_ids=target_tokens,
-                        tts_lm_input_ids=prompt_tts_lm_input_ids,
-                        inputs=prompt_input_ids,
-                        cfg_scale=cfg_scale,
-                        tokenizer=tokenizer,
-                        show_progress_bar=True
-                    )
-                else:
-                    # 1.5B/7B Standard Logic
-                    inputs = processor(text=text, voice_samples=voice_samples, return_tensors="pt")
-                    input_ids = inputs["input_ids"].to(device)
-                    input_args = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items() if k != "input_ids"}
-                    
-                    if hasattr(model, "set_ddpm_inference_steps"):
-                        model.set_ddpm_inference_steps(num_steps=ddpm_steps)
+                def progress_callback(step_increment):
+                    pbar.update(step_increment)
 
-                    # Resolution for sampling
-                    f_do_sample = getattr(model.generation_config, "do_sample", False) if do_sample == "auto" else (do_sample == "true")
-                    
-                    output = model.generate(
-                        input_ids,
-                        cfg_scale=cfg_scale,
-                        do_sample=f_do_sample,
-                        temperature=temperature,
-                        top_k=top_k,
-                        top_p=top_p,
-                        expected_steps=len(text)*20,
-                        max_length_times=10.0,
-                        **input_args
-                    )
+                output = model.generate(
+                    input_ids,
+                    cfg_scale=cfg_scale,
+                    do_sample=f_do_sample,
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                    expected_steps=len(text)*20,
+                    max_length_times=10.0,
+                    tokenizer=tokenizer,
+                    progress_callback=progress_callback,
+                    **input_args
+                )
                 
                 # Format Audio Output
                 if hasattr(output, "speech_outputs"):
@@ -384,6 +318,13 @@ class AIIA_VibeVoice_TTS:
             traceback.print_exc()
             raise e
 
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise e
+
+
 NODE_CLASS_MAPPINGS = {
     "AIIA_VibeVoice_Loader": AIIA_VibeVoice_Loader,
     "AIIA_VibeVoice_TTS": AIIA_VibeVoice_TTS
@@ -391,5 +332,6 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AIIA_VibeVoice_Loader": "🎤 VibeVoice Loader",
-    "AIIA_VibeVoice_TTS": "🗣️ VibeVoice TTS"
+    "AIIA_VibeVoice_TTS": "🗣️ VibeVoice TTS (Standard)"
 }
+

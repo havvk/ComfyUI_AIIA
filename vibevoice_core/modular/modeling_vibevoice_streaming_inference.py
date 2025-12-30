@@ -518,11 +518,15 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
         total_generated_speech_tokens = 0
         total_prefilled_text_tokens = 0
         if kwargs.get("show_progress_bar", True):
+            # Calculate generated steps only (like Standard model)
+            gen_len = tts_lm_generation_config.max_length - step
+            if gen_len < 0: gen_len = 100 # Fallback
+            
             progress_bar = tqdm(
-                total=tts_lm_generation_config.max_length,
-                desc=f"Prefilled {step} tokens, current step ({step} / {tts_lm_generation_config.max_length})",
-                initial=step,
-                leave=False
+                total=gen_len,
+                desc="Generating",
+                initial=0,
+                leave=True
             )
         else:
             progress_bar = None
@@ -546,7 +550,16 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
             
             if finished_tags.all():
                 if hasattr(progress_bar, 'set_description'):
-                    progress_bar.set_description("Generation complete")
+                    progress_bar.set_description("Done")
+                if progress_bar is not None and kwargs.get("show_progress_bar", True):
+                    # Force update total to n to show 100% with ACTUAL count
+                    progress_bar.total = progress_bar.n
+                    progress_bar.refresh()
+                    progress_bar.close()
+
+                    # Update external callback
+                    if kwargs.get('progress_callback') is not None:
+                         pass
                 break
 
             cur_input_tts_text_ids = tts_text_ids[:, tts_text_window_index*TTS_TEXT_WINDOW_SIZE:(tts_text_window_index+1)*TTS_TEXT_WINDOW_SIZE]
@@ -569,7 +582,11 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
                 total_prefilled_text_tokens += cur_input_tts_text_ids.shape[1]
                 if progress_bar is not None:
                     progress_bar.update(cur_input_tts_text_ids.shape[1])
-                    progress_bar.set_description(f"Prefilled {total_prefilled_text_tokens} text tokens, generated {total_generated_speech_tokens} speech tokens, current step ({step} / {tts_lm_generation_config.max_length})")
+                    # progress_bar.set_description(f"Prefilled {total_prefilled_text_tokens} text tokens, generated {total_generated_speech_tokens} speech tokens")
+                
+                # Update external callback
+                if kwargs.get('progress_callback') is not None:
+                    kwargs['progress_callback'](cur_input_tts_text_ids.shape[1])
 
                 model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
                 # Forward pass through the model
@@ -627,7 +644,7 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
                     audio_streamer.put(audio_chunk, diffusion_indices)
 
                 acoustic_embed = self.model.acoustic_connector(speech_latent)
-                tts_lm_input_ids = torch.cat([tts_lm_input_ids, torch.ones_like(tts_lm_input_ids[:, -1:])], dim=-1)
+                tts_lm_input_ids = torch.cat([tts_lm_input_ids, self.generation_config.speech_diffusion_id * torch.ones_like(tts_lm_input_ids[:, -1:])], dim=-1)
 
                 if tts_lm_input_ids.shape[1] > tts_lm_generation_config.max_length:
                     break
@@ -637,6 +654,10 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
                 if progress_bar is not None:
                     progress_bar.update(1)
                     progress_bar.set_description(f"Prefilled {total_prefilled_text_tokens} text tokens, generated {total_generated_speech_tokens} speech tokens, current step ({step} / {tts_lm_generation_config.max_length})")
+                
+                # Update external callback
+                if kwargs.get('progress_callback') is not None:
+                    kwargs['progress_callback'](1)
 
                 tts_lm_model_inputs = self.prepare_inputs_for_generation(tts_lm_input_ids, **tts_lm_model_kwargs)
                 tts_lm_additional_inputs = {
@@ -656,7 +677,7 @@ class VibeVoiceStreamingForConditionalGenerationInference(VibeVoiceStreamingPreT
                         tts_lm_outputs, tts_lm_model_kwargs, is_encoder_decoder=False,
                     )
 
-                tts_lm_negative_input_ids = torch.cat([tts_lm_negative_input_ids, torch.ones_like(tts_lm_input_ids[:, -1:])], dim=-1)
+                tts_lm_negative_input_ids = torch.cat([tts_lm_negative_input_ids, self.generation_config.speech_diffusion_id * torch.ones_like(tts_lm_input_ids[:, -1:])], dim=-1)
                 tts_lm_negative_model_inputs = self.prepare_inputs_for_generation(tts_lm_negative_input_ids, **tts_lm_negative_model_kwargs)
                 # Forward negative pass through the model
                 tts_lm_negative_additional_inputs = {
