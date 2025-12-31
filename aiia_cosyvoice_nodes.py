@@ -307,22 +307,6 @@ class AIIA_CosyVoice_ModelLoader:
                 import types
                 model_instance.frontend._extract_speech_feat = types.MethodType(patched_extract_speech_feat, model_instance.frontend)
                 print("[AIIA] Successfully patched V1 frontend _extract_speech_feat.")
-
-            # --- CRITICAL: Monkeypatch Frontend for V1 Instruct Gender Fix ---
-            if not is_v3 and not is_v2:
-                print(f"[AIIA] Patching 300M-Series Frontend to keep LLM Embedding (Fixes Gender)...")
-                def patched_frontend_instruct(frontend_self, tts_text, spk_id, instruct_text):
-                    # Official V1 Instruct deletes llm_embedding, relying solely on text.
-                    # This often fails/defaults to female. We keep it to lock the identity to spk_id.
-                    model_input = frontend_self.frontend_sft(tts_text, spk_id)
-                    instruct_text_token, instruct_text_token_len = frontend_self._extract_text_token(instruct_text)
-                    model_input['prompt_text'] = instruct_text_token
-                    model_input['prompt_text_len'] = instruct_text_token_len
-                    return model_input
-                
-                import types
-                model_instance.frontend.frontend_instruct = types.MethodType(patched_frontend_instruct, model_instance.frontend)
-                print("[AIIA] Successfully patched V1 frontend_instruct for ALL V1 flavors.")
                 
         except ImportError:
              # Fallback if library is old
@@ -671,14 +655,20 @@ class AIIA_CosyVoice_TTS:
                 if spk_id not in available_spks:
                     raise ValueError(f"Speaker ID '{spk_id}' not found. Available: {available_spks if available_spks else 'None (Zero-Shot model)'}")
             elif reference_audio is None:
-                if available_spks:
+                # --- V1 (300M) Special Handling for Gender ---
+                if not is_v3 and not is_v2 and (is_instruct or is_base) and base_gender in ["Male", "Female"]:
+                    # Force Zero-Shot fallback for Instruct/Base models to ensure deep male voice.
+                    # As discovered in audit, Instruct model built-in IDs can be female-biased.
+                    use_seed_fallback = True
+                    print(f"[AIIA] V1 { 'Instruct' if is_instruct else 'Base' } detected. Forcing Zero-Shot fallback for {base_gender} stability.")
+                
+                elif available_spks:
+                    # SFT mode path or confirmed good IDs
                     # Improve auto-selection based on base_gender
-                    # Prioritize both Chinese and English keywords
                     gender_keyword = "男" if base_gender == "Male" else "女"
                     gender_en = "male" if base_gender == "Male" else "female"
                     matching_spks = [s for s in available_spks if gender_keyword in s or gender_en in s.lower()]
                     
-                    # If multiple, favor the one that matches base_gender specifically (e.g. avoid 'female' matching 'male')
                     if base_gender == "Male":
                         matching_spks = [s for s in matching_spks if "female" not in s.lower()]
                     
@@ -756,25 +746,31 @@ class AIIA_CosyVoice_TTS:
                         # For V1, prompt_text is REQUIRED to be accurate.
                         p_text = ""
                         if use_seed_fallback:
-                            # Try finding a .txt for the seed, else use hardcoded ONLY for female (official asset copy)
-                            txt_path = raw_seed_path.rsplit('.', 1)[0] + ".txt"
-                            if os.path.exists(txt_path):
-                                try:
-                                    with open(txt_path, 'r', encoding='utf-8') as f:
-                                        p_text = f.read().strip()
-                                except: pass
-                            elif base_gender == "Female":
-                                p_text = "希望你以后能够做的比我还好呦。"
-                            elif base_gender == "Male":
-                                # Check for hq transcript first
+                            if base_gender == "Male":
+                                # Check for hq transcript first as a fallback
                                 hq_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male_hq.txt")
                                 if os.path.exists(hq_txt_path):
-                                    with open(hq_txt_path, 'r', encoding='utf-8') as f:
-                                        p_text = f.read().strip()
-                                        print(f"[AIIA] Loaded male seed transcript: {p_text}")
-                                else:
-                                    p_text = "我都一年没吃苹果了,到超市偷了一袋苹果,大家觉得这不道歉你一年没吃苹果,就能偷苹果了"
-                        
+                                    try:
+                                        with open(hq_txt_path, 'r', encoding='utf-8') as f:
+                                            p_text = f.read().strip()
+                                    except: pass
+                                
+                                if not p_text:
+                                    p_text = "希望你以后能够做的比我还好呦。"
+                            elif base_gender == "Female":
+                                p_text = "希望你以后能够做的比我还好呦。"
+                            else:
+                                # Generic fallback
+                                p_text = "希望你以后能够做的比我还好呦。"
+                            
+                        if not is_v3 and not is_v2: # V1 Zero-Shot path
+                            if final_instruct:
+                                # Prepend instruction to seed transcript for Hybrid Instruct support
+                                p_text = f"{final_instruct} {p_text}"
+                                print(f"[AIIA] V1 Hybrid Instruct set: {p_text[:80]}...")
+                                # Clear effective_spk to ensure zero_shot doesn't use SFT logic later
+                                # But we need its ID for inference_zero_shot signature if we use high-level AutoModel (which we don't here)
+                                # effective_spk is used as spk_id placeholder in seed logic below
                         output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=speed)
                     
                     all_speech = [chunk['tts_speech'] for chunk in output]
