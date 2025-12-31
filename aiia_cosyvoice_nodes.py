@@ -493,13 +493,15 @@ class AIIA_CosyVoice_TTS:
                 "tts_text": ("STRING", {"multiline": True, "default": "你好，这是 CosyVoice 3.0 的全能模式测试。"}),
                 "提示2_音色描述": ("STRING", {"default": "🎨 第二步：在此输入对声音的文字描述 (Voice Description)", "is_label": True}),
                 "instruct_text": ("STRING", {"multiline": True, "default": "一个沉稳、磁性的成熟男性声音，语法标准，情感饱满。"}),
+                "base_timbre": (["Female", "Male"], {"default": "Female", "tooltip": "基础音色（仅在无参考音频时生效）。"}),
+                "dialect": (["None", "广东话 (Cantonese)", "东北话 (Northeastern)", "四川话 (Sichuan)", "河南话 (Henan)", "天津话 (Tianjin)", "上海话 (Shanghai)", "山东话 (Shandong)", "湖北话 (Hubei)", "湖南话 (Hunan)", "陕西话 (Shaanxi)", "山西话 (Shanxi)", "甘肃话 (Gansu)", "宁夏话 (Ningxia)", "闽南话 (Hokkien)", "贵州话 (Guizhou)", "云南话 (Yunnan)", "江西话 (Jiangxi)"], {"default": "None"}),
+                "emotion": (["None", "开心 (Happy)", "伤心 (Sad)", "生气 (Angry)", "机器人的方式 (Robotic)", "小猪佩奇风格 (Peppa Pig)"], {"default": "None"}),
                 "spk_id": ("STRING", {"default": "", "tooltip": "固定音色 ID (如 pure_1)。对于 0.5B/V3 等 Zero-Shot 模型，此项通常为空，需配合参考音频使用。"}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
             },
             "optional": {
                 "reference_audio": ("AUDIO",),
-                "base_timbre": (["Female", "Male"], {"default": "Female", "tooltip": "Base voice timbre to use when no reference audio is provided (Instruct mode)."}),
             }
         }
 
@@ -508,7 +510,7 @@ class AIIA_CosyVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Synthesis"
 
-    def generate(self, model, tts_text, instruct_text, spk_id, speed, seed, reference_audio=None, base_timbre="Female", **kwargs):
+    def generate(self, model, tts_text, instruct_text, spk_id, speed, seed, dialect="None", emotion="None", reference_audio=None, base_timbre="Female", **kwargs):
         cosyvoice_model = model["model"]
         sample_rate = cosyvoice_model.sample_rate
 
@@ -591,16 +593,30 @@ class AIIA_CosyVoice_TTS:
                     if is_v3 or is_v2:
                         print(f"[AIIA] CosyVoice V3/V2 Core: Multi-modal Inference.")
                         
-                        modified_instruct = instruct_text
-                        if instruct_text and "<|endofprompt|>" not in instruct_text:
-                            # CosyVoice 3 (0.5B) expects a system prompt and a separator
-                            # Example: "You are a helpful assistant. 用四川话说这句话<|endofprompt|>"
-                            modified_instruct = f"You are a helpful assistant. {instruct_text}<|endofprompt|>"
-                            print(f"[AIIA] Applied V3 Instruction Formatting: {modified_instruct[:60]}...")
-                        elif instruct_text:
-                            print(f"[AIIA] Using Raw Instruction: {instruct_text[:50]}...")
+                        # --- Preset Assembly ---
+                        preset_instructs = []
+                        if dialect != "None":
+                            preset_instructs.append(f"请用{dialect.split(' ')[0]}表达。")
+                        if emotion != "None":
+                            clean_emo = emotion.split(" ")[0]
+                            if "机器人" in clean_emo:
+                                preset_instructs.append("你可以尝试用机器人的方式解答吗？")
+                            elif "小猪佩奇" in clean_emo:
+                                preset_instructs.append("我想体验一下小猪佩奇风格，可以吗？")
+                            else:
+                                preset_instructs.append(f"请非常{clean_emo}地说一句话。")
+                                
+                        combined_custom = " ".join(preset_instructs)
+                        if instruct_text:
+                            combined_custom = f"{combined_custom} {instruct_text}".strip()
                         
-                        # Ensure we use inference_instruct2 which is the correct way for Instruct-ZeroShot (0.5B)
+                        modified_instruct = combined_custom
+                        if combined_custom and "<|endofprompt|>" not in combined_custom:
+                            modified_instruct = f"You are a helpful assistant. {combined_custom}<|endofprompt|>"
+                            print(f"[AIIA] Applied V3 Instruction Formatting: {modified_instruct[:80]}...")
+                        elif combined_custom:
+                            print(f"[AIIA] Using Raw Instruction: {combined_custom[:50]}...")
+                        
                         output = cosyvoice_model.inference_instruct2(
                             tts_text=tts_text, 
                             instruct_text=modified_instruct, 
@@ -610,10 +626,11 @@ class AIIA_CosyVoice_TTS:
                             speed=speed
                         )
                     else:
-                        if hasattr(cosyvoice_model, 'inference_zero_shot'):
-                             output = cosyvoice_model.inference_zero_shot(tts_text, ref_path, stream=False, speed=speed)
+                        # V1 / SFT logic
+                        if instruct_text:
+                            output = cosyvoice_model.inference_instruct(tts_text=tts_text, spk_id=spk_id, instruct_text=instruct_text, stream=False, speed=speed)
                         else:
-                             output = cosyvoice_model.inference_vc(source_wav=None, prompt_wav=ref_path, stream=False, speed=speed)
+                            output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text="", prompt_wav=ref_path, stream=False, speed=speed)
                     
                     all_speech = [chunk['tts_speech'] for chunk in output]
                     final_waveform = torch.cat(all_speech, dim=-1)
