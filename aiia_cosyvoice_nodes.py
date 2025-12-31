@@ -308,8 +308,21 @@ class AIIA_CosyVoice_ModelLoader:
                 model_instance.frontend._extract_speech_feat = types.MethodType(patched_extract_speech_feat, model_instance.frontend)
                 print("[AIIA] Successfully patched V1 frontend _extract_speech_feat.")
 
-            # Note: We rely on text hints for V1-Instruct gender, as the official 300M Instruct model 
-            # ignores the embedding when the instruction token is active.
+            # --- CRITICAL: Monkeypatch Frontend for V1 Instruct Gender Fix ---
+            if not is_v3 and not is_v2:
+                print(f"[AIIA] Patching 300M-Series Frontend to keep LLM Embedding (Fixes Gender)...")
+                def patched_frontend_instruct(frontend_self, tts_text, spk_id, instruct_text):
+                    # Official V1 Instruct deletes llm_embedding, relying solely on text.
+                    # This often fails/defaults to female. We keep it to lock the identity to spk_id.
+                    model_input = frontend_self.frontend_sft(tts_text, spk_id)
+                    instruct_text_token, instruct_text_token_len = frontend_self._extract_text_token(instruct_text)
+                    model_input['prompt_text'] = instruct_text_token
+                    model_input['prompt_text_len'] = instruct_text_token_len
+                    return model_input
+                
+                import types
+                model_instance.frontend.frontend_instruct = types.MethodType(patched_frontend_instruct, model_instance.frontend)
+                print("[AIIA] Successfully patched V1 frontend_instruct for ALL V1 flavors.")
                 
         except ImportError:
              # Fallback if library is old
@@ -600,7 +613,8 @@ class AIIA_CosyVoice_TTS:
                 e_eng = emotion_map.get(emotion_core)
                 
                 # Prefix gender hint to fix the "always female" bug in V1 Instruct
-                gender_prefix = "A male speaker" if base_gender == "Male" else "A female speaker"
+                # Even with the embedding patch, text hints help the LLM align.
+                gender_prefix = "A mature male speaker" if base_gender == "Male" else "A sweet female speaker"
                 
                 if d_eng and e_eng: parts.append(f"{gender_prefix} with a {d_eng} in a {e_eng} mood.")
                 elif d_eng: parts.append(f"{gender_prefix} with a {d_eng}.")
