@@ -113,8 +113,7 @@ class AIIA_CosyVoice_ModelLoader:
                     "FunAudioLLM/CosyVoice2-0.5B",
                     "CosyVoice-300M",
                     "CosyVoice-300M-SFT", 
-                    "CosyVoice-300M-Instruct",
-                    "CosyVoice-ttsfrd"
+                    "CosyVoice-300M-Instruct"
                 ],),
                 "use_fp16": ("BOOLEAN", {"default": True}),
                 "use_rl_model": ("BOOLEAN", {"default": True, "tooltip": "Use llm.rl.pt (Reinforcement Learning optimized) if available. Only for V3/V2 models."}),
