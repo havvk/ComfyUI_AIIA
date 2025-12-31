@@ -177,6 +177,9 @@ class AIIA_CosyVoice_ModelLoader:
         has_valid_config = os.path.exists(yaml_path) or os.path.exists(yaml3_path)
 
         # Download if missing or incomplete
+        if "ttsfrd" in model_name.lower() and not has_valid_config:
+            raise ValueError(f"'{model_name}' is a system dependency package, not a loadable CosyVoice model. Please select a valid model (e.g., Fun-CosyVoice3-0.5B-2512).")
+
         if not os.path.exists(model_dir) or not has_valid_config or not has_valid_model_file:
             print(f"[AIIA] Model missing or incomplete. Downloading {model_name} to {model_dir}...")
             try:
