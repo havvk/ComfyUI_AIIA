@@ -582,13 +582,20 @@ class AIIA_CosyVoice_TTS:
 
                     if is_v3 or is_v2:
                         print(f"[AIIA] CosyVoice V3/V2 Core: Multi-modal Inference.")
-                        if instruct_text:
-                            print(f"[AIIA] Using Instruction: {instruct_text[:50]}...")
+                        
+                        modified_instruct = instruct_text
+                        if instruct_text and "<|endofprompt|>" not in instruct_text:
+                            # CosyVoice 3 (0.5B) expects a system prompt and a separator
+                            # Example: "You are a helpful assistant. 用四川话说这句话<|endofprompt|>"
+                            modified_instruct = f"You are a helpful assistant. {instruct_text}<|endofprompt|>"
+                            print(f"[AIIA] Applied V3 Instruction Formatting: {modified_instruct[:60]}...")
+                        elif instruct_text:
+                            print(f"[AIIA] Using Raw Instruction: {instruct_text[:50]}...")
                         
                         # Ensure we use inference_instruct2 which is the correct way for Instruct-ZeroShot (0.5B)
                         output = cosyvoice_model.inference_instruct2(
                             tts_text=tts_text, 
-                            instruct_text=instruct_text, 
+                            instruct_text=modified_instruct, 
                             prompt_wav=ref_path, 
                             zero_shot_spk_id=spk_id, 
                             stream=False, 
