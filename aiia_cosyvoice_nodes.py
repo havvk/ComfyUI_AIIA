@@ -311,11 +311,14 @@ class AIIA_CosyVoice_ModelLoader:
             if not is_v3 and not is_v2:
                 print(f"[AIIA] Patching V1 Frontend for Identity Injection...")
                 def safe_frontend_instruct(self, tts_text, spk_id, instruct_text):
-                    # Official V1 Instruct deletes llm_embedding, relying solely on text.
-                    # We check if a hidden '_injected_emb' is set to force a specific identity.
-                    model_input = self.frontend_sft(tts_text, spk_id)
+                    # Use a copy to avoid polluting the global spk2info cache
+                    model_input = self.frontend_sft(tts_text, spk_id).copy()
+                    
                     if hasattr(self, '_injected_llm_emb') and self._injected_llm_emb is not None:
-                        model_input['llm_embedding'] = self._injected_llm_emb.to(self.device).detach()
+                        # Inject BOTH LLM and Flow embeddings to ensure consistent gender
+                        target_emb = self._injected_llm_emb.to(self.device).detach()
+                        model_input['llm_embedding'] = target_emb
+                        model_input['flow_embedding'] = target_emb
                     
                     instruct_text_token, instruct_text_token_len = self._extract_text_token(instruct_text)
                     model_input['prompt_text'] = instruct_text_token
@@ -787,8 +790,8 @@ class AIIA_CosyVoice_TTS:
                             # It causes babbling/hallucination.
                             pass
 
-                        # V1 Speed Boost (1.1x) to address "slow" feedback
-                        v1_speed_boost = 1.1 if (not is_v3 and not is_v2) else 1.0
+                        # V1 Speed Handling: Only boost if using the "slow" male seed fallback
+                        v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male" and use_seed_fallback) else 1.0
                         effective_speed = speed * v1_speed_boost
                         output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
                     
@@ -833,8 +836,9 @@ class AIIA_CosyVoice_TTS:
                         if hasattr(cosyvoice_model.frontend, '_injected_llm_emb'):
                             cosyvoice_model.frontend._injected_llm_emb = None
 
-                    # V1 Speed Boost (1.1x) to address "slow" feedback
-                    effective_speed = speed * 1.1
+                    # V1 Speed Handling: Only boost if using the "slow" male fallback (which uses seed_male_hq)
+                    v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male") else 1.0
+                    effective_speed = speed * v1_speed_boost
 
                     try:
                         if is_instruct:
