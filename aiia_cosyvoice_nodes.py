@@ -593,18 +593,28 @@ class AIIA_CosyVoice_TTS:
                     if is_v3 or is_v2:
                         print(f"[AIIA] CosyVoice V3/V2 Core: Multi-modal Inference.")
                         
-                        # --- Preset Assembly ---
+                        # --- Preset Assembly (Fusion Logic) ---
                         preset_instructs = []
-                        if dialect != "None (Auto)":
-                            preset_instructs.append(f"请用{dialect.split(' ')[0]}表达。")
-                        if emotion != "None (Neutral)":
-                            clean_emo = emotion.split(" ")[0]
-                            if "机器人" in clean_emo:
+                        dialect_core = dialect.split(' ')[0] if dialect != "None (Auto)" else None
+                        emotion_core = emotion.split(' ')[0] if emotion != "None (Neutral)" else None
+                        
+                        if dialect_core and emotion_core:
+                            # Combined case: Merge into one sentence for better LLM attention
+                            if "机器人" in emotion_core:
+                                preset_instructs.append(f"请用{dialect_core}，并且尝试用机器人的方式解答。")
+                            elif "小猪佩奇" in emotion_core:
+                                preset_instructs.append(f"请用{dialect_core}，并且我想体验一下小猪佩奇风格。")
+                            else:
+                                preset_instructs.append(f"请用{dialect_core}，并且非常{emotion_core}地说一句话。")
+                        elif dialect_core:
+                            preset_instructs.append(f"请用{dialect_core}表达。")
+                        elif emotion_core:
+                            if "机器人" in emotion_core:
                                 preset_instructs.append("你可以尝试用机器人的方式解答吗？")
-                            elif "小猪佩奇" in clean_emo:
+                            elif "小猪佩奇" in emotion_core:
                                 preset_instructs.append("我想体验一下小猪佩奇风格，可以吗？")
                             else:
-                                preset_instructs.append(f"请非常{clean_emo}地说一句话。")
+                                preset_instructs.append(f"请非常{emotion_core}地说一句话。")
                                 
                         combined_custom = " ".join(preset_instructs)
                         if instruct_text:
