@@ -186,54 +186,46 @@ class AIIA_CosyVoice_ModelLoader:
         else:
              print(f"[AIIA] Model verified at {model_dir}")
              
-        # --- RL Model Switching Logic (Symlink Strategy) ---
+        # --- RL Model Switching Logic (Strict Symlink Strategy) ---
         llm_pt = os.path.join(model_dir, "llm.pt")
         llm_rl = os.path.join(model_dir, "llm.rl.pt")
         llm_base = os.path.join(model_dir, "llm.base.pt")
 
-        # 1. Normalize: Ensure we have a persistent llm.base.pt
-        if not os.path.exists(llm_base) and os.path.exists(llm_pt):
-            # If llm.pt is a real file (not a link), it's our base model. Rename it.
-            if not os.path.islink(llm_pt):
-                print(f"[AIIA] One-time setup: Renaming original llm.pt to llm.base.pt")
+        # 1. Ensure we have a persistent llm.base.pt backup if llm.pt is a real file
+        if os.path.exists(llm_pt) and not os.path.islink(llm_pt):
+             if not os.path.exists(llm_base):
+                print(f"[AIIA] Initializing: Renaming original llm.pt to llm.base.pt")
                 os.rename(llm_pt, llm_base)
+             else:
+                # If both exist and llm.pt is real, something is messy. Delete llm.pt to make room for link
+                os.remove(llm_pt)
 
-        # 2. Determine Target
-        target_source = llm_base
-        if use_rl_model:
-            if os.path.exists(llm_rl):
-                target_source = llm_rl
-                print(f"[AIIA] RL Mode Active: Using {os.path.basename(llm_rl)}")
-            else:
-                print(f"[AIIA] Warning: RL Mode requested but llm.rl.pt not found. Fallback to Base.")
-        else:
-             print(f"[AIIA] Base Mode Active: Using {os.path.basename(llm_base)}")
-
-        # 3. Create/Update Symlink llm.pt -> target_source
+        # 2. Determine target based on use_rl_model
+        target_source = llm_rl if use_rl_model and os.path.exists(llm_rl) else llm_base
+        
+        # 3. Aggressively Manage Symlink
         if os.path.exists(target_source):
-            # Check if link needs update
-            need_update = True
+            target_basename = os.path.basename(target_source)
+            current_target = None
+            
             if os.path.exists(llm_pt):
                 if os.path.islink(llm_pt):
-                    current_link = os.readlink(llm_pt)
-                    if current_link == os.path.basename(target_source):
-                        need_update = False
-                    else:
-                         os.remove(llm_pt) # Wrong link
+                    current_target = os.readlink(llm_pt)
                 else:
-                    os.remove(llm_pt) 
-
-            if need_update:
-                print(f"[AIIA] Linking llm.pt -> {os.path.basename(target_source)}")
+                    os.remove(llm_pt) # Real file blocking link
+            
+            if current_target != target_basename:
+                print(f"[AIIA] Model Switching: Linking llm.pt -> {target_basename}")
+                if os.path.exists(llm_pt): os.remove(llm_pt)
                 try:
-                    # Use relative symlink for portability
-                    os.symlink(os.path.basename(target_source), llm_pt)
-                except OSError:
-                    # Fallback to copy if symlink fails (e.g. Windows non-admin)
+                    os.symlink(target_basename, llm_pt)
+                except Exception:
+                    # Fallback to copy if symlink fails
                     import shutil
-                    print("[AIIA] Symlink failed. Copying file instead (slower)...")
                     shutil.copy2(target_source, llm_pt)
-        # -------------------------------
+            else:
+                print(f"[AIIA] Model Status: llm.pt already linked to {target_basename}")
+        # --------------------------------------------------------
 
         # Load Model
         print(f"Loading CosyVoice model from {model_dir}...")
@@ -522,7 +514,14 @@ class AIIA_CosyVoice_TTS:
             is_v3 = "CosyVoice3" in type(cosyvoice_model).__name__
             is_v2 = "CosyVoice2" in type(cosyvoice_model).__name__
             
-            # --- Speaker Identity Validation & Fallback ---
+            # --- Model Version Verification ---
+            llm_pt = os.path.join(cosyvoice_model.model_dir, "llm.pt")
+            active_model = "Unknown"
+            if os.path.islink(llm_pt):
+                active_model = os.readlink(llm_pt)
+            print(f"[AIIA] CosyVoice Active LLM: {active_model}")
+        
+        # --- Speaker Identity Validation & Fallback ---
             available_spks = list(cosyvoice_model.frontend.spk2info.keys())
             use_seed_fallback = False
             
@@ -570,7 +569,10 @@ class AIIA_CosyVoice_TTS:
                         raise FileNotFoundError(f"Internal seed audio not found at {ref_path}. Please check installation.")
 
                     if is_v3 or is_v2:
-                        print(f"[AIIA] CosyVoice V3/V2 Core: Multi-modal Inference. Description: {instruct_text[:30]}...")
+                        print(f"[AIIA] CosyVoice V3/V2 Core: Multi-modal Inference.")
+                        if instruct_text:
+                            print(f"[AIIA] Using Instruction: {instruct_text[:50]}...")
+                        
                         # Ensure we use inference_instruct2 which is the correct way for Instruct-ZeroShot (0.5B)
                         output = cosyvoice_model.inference_instruct2(
                             tts_text=tts_text, 
