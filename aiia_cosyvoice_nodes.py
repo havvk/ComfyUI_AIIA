@@ -681,9 +681,19 @@ class AIIA_CosyVoice_TTS:
                     else:
                         # V1 path: In V1, we cannot easily combine ref_audio + custom instructions in one CLI call.
                         # Always use zero_shot if we have a reference audio (including seed).
-                        # For V1, prompt_text is REQUIRED for zero-shot to work correctly.
-                        # If using the seed fallback, provide a default transcript.
-                        p_text = "希望你以后能够做的比我还好呦。" if use_seed_fallback else ""
+                        # For V1, prompt_text is REQUIRED to be accurate. Mismatch causes LLM 'max_trials 100' crash!
+                        p_text = ""
+                        if use_seed_fallback:
+                            # Try finding a .txt for the seed, else use hardcoded ONLY for female (official asset copy)
+                            txt_path = raw_seed_path.rsplit('.', 1)[0] + ".txt"
+                            if os.path.exists(txt_path):
+                                try:
+                                    with open(txt_path, 'r', encoding='utf-8') as f:
+                                        p_text = f.read().strip()
+                                except: pass
+                            elif base_gender == "Female":
+                                p_text = "希望你以后能够做的比我还好呦。"
+                        
                         output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=speed)
                     
                     all_speech = [chunk['tts_speech'] for chunk in output]
