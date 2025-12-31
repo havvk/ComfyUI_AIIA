@@ -310,8 +310,8 @@ class AIIA_CosyVoice_ModelLoader:
                 print("[AIIA] Successfully patched V1 frontend _extract_speech_feat.")
 
             # --- CRITICAL: Monkeypatch Frontend for V1 Instruct Gender Fix ---
-            if is_instruct and not is_v3 and not is_v2:
-                print(f"[AIIA] Patching 300M-Instruct Frontend to keep LLM Embedding (Fixes Gender)...")
+            if not is_v3 and not is_v2:
+                print(f"[AIIA] Patching 300M-Series Frontend to keep LLM Embedding (Fixes Gender)...")
                 def patched_frontend_instruct(frontend_self, tts_text, spk_id, instruct_text):
                     # Original logic deletes llm_embedding, causing gender failure if prompt is weak.
                     # We keep it to ensure spk_id (embedding) still provides gender hint.
@@ -323,7 +323,7 @@ class AIIA_CosyVoice_ModelLoader:
                 
                 import types
                 model_instance.frontend.frontend_instruct = types.MethodType(patched_frontend_instruct, model_instance.frontend)
-                print("[AIIA] Successfully patched V1 frontend_instruct.")
+                print("[AIIA] Successfully patched V1 frontend_instruct for ALL V1 flavors.")
                 
         except ImportError:
              # Fallback if library is old
@@ -774,9 +774,9 @@ class AIIA_CosyVoice_TTS:
                     print(f"[AIIA] V1 Routing: Model={os.path.basename(model_dir)} | SFT_ID={effective_spk} | Instruct={bool(final_instruct)}")
                     
                     # Routing logic:
-                    # 1. If instructions present, use Instruct path.
-                    # 2. If no instructions, use SFT path (bypasses prompt reading).
-                    if final_instruct:
+                    # 1. If instructions present AND model is Instruct, use Instruct path.
+                    # 2. Otherwise use SFT path to prevent prompt reading for SFT models or base models.
+                    if final_instruct and is_instruct:
                         # V1 Instruct can handle dialect/emotion if we use inference_instruct 
                         # This works for both SFT and Instruct models if they share the same LLM architecture.
                         print(f"[AIIA] Using V1 Instruct path for instructions. Note: V1 may read prompts aloud.")
@@ -784,6 +784,8 @@ class AIIA_CosyVoice_TTS:
                         v1_final_instruct = final_instruct + " ..."
                         output = cosyvoice_model.inference_instruct(tts_text, effective_spk, v1_final_instruct, stream=False, speed=speed)
                     else:
+                        if final_instruct and is_sft:
+                             print("\033[93m" + f"[AIIA] WARNING: {os.path.basename(model_dir)} (SFT) does not natively support instructions. Using SFT path to prevent reading prompts." + "\033[0m")
                         output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
@@ -792,12 +794,13 @@ class AIIA_CosyVoice_TTS:
             # --- 3. RMS Normalization ---
             # Maximize volume while maintaining natural energy balance
             if final_waveform.abs().max() > 0:
-                # Target RMS 0.15 is roughly -18 LUFS (loud but safe)
+                # Target RMS 0.22 is quite loud but usually safe for high-dynamic ranges
                 current_rms = torch.sqrt(torch.mean(final_waveform**2))
                 if current_rms > 0:
-                    scale = 0.18 / current_rms.item()
+                    target_rms = 0.22
+                    scale = target_rms / current_rms.item()
                     final_waveform = final_waveform * scale
-                    print(f"[AIIA] CosyVoice: Applied RMS Normalization (RMS: {current_rms.item():.4f} -> 0.18).")
+                    print(f"[AIIA] CosyVoice: Applied RMS Normalization (RMS: {current_rms.item():.4f} -> {target_rms}).")
                 
                 # Safety cap to prevent hard digital clipping
                 if final_waveform.abs().max() > 0.99:
