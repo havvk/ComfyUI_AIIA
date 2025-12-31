@@ -499,6 +499,7 @@ class AIIA_CosyVoice_TTS:
             },
             "optional": {
                 "reference_audio": ("AUDIO",),
+                "base_timbre": (["Female", "Male"], {"default": "Female", "tooltip": "Base voice timbre to use when no reference audio is provided (Instruct mode)."}),
             }
         }
 
@@ -507,7 +508,7 @@ class AIIA_CosyVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Synthesis"
 
-    def generate(self, model, tts_text, instruct_text, spk_id, speed, seed, reference_audio=None, **kwargs):
+    def generate(self, model, tts_text, instruct_text, spk_id, speed, seed, reference_audio=None, base_timbre="Female", **kwargs):
         cosyvoice_model = model["model"]
         sample_rate = cosyvoice_model.sample_rate
 
@@ -567,13 +568,20 @@ class AIIA_CosyVoice_TTS:
                         sf.write(ref_path, ref_np, sample_rate, subtype='FLOAT')
                         cleanup_ref = True
                 else:
-                    # Pure Instruct Fallback: Use built-in asset
-                    print(f"[AIIA] CosyVoice: Pure Instruct Mode using neutral seed.")
-                    ref_path = os.path.join(os.path.dirname(__file__), "libs", "CosyVoice", "asset", "zero_shot_prompt.wav")
+                    # Pure Instruct Fallback: Use built-in asset based on selection
+                    assets_dir = os.path.join(os.path.dirname(__file__), "assets")
+                    if base_timbre == "Male":
+                        ref_path = os.path.join(assets_dir, "seed_male.wav")
+                    else:
+                        ref_path = os.path.join(assets_dir, "seed_female.wav")
+                    
                     if not os.path.exists(ref_path):
-                        # Fallback for server structure if different
-                        alt_path = "/app/ComfyUI/custom_nodes/ComfyUI_AIIA/libs/CosyVoice/asset/zero_shot_prompt.wav"
-                        ref_path = alt_path if os.path.exists(alt_path) else ref_path
+                        # Fallback for server structure or library default
+                        lib_asset = os.path.join(os.path.dirname(__file__), "libs", "CosyVoice", "asset", "zero_shot_prompt.wav")
+                        server_asset = "/app/ComfyUI/custom_nodes/ComfyUI_AIIA/libs/CosyVoice/asset/zero_shot_prompt.wav"
+                        ref_path = lib_asset if os.path.exists(lib_asset) else server_asset
+                        
+                    print(f"[AIIA] CosyVoice: Pure Instruct Mode using {base_timbre} seed.")
                     cleanup_ref = False
 
                 try:
