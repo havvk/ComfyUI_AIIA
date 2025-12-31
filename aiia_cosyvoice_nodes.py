@@ -246,12 +246,17 @@ class AIIA_CosyVoice_ModelLoader:
             from cosyvoice.cli.cosyvoice import CosyVoice as CV1, CosyVoice2 as CV2, CosyVoice3 as CV3
             
             # Smart loading logic
+            is_v3 = False
+            is_v2 = False
+            
             if os.path.exists(os.path.join(model_dir, "cosyvoice3.yaml")):
                 print(f"[AIIA] Detected V3 Model. Using CosyVoice3 class (fp16={use_fp16}).")
                 model_instance = CV3(model_dir, fp16=use_fp16)
-            elif os.path.exists(os.path.join(model_dir, "cosyvoice2.yaml")):
+                is_v3 = True
+            elif os.path.exists(os.path.join(model_dir, "cosyvoice2.yaml")) or os.path.exists(os.path.join(model_dir, "flow.pt")):
                 print(f"[AIIA] Detected V2 Model. Using CosyVoice2 class (fp16={use_fp16}).")
                 model_instance = CV2(model_dir, fp16=use_fp16)
+                is_v2 = True
             else:
                 print(f"[AIIA] Detected V1 Model (or default). Using CosyVoice class (fp16={use_fp16}).")
                 # V1 CosyVoice might not support fp16 arg in all versions, but typical implementations do or ignore it.
@@ -264,6 +269,16 @@ class AIIA_CosyVoice_ModelLoader:
                 except TypeError:
                      print("[AIIA] V1 Class rejected fp16 argument. Initializing default.")
                      model_instance = CV1(model_dir)
+
+            # --- CRITICAL: Clear Matcha-TTS Internal Caches ---
+            # This prevents STFT window size mismatch errors when switching between 22k and 24k models.
+            try:
+                import matcha.utils.audio as matcha_audio
+                if hasattr(matcha_audio, "mel_basis"): matcha_audio.mel_basis.clear()
+                if hasattr(matcha_audio, "hann_window"): matcha_audio.hann_window.clear()
+                print("[AIIA] Cleared Matcha-TTS global audio caches for multi-model stability.")
+            except Exception as e:
+                print(f"[AIIA] Warning: Could not clear Matcha cache: {e}")
                 
         except ImportError:
              # Fallback if library is old
@@ -273,7 +288,7 @@ class AIIA_CosyVoice_ModelLoader:
            raise RuntimeError(f"Failed to initialize CosyVoice model: {e}")
            
         # IMPORTANT: The TTS node expects version flags.
-        return ({"model": model_instance, "model_dir": model_dir, "is_v3": (is_v3 if 'is_v3' in locals() else False), "is_v2": (os.path.exists(os.path.join(model_dir, "cosyvoice2.yaml")))},)
+        return ({"model": model_instance, "model_dir": model_dir, "is_v3": is_v3, "is_v2": is_v2},)
 
 class AIIA_CosyVoice_VoiceConversion:
     @classmethod
@@ -584,19 +599,31 @@ class AIIA_CosyVoice_TTS:
                 else:
                     # Pure Instruct Fallback: Use built-in asset based on selection
                     assets_dir = os.path.join(os.path.dirname(__file__), "assets")
-                    if base_gender == "Male":
-                        ref_path = os.path.join(assets_dir, "seed_male.wav")
-                    else:
-                        ref_path = os.path.join(assets_dir, "seed_female.wav")
+                    raw_seed_path = os.path.join(assets_dir, "seed_male.wav" if base_gender == "Male" else "seed_female.wav")
                     
-                    if not os.path.exists(ref_path):
+                    if not os.path.exists(raw_seed_path):
                         # Fallback for server structure or library default
-                        lib_asset = os.path.join(os.path.dirname(__file__), "libs", "CosyVoice", "asset", "zero_shot_prompt.wav")
-                        server_asset = "/app/ComfyUI/custom_nodes/ComfyUI_AIIA/libs/CosyVoice/asset/zero_shot_prompt.wav"
-                        ref_path = lib_asset if os.path.exists(lib_asset) else server_asset
+                        raw_seed_path = os.path.join(os.path.dirname(__file__), "libs", "CosyVoice", "asset", "zero_shot_prompt.wav")
+                    
+                    # --- CRITICAL: Always Resample Seed to Model Sample Rate ---
+                    # Built-in seeds might be 22050Hz, but V2/V3 models expect 24000Hz.
+                    # Mismatch here can cause the "STFT window length" RuntimeError.
+                    import torchaudio
+                    seed_wav, seed_sr = torchaudio.load(raw_seed_path)
+                    if seed_sr != sample_rate:
+                        print(f"[AIIA] Resampling seed audio from {seed_sr}Hz to {sample_rate}Hz...")
+                        seed_wav = torchaudio.transforms.Resample(seed_sr, sample_rate)(seed_wav)
+                    
+                    if seed_wav.abs().max() > 1.0: seed_wav = seed_wav / seed_wav.abs().max()
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_seed:
+                        ref_path = tmp_seed.name
+                        seed_np = seed_wav.squeeze().cpu().numpy()
+                        if seed_np.ndim == 2: seed_np = seed_np.T
+                        sf.write(ref_path, seed_np, sample_rate, subtype='FLOAT')
+                        cleanup_ref = True
                         
-                    print(f"[AIIA] CosyVoice: Pure Instruct Mode using {base_gender} seed.")
-                    cleanup_ref = False
+                    print(f"[AIIA] CosyVoice: Pure Instruct Mode using {base_gender} seed ({sample_rate}Hz).")
 
                 try:
                     if not os.path.exists(ref_path):
