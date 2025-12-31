@@ -494,8 +494,8 @@ class AIIA_CosyVoice_TTS:
                 "提示2_音色描述": ("STRING", {"default": "🎨 第二步：在此输入对声音的文字描述 (Voice Description)", "is_label": True}),
                 "instruct_text": ("STRING", {"multiline": True, "default": "一个沉稳、磁性的成熟男性声音，语法标准，情感饱满。"}),
                 "base_timbre": (["Female", "Male"], {"default": "Female", "tooltip": "基础音色（仅在无参考音频时生效）。"}),
-                "dialect": (["None", "广东话 (Cantonese)", "东北话 (Northeastern)", "四川话 (Sichuan)", "河南话 (Henan)", "天津话 (Tianjin)", "上海话 (Shanghai)", "山东话 (Shandong)", "湖北话 (Hubei)", "湖南话 (Hunan)", "陕西话 (Shaanxi)", "山西话 (Shanxi)", "甘肃话 (Gansu)", "宁夏话 (Ningxia)", "闽南话 (Hokkien)", "贵州话 (Guizhou)", "云南话 (Yunnan)", "江西话 (Jiangxi)"], {"default": "None"}),
-                "emotion": (["None", "开心 (Happy)", "伤心 (Sad)", "生气 (Angry)", "机器人的方式 (Robotic)", "小猪佩奇风格 (Peppa Pig)"], {"default": "None"}),
+                "dialect": (["None (Auto)", "广东话 (Cantonese)", "东北话 (Northeastern)", "四川话 (Sichuan)", "河南话 (Henan)", "天津话 (Tianjin)", "上海话 (Shanghai)", "山东话 (Shandong)", "湖北话 (Hubei)", "湖南话 (Hunan)", "陕西话 (Shaanxi)", "山西话 (Shanxi)", "甘肃话 (Gansu)", "宁夏话 (Ningxia)", "闽南话 (Hokkien)", "贵州话 (Guizhou)", "云南话 (Yunnan)", "江西话 (Jiangxi)"], {"default": "None (Auto)", "tooltip": "预设方言指令。会自动添加在自定义描述之前。若与自定义文字描述冲突，模型表现将不可预测。"}),
+                "emotion": (["None (Neutral)", "开心 (Happy)", "伤心 (Sad)", "生气 (Angry)", "机器人的方式 (Robotic)", "小猪佩奇风格 (Peppa Pig)"], {"default": "None (Neutral)", "tooltip": "预设情感指令。会自动添加在自定义描述之前。"}),
                 "spk_id": ("STRING", {"default": "", "tooltip": "固定音色 ID (如 pure_1)。对于 0.5B/V3 等 Zero-Shot 模型，此项通常为空，需配合参考音频使用。"}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
@@ -595,9 +595,9 @@ class AIIA_CosyVoice_TTS:
                         
                         # --- Preset Assembly ---
                         preset_instructs = []
-                        if dialect != "None":
+                        if dialect != "None (Auto)":
                             preset_instructs.append(f"请用{dialect.split(' ')[0]}表达。")
-                        if emotion != "None":
+                        if emotion != "None (Neutral)":
                             clean_emo = emotion.split(" ")[0]
                             if "机器人" in clean_emo:
                                 preset_instructs.append("你可以尝试用机器人的方式解答吗？")
