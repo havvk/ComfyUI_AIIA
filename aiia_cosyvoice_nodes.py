@@ -580,13 +580,11 @@ class AIIA_CosyVoice_TTS:
             if instruct_text:
                 combined_custom = f"{combined_custom} {instruct_text}".strip()
             
-            # --- 2. V1-Specific Gender Hint Injection ---
-            # For V1 Instruct models, we MUST have a gender text hint because LLM stage ignores spk_embedding
+            # --- 2. V1-Specific Gender Hint Injection (REMOVED) ---
+            # NOTE: We no longer auto-inject text hints for V1 because it causes the model to read them aloud.
+            # V1 models should rely on spk_id (SFT) or reference audio (Zero-Shot) for identity.
             if not is_v3 and not is_v2 and combined_custom:
-                gender_hint = "一个磁性的男声。" if base_gender == "Male" else "一个温柔的女声。"
-                if gender_hint not in combined_custom:
-                    combined_custom = gender_hint + " " + combined_custom
-                    print(f"[AIIA] CosyVoice V1 Instruct: Applied Gender Hint -> {combined_custom[:60]}...")
+                pass # Rely on spk_id fallback or custom instruct_text if provided
 
             # --- 3. V3-Specific System Prompt & endofprompt Formatting ---
             final_instruct = combined_custom
@@ -719,6 +717,12 @@ class AIIA_CosyVoice_TTS:
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
                 final_waveform = torch.cat(all_speech, dim=-1)
+            
+            # --- 3. V1-Specific Volume Boost ---
+            # V1 (300M) models often have lower output levels than 0.5B models.
+            if not is_v3 and not is_v2:
+                final_waveform = final_waveform * 1.5
+                print(f"[AIIA] CosyVoice V1: Applied 1.5x Volume Boost.")
 
         except Exception as e:
             if isinstance(e, (ValueError, FileNotFoundError)): raise e
