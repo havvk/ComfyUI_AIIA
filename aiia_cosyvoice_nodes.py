@@ -203,6 +203,9 @@ class AIIA_CosyVoice_ModelLoader:
                 os.remove(llm_pt)
 
         # 2. Determine target based on use_rl_model
+        print(f"[AIIA] Loader Debug: use_rl_model={use_rl_model} (type: {type(use_rl_model)})")
+        print(f"[AIIA] Loader Debug: llm_rl exists: {os.path.exists(llm_rl)}")
+        
         target_source = llm_rl if use_rl_model and os.path.exists(llm_rl) else llm_base
         
         # 3. Aggressively Manage Symlink
