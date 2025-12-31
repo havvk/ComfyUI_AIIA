@@ -693,6 +693,8 @@ class AIIA_CosyVoice_TTS:
                                 except: pass
                             elif base_gender == "Female":
                                 p_text = "希望你以后能够做的比我还好呦。"
+                            elif base_gender == "Male":
+                                p_text = "我都一年没吃苹果了,到超市偷了一袋苹果,大家觉得这不道歉你一年没吃苹果,就能偷苹果了"
                         
                         output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=speed)
                     
@@ -720,6 +722,13 @@ class AIIA_CosyVoice_TTS:
                     if "SFT" in type(cosyvoice_model).__name__ or not instruct_text:
                         output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
                     else:
+                        # --- CRITICAL: Add Gender Hint for V1 Instruct ---
+                        # V1 Instruct models delete LLM embedding, so they MUST have a text gender hint.
+                        gender_hint = "一个磁性的男声。" if base_gender == "Male" else "一个温柔的女声。"
+                        if gender_hint not in instruct_text:
+                            instruct_text = gender_hint + instruct_text
+                            
+                        print(f"[AIIA] CosyVoice V1 Instruct: Applied Gender Hint -> {instruct_text}")
                         output = cosyvoice_model.inference_instruct(tts_text, effective_spk, instruct_text, stream=False, speed=speed)
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
@@ -728,8 +737,6 @@ class AIIA_CosyVoice_TTS:
         except Exception as e:
             if isinstance(e, (ValueError, FileNotFoundError)): raise e
             raise RuntimeError(f"CosyVoice generation failed: {e}")
-
-        return ({"waveform": final_waveform.unsqueeze(0).cpu(), "sample_rate": sample_rate},)
 
         return ({"waveform": final_waveform.unsqueeze(0).cpu(), "sample_rate": sample_rate},)
 
