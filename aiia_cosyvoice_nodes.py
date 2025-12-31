@@ -280,9 +280,25 @@ class AIIA_CosyVoice_ModelLoader:
                 import matcha.utils.audio as matcha_audio
                 if hasattr(matcha_audio, "mel_basis"): matcha_audio.mel_basis.clear()
                 if hasattr(matcha_audio, "hann_window"): matcha_audio.hann_window.clear()
-                print("[AIIA] Cleared Matcha-TTS global audio caches for multi-model stability.")
-            except Exception as e:
-                print(f"[AIIA] Warning: Could not clear Matcha cache: {e}")
+            except: pass
+
+            # --- CRITICAL: Monkeypatch Frontend Hardcoded 24000 ---
+            # V1 models use 22050, but official frontend hardcodes 24000 in _extract_speech_feat
+            if hasattr(model_instance, 'frontend') and not is_v3 and not is_v2:
+                print(f"[AIIA] Patching 300M Frontend SR to {model_instance.sample_rate}Hz...")
+                def patched_extract_speech_feat(frontend_self, prompt_wav):
+                    from cosyvoice.utils.file_utils import load_wav
+                    # model_instance is available in closure, or use frontend_self.feat_extractor
+                    sr = model_instance.sample_rate # 300M models are 22050
+                    speech = load_wav(prompt_wav, sr)
+                    speech_feat = frontend_self.feat_extractor(speech).squeeze(dim=0).transpose(0, 1).to(frontend_self.device)
+                    speech_feat = speech_feat.unsqueeze(dim=0)
+                    speech_feat_len = torch.tensor([speech_feat.shape[1]], dtype=torch.int32).to(frontend_self.device)
+                    return speech_feat, speech_feat_len
+                
+                import types
+                model_instance.frontend._extract_speech_feat = types.MethodType(patched_extract_speech_feat, model_instance.frontend)
+                print("[AIIA] Successfully patched V1 frontend _extract_speech_feat.")
                 
         except ImportError:
              # Fallback if library is old
@@ -641,11 +657,12 @@ class AIIA_CosyVoice_TTS:
                         # Fallback for server structure or library default
                         raw_seed_path = os.path.join(os.path.dirname(__file__), "libs", "CosyVoice", "asset", "zero_shot_prompt.wav")
                     
-                    # --- CRITICAL: Always Resample Seed to Model Sample Rate ---
-                    # Built-in seeds might be 22050Hz, but V2/V3 models expect 24000Hz.
-                    # Mismatch here can cause the "STFT window length" RuntimeError.
                     import torchaudio
                     seed_wav, seed_sr = torchaudio.load(raw_seed_path)
+                    # Mono conversion
+                    if seed_wav.shape[0] > 1:
+                        seed_wav = torch.mean(seed_wav, dim=0, keepdim=True)
+                        
                     if seed_sr != sample_rate:
                         print(f"[AIIA] Resampling seed audio from {seed_sr}Hz to {sample_rate}Hz...")
                         seed_wav = torchaudio.transforms.Resample(seed_sr, sample_rate)(seed_wav)
@@ -655,7 +672,6 @@ class AIIA_CosyVoice_TTS:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_seed:
                         ref_path = tmp_seed.name
                         seed_np = seed_wav.squeeze().cpu().numpy()
-                        if seed_np.ndim == 2: seed_np = seed_np.T
                         sf.write(ref_path, seed_np, sample_rate, subtype='FLOAT')
                         cleanup_ref = True
                         
@@ -708,21 +724,29 @@ class AIIA_CosyVoice_TTS:
                         speed=speed
                     )
                 else:
-                    # For V1, we must have a valid speaker ID. 
-                    effective_spk = spk_id if (spk_id and spk_id.strip()) else "pure_1"
+                    # For V1, we must have valid ID. Try matching gender if spk_id is empty.
+                    effective_spk = spk_id
+                    if not effective_spk or not effective_spk.strip():
+                        gender_keyword = "男" if base_gender == "Male" else "女"
+                        matching_spks = [s for s in available_spks if gender_keyword in s or base_gender.lower() in s.lower()]
+                        effective_spk = matching_spks[0] if matching_spks else (available_spks[0] if available_spks else "pure_1")
+                    
+                    print(f"[AIIA] V1 Speaker Selection: {effective_spk} (Gender: {base_gender})")
+                    
                     if "SFT" in type(cosyvoice_model).__name__ or not final_instruct:
                         output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
                     else:
+                        print(f"[AIIA] WARNING: V1 Instruct models will read the instruction text aloud due to lack of separator.")
                         output = cosyvoice_model.inference_instruct(tts_text, effective_spk, final_instruct, stream=False, speed=speed)
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
                 final_waveform = torch.cat(all_speech, dim=-1)
             
-            # --- 3. V1-Specific Volume Boost ---
-            # V1 (300M) models often have lower output levels than 0.5B models.
-            if not is_v3 and not is_v2:
-                final_waveform = final_waveform * 1.5
-                print(f"[AIIA] CosyVoice V1: Applied 1.5x Volume Boost.")
+            # --- 3. Peak Normalization ---
+            # Maximize volume while preventing clipping
+            if final_waveform.abs().max() > 0:
+                final_waveform = (final_waveform / final_waveform.abs().max()) * 0.85
+                print(f"[AIIA] CosyVoice: Applied Peak Normalization (max=0.85).")
 
         except Exception as e:
             if isinstance(e, (ValueError, FileNotFoundError)): raise e
