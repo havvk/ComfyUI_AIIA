@@ -282,14 +282,30 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     * [ModelScope (魔搭社区)](https://www.modelscope.cn/organization/iic) (搜索 CosyVoice)
     * [HuggingFace - FunAudioLLM](https://huggingface.co/FunAudioLLM)
 
-    **使用 huggingface-cli 下载 (CLI Example)**:
+    **使用命令行快速下载 (CLI Examples)**:
 
+    > [!TIP]
+    > **国内用户推荐使用 ModelScope (魔搭)**，下载速度更快且无需代理。
+
+    **1. 使用 ModelScope (推荐):**
     ```bash
     # 进入 ComfyUI/models/cosyvoice 目录
     cd ComfyUI/models/cosyvoice
 
+    # 下载 CosyVoice 3.0 (0.5B - 推荐)
+    modelscope download --model FunAudioLLM/Fun-CosyVoice3-0.5B-2512 --local_dir Fun-CosyVoice3-0.5B-2512
+
+    # 下载 CosyVoice 2.0 (0.5B)
+    modelscope download --model iic/CosyVoice2-0.5B --local_dir CosyVoice2-0.5B
+    ```
+
+    **2. 使用 HuggingFace:**
+    ```bash
     # 下载 CosyVoice 3.0 (0.5B)
-    hf download FunAudioLLM/Fun-CosyVoice3-0.5B-2512 --local-dir Fun-CosyVoice3-0.5B-2512
+    huggingface-cli download FunAudioLLM/Fun-CosyVoice3-0.5B-2512 --local-dir Fun-CosyVoice3-0.5B-2512
+
+    # 下载 CosyVoice 2.0 (0.5B)
+    huggingface-cli download FunAudioLLM/CosyVoice2-0.5B --local-dir CosyVoice2-0.5B
     ```
 
 **2. Voice Conversion (AIIA Unlimited)**
