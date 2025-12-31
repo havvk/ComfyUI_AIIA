@@ -495,7 +495,7 @@ class AIIA_CosyVoice_TTS:
                 "tts_text": ("STRING", {"multiline": True, "default": "你好，这是 CosyVoice 3.0 的全能模式测试。"}),
                 "提示2_音色描述": ("STRING", {"default": "🎨 第二步：在此输入对表现力/情感的文字描述 (Style Description)", "is_label": True}),
                 "instruct_text": ("STRING", {"multiline": True, "default": "语速非常慢，语气充满磁性，情感饱满。", "tooltip": "文字描述：在 0.5B 中主要控制情感、方言、语速等‘表现风格’，而非从零生成音色身份。"}),
-                "base_timbre": (["Female", "Male"], {"default": "Female", "tooltip": "基础音色种子。在“描述生成”模式下，这提供初始的声音身份（性别/底色）。"}),
+                "base_gender": (["Female", "Male"], {"default": "Female", "tooltip": "基础性别底色。在“描述生成”模式下，这提供初始的声音身份（性别/音感底色）。"}),
                 "dialect": (["None (Auto)", "广东话 (Cantonese)", "东北话 (Northeastern)", "四川话 (Sichuan)", "河南话 (Henan)", "天津话 (Tianjin)", "上海话 (Shanghai)", "山东话 (Shandong)", "湖北话 (Hubei)", "湖南话 (Hunan)", "陕西话 (Shaanxi)", "山西话 (Shanxi)", "甘肃话 (Gansu)", "宁夏话 (Ningxia)", "闽南话 (Hokkien)", "贵州话 (Guizhou)", "云南话 (Yunnan)", "江西话 (Jiangxi)"], {"default": "None (Auto)", "tooltip": "预设方言指令。会自动添加在自定义描述之前。若与自定义文字描述冲突，模型表现将不可预测。"}),
                 "emotion": (["None (Neutral)", "开心 (Happy)", "伤心 (Sad)", "生气 (Angry)", "机器人的方式 (Robotic)", "小猪佩奇风格 (Peppa Pig)"], {"default": "None (Neutral)", "tooltip": "预设情感指令。会自动添加在自定义描述之前。"}),
                 "spk_id": ("STRING", {"default": "", "tooltip": "固定音色 ID (如 pure_1)。对于 0.5B/V3 等 Zero-Shot 模型，此项通常为空，需配合参考音频使用。"}),
@@ -512,7 +512,7 @@ class AIIA_CosyVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Synthesis"
 
-    def generate(self, model, tts_text, instruct_text, spk_id, speed, seed, dialect="None", emotion="None", reference_audio=None, base_timbre="Female", **kwargs):
+    def generate(self, model, tts_text, instruct_text, spk_id, speed, seed, dialect="None", emotion="None", reference_audio=None, base_gender="Female", **kwargs):
         cosyvoice_model = model["model"]
         sample_rate = cosyvoice_model.sample_rate
 
@@ -574,7 +574,7 @@ class AIIA_CosyVoice_TTS:
                 else:
                     # Pure Instruct Fallback: Use built-in asset based on selection
                     assets_dir = os.path.join(os.path.dirname(__file__), "assets")
-                    if base_timbre == "Male":
+                    if base_gender == "Male":
                         ref_path = os.path.join(assets_dir, "seed_male.wav")
                     else:
                         ref_path = os.path.join(assets_dir, "seed_female.wav")
@@ -585,7 +585,7 @@ class AIIA_CosyVoice_TTS:
                         server_asset = "/app/ComfyUI/custom_nodes/ComfyUI_AIIA/libs/CosyVoice/asset/zero_shot_prompt.wav"
                         ref_path = lib_asset if os.path.exists(lib_asset) else server_asset
                         
-                    print(f"[AIIA] CosyVoice: Pure Instruct Mode using {base_timbre} seed.")
+                    print(f"[AIIA] CosyVoice: Pure Instruct Mode using {base_gender} seed.")
                     cleanup_ref = False
 
                 try:
