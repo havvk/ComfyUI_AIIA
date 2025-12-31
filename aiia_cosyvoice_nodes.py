@@ -597,8 +597,9 @@ class AIIA_CosyVoice_TTS:
                 e_eng = emotion_map.get(emotion_core)
                 
                 # Prefix gender hint to fix the "always female" bug in V1 Instruct
-                # Even with the embedding patch, text hints help the LLM align.
-                gender_prefix = "A mature male speaker" if base_gender == "Male" else "A sweet female speaker"
+                # Note: Official Instruct model deletes embedding, so text hints are the ONLY control.
+                # English hints seem more effective for gender.
+                gender_prefix = "A male speaker" if base_gender == "Male" else "A female speaker"
                 
                 if d_eng and e_eng: parts.append(f"{gender_prefix} with a {d_eng} in a {e_eng} mood.")
                 elif d_eng: parts.append(f"{gender_prefix} with a {d_eng}.")
@@ -656,12 +657,12 @@ class AIIA_CosyVoice_TTS:
                     raise ValueError(f"Speaker ID '{spk_id}' not found. Available: {available_spks if available_spks else 'None (Zero-Shot model)'}")
             elif reference_audio is None:
                 # --- V1 (300M) Special Handling for Gender ---
-                if not is_v3 and not is_v2 and (is_instruct or is_base) and base_gender in ["Male", "Female"]:
-                    # Force Zero-Shot fallback for Instruct/Base models to ensure deep male voice.
-                    # As discovered in audit, Instruct model built-in IDs can be female-biased.
+                if not is_v3 and not is_v2 and is_base and base_gender in ["Male", "Female"]:
+                    # Force Zero-Shot fallback ONLY for Base models (since they have no native Instruct/SFT gender support).
                     use_seed_fallback = True
-                    print(f"[AIIA] V1 { 'Instruct' if is_instruct else 'Base' } detected. Forcing Zero-Shot fallback for {base_gender} stability.")
+                    print(f"[AIIA] V1 Base detected. Forcing Zero-Shot fallback for {base_gender} stability.")
                 
+                # Instruct and SFT models go through normal speaker selection
                 elif available_spks:
                     # SFT mode path or confirmed good IDs
                     # Improve auto-selection based on base_gender
@@ -764,13 +765,10 @@ class AIIA_CosyVoice_TTS:
                                 p_text = "希望你以后能够做的比我还好呦。"
                             
                         if not is_v3 and not is_v2: # V1 Zero-Shot path
-                            if final_instruct:
-                                # Prepend instruction to seed transcript for Hybrid Instruct support
-                                p_text = f"{final_instruct} {p_text}"
-                                print(f"[AIIA] V1 Hybrid Instruct set: {p_text[:80]}...")
-                                # Clear effective_spk to ensure zero_shot doesn't use SFT logic later
-                                # But we need its ID for inference_zero_shot signature if we use high-level AutoModel (which we don't here)
-                                # effective_spk is used as spk_id placeholder in seed logic below
+                            # CRITICAL: Base models MUST NOT have instructions in the transcript
+                            # It causes babbling/hallucination.
+                            pass
+
                         output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=speed)
                     
                     all_speech = [chunk['tts_speech'] for chunk in output]
