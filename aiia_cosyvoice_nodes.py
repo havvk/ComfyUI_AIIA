@@ -638,11 +638,9 @@ class AIIA_CosyVoice_TTS:
                             speed=speed
                         )
                     else:
-                        # V1 / SFT logic
-                        if instruct_text:
-                            output = cosyvoice_model.inference_instruct(tts_text=tts_text, spk_id=spk_id, instruct_text=instruct_text, stream=False, speed=speed)
-                        else:
-                            output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text="", prompt_wav=ref_path, stream=False, speed=speed)
+                        # V1 path: In V1, we cannot easily combine ref_audio + custom instructions in one CLI call.
+                        # Always use zero_shot if we have a reference audio (including seed).
+                        output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text="", prompt_wav=ref_path, stream=False, speed=speed)
                     
                     all_speech = [chunk['tts_speech'] for chunk in output]
                     final_waveform = torch.cat(all_speech, dim=-1)
@@ -662,10 +660,13 @@ class AIIA_CosyVoice_TTS:
                         speed=speed
                     )
                 else:
-                    if "SFT" in type(cosyvoice_model).__name__ or spk_id:
-                        output = cosyvoice_model.inference_sft(tts_text, spk_id, stream=False, speed=speed)
+                    # For V1, we must have a valid speaker ID. 
+                    # If empty, default to 'pure_1' which exists in most official 300M checkpoints.
+                    effective_spk = spk_id if (spk_id and spk_id.strip()) else "pure_1"
+                    if "SFT" in type(cosyvoice_model).__name__ or not instruct_text:
+                        output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
                     else:
-                        output = cosyvoice_model.inference_instruct(tts_text, spk_id, instruct_text, stream=False, speed=speed)
+                        output = cosyvoice_model.inference_instruct(tts_text, effective_spk, instruct_text, stream=False, speed=speed)
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
                 final_waveform = torch.cat(all_speech, dim=-1)
