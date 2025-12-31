@@ -304,9 +304,28 @@ class AIIA_CosyVoice_ModelLoader:
                     speech_feat_len = torch.tensor([speech_feat.shape[1]], dtype=torch.int32).to(frontend_self.device)
                     return speech_feat, speech_feat_len
                 
-                import types
                 model_instance.frontend._extract_speech_feat = types.MethodType(patched_extract_speech_feat, model_instance.frontend)
                 print("[AIIA] Successfully patched V1 frontend _extract_speech_feat.")
+
+            # --- CRITICAL: Monkeypatch Frontend for V1 Instruct Identity Injection ---
+            if not is_v3 and not is_v2:
+                print(f"[AIIA] Patching V1 Frontend for Identity Injection...")
+                def safe_frontend_instruct(self, tts_text, spk_id, instruct_text):
+                    # Official V1 Instruct deletes llm_embedding, relying solely on text.
+                    # We check if a hidden '_injected_emb' is set to force a specific identity.
+                    model_input = self.frontend_sft(tts_text, spk_id)
+                    if hasattr(self, '_injected_llm_emb') and self._injected_llm_emb is not None:
+                        model_input['llm_embedding'] = self._injected_llm_emb.to(self.device).detach()
+                    
+                    instruct_text_token, instruct_text_token_len = self._extract_text_token(instruct_text)
+                    model_input['prompt_text'] = instruct_text_token
+                    model_input['prompt_text_len'] = instruct_text_token_len
+                    return model_input
+                
+                import types
+                model_instance.frontend.frontend_instruct = types.MethodType(safe_frontend_instruct, model_instance.frontend)
+                model_instance.frontend._injected_llm_emb = None # Initialize
+                print("[AIIA] Successfully patched V1 frontend_instruct for Identity Injection.")
                 
         except ImportError:
              # Fallback if library is old
@@ -597,8 +616,7 @@ class AIIA_CosyVoice_TTS:
                 e_eng = emotion_map.get(emotion_core)
                 
                 # Prefix gender hint to fix the "always female" bug in V1 Instruct
-                # Note: Official Instruct model deletes embedding, so text hints are the ONLY control.
-                # English hints seem more effective for gender.
+                # Note: Identity injection is the primary control, but text hints help the LLM align.
                 gender_prefix = "A male speaker" if base_gender == "Male" else "A female speaker"
                 
                 if d_eng and e_eng: parts.append(f"{gender_prefix} with a {d_eng} in a {e_eng} mood.")
@@ -769,7 +787,10 @@ class AIIA_CosyVoice_TTS:
                             # It causes babbling/hallucination.
                             pass
 
-                        output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=speed)
+                        # V1 Speed Boost (1.1x) to address "slow" feedback
+                        v1_speed_boost = 1.1 if (not is_v3 and not is_v2) else 1.0
+                        effective_speed = speed * v1_speed_boost
+                        output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
                     
                     all_speech = [chunk['tts_speech'] for chunk in output]
                     final_waveform = torch.cat(all_speech, dim=-1)
@@ -789,29 +810,46 @@ class AIIA_CosyVoice_TTS:
                         speed=speed
                     )
                 else:
-                    # Precise Routing for V1 Models
+                    # --- V1 (300M) Special Identity & Speed Handling ---
                     effective_spk = spk_id
                     if not effective_spk or not effective_spk.strip():
                         gender_keyword = "男" if base_gender == "Male" else "女"
                         matching_spks = [s for s in available_spks if gender_keyword in s]
                         effective_spk = matching_spks[0] if matching_spks else (available_spks[0] if available_spks else "pure_1")
-                    
-                    print(f"[AIIA] V1 Routing: Model={os.path.basename(model_dir)} | SFT_ID={effective_spk} | CustomInstruct={bool(instruct_text)}")
-                    
-                    # Routing logic for V1 (300M) series:
-                    # 1. Official 300M-Instruct is very prone to reading instructions aloud if using base weights.
-                    # 2. To prevent this, we ONLY use the Instruct path if the user typed CUSTOM text.
-                    # 3. For Dialect/Emotion presets, we use the SFT path. This keeps the voice clean and stable.
-                    if instruct_text and instruct_text.strip():
-                        print(f"[AIIA] Using V1 Instruct path for customer text. Note: V1 may read prompts aloud.")
-                        v1_final_instruct = final_instruct + " ..."
-                        output = cosyvoice_model.inference_instruct(tts_text, effective_spk, v1_final_instruct, stream=False, speed=speed)
+
+                    # Apply V1 identity injection for Instruct models to fix gender bias
+                    if is_instruct and base_gender in ["Male", "Female"]:
+                        try:
+                            seed_keyword = "male_hq" if base_gender == "Male" else "female"
+                            injected_seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", f"seed_{seed_keyword}.wav")
+                            if os.path.exists(injected_seed_path):
+                                # pos 4 is zero_shot_spk_id='' to trigger extraction
+                                dummy_input = cosyvoice_model.frontend.frontend_zero_shot('test', 'hope you do better', injected_seed_path, 22050, '')
+                                cosyvoice_model.frontend._injected_llm_emb = dummy_input['llm_embedding']
+                                print(f"[AIIA] V1 Instruct Identity Injection activated for {base_gender}.")
+                        except Exception as e:
+                            print(f"[AIIA] Warning: Identity injection failed: {e}")
                     else:
-                        # Safety: SFT path does not support instructions, thus won't read them aloud.
-                        # This also ensures the selected speaker's gender is respected.
-                        if final_instruct and final_instruct != combined_custom: 
-                             print("\033[93m" + f"[AIIA] WARNING: Dialect/Emotion presets on 300M series are experimental. Forcing SFT path to prevent reading prompts." + "\033[0m")
-                        output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
+                        if hasattr(cosyvoice_model.frontend, '_injected_llm_emb'):
+                            cosyvoice_model.frontend._injected_llm_emb = None
+
+                    # V1 Speed Boost (1.1x) to address "slow" feedback
+                    effective_speed = speed * 1.1
+
+                    try:
+                        if is_instruct:
+                            # Use English-only hints for V1 to minimize "prompt reading"
+                            v1_eng_instruct = final_instruct
+                            # Ensure it doesn't end abruptly to minimize reading
+                            if not v1_eng_instruct.endswith("<|endofprompt|>"):
+                                v1_eng_instruct += "<|endofprompt|>"
+                            
+                            output = cosyvoice_model.inference_instruct(tts_text, effective_spk, v1_eng_instruct, speed=effective_speed)
+                        else:
+                            output = cosyvoice_model.inference_sft(tts_text, effective_spk, speed=effective_speed)
+                    finally:
+                        if hasattr(cosyvoice_model.frontend, '_injected_llm_emb'):
+                            cosyvoice_model.frontend._injected_llm_emb = None
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
                 final_waveform = torch.cat(all_speech, dim=-1)
