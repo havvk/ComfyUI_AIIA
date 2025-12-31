@@ -319,7 +319,10 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   5. **固定 ID (SFT)**: 通过 `spk_id` 指定固定官方音色（如 pure_1, joy_1）。
 - **参数说明**:
   - `tts_text`: 说的内容。
-  - `instruct_text`: 对声音风格、情感、口音的文字描述。
+  - `instruct_text`: 对声音风格、情感、口音的文字描述。**会自动封装官方指令格式。**
+  - `base_timbre`: **基础音色 (Gender)**。支持 `Female` (女) 和 `Male` (男)。在“描述生成”模式下，决定声音的性别基调。
+  - `dialect`: **方言预设 (Dialect)**。支持 17 种官方方言（粤、川、东北等），一键应用。
+  - `emotion`: **情感预设 (Emotion)**。支持开心、伤心、生气、机器人等预设。
   - `spk_id`: 传统的固定音色 ID（选填）。
   - `reference_audio`: 外部参考音频（选填，用于克隆/混合/跨语言）。
   - `seed`: 随机种子。固定种子可以“锁定”通过描述生成的那种随机音色。
