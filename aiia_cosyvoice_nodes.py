@@ -554,11 +554,52 @@ class AIIA_CosyVoice_TTS:
                 active_model = os.readlink(llm_pt)
             print(f"[AIIA] CosyVoice Active LLM: {active_model}")
             
-            if "base" in active_model.lower() and instruct_text:
+            # --- 1. Centralized Instruction Assembly (Fusion Logic) ---
+            preset_instructs = []
+            dialect_core = dialect.split(' ')[0] if dialect != "None (Auto)" else None
+            emotion_core = emotion.split(' ')[0] if emotion != "None (Neutral)" else None
+            
+            if dialect_core and emotion_core:
+                if "机器人" in emotion_core:
+                    preset_instructs.append(f"请用{dialect_core}，并且尝试用机器人的方式解答。")
+                elif "小猪佩奇" in emotion_core:
+                    preset_instructs.append(f"请用{dialect_core}，并且我想体验一下小猪佩奇风格。")
+                else:
+                    preset_instructs.append(f"请用{dialect_core}，并且非常{emotion_core}地说一句话。")
+            elif dialect_core:
+                preset_instructs.append(f"请用{dialect_core}表达。")
+            elif emotion_core:
+                if "机器人" in emotion_core:
+                    preset_instructs.append("你可以尝试用机器人的方式解答吗？")
+                elif "小猪佩奇" in emotion_core:
+                    preset_instructs.append("我想体验一下小猪佩奇风格，可以吗？")
+                else:
+                    preset_instructs.append(f"请非常{emotion_core}地说一句话。")
+                    
+            combined_custom = " ".join(preset_instructs)
+            if instruct_text:
+                combined_custom = f"{combined_custom} {instruct_text}".strip()
+            
+            # --- 2. V1-Specific Gender Hint Injection ---
+            # For V1 Instruct models, we MUST have a gender text hint because LLM stage ignores spk_embedding
+            if not is_v3 and not is_v2 and combined_custom:
+                gender_hint = "一个磁性的男声。" if base_gender == "Male" else "一个温柔的女声。"
+                if gender_hint not in combined_custom:
+                    combined_custom = gender_hint + " " + combined_custom
+                    print(f"[AIIA] CosyVoice V1 Instruct: Applied Gender Hint -> {combined_custom[:60]}...")
+
+            # --- 3. V3-Specific System Prompt & endofprompt Formatting ---
+            final_instruct = combined_custom
+            if (is_v3 or is_v2) and combined_custom:
+                if "<|endofprompt|>" not in combined_custom:
+                    final_instruct = f"You are a helpful assistant. {combined_custom}<|endofprompt|>"
+                    print(f"[AIIA] Applied V3 Instruction Formatting: {final_instruct[:80]}...")
+            
+            if "base" in active_model.lower() and combined_custom:
                 print("\033[93m" + "[AIIA] WARNING: You are using the BASE model with instructions." + "\033[0m")
                 print("\033[93m" + "[AIIA] It will LIKELY read your instructions aloud. Switch to RL model in Loader!" + "\033[0m")
         
-        # --- Speaker Identity Validation & Fallback ---
+            # --- Speaker Identity Validation & Fallback ---
             available_spks = list(cosyvoice_model.frontend.spk2info.keys())
             use_seed_fallback = False
             
@@ -569,17 +610,10 @@ class AIIA_CosyVoice_TTS:
                 if available_spks:
                     # Improve auto-selection based on base_gender
                     gender_keyword = "男" if base_gender == "Male" else "女"
-                    # Try to find a speaker that matches the requested gender (Chinese/English keywords)
                     matching_spks = [s for s in available_spks if gender_keyword in s or base_gender.lower() in s.lower()]
-                    
-                    if matching_spks:
-                        spk_id = matching_spks[0]
-                    else:
-                        spk_id = available_spks[0]
-                    
+                    spk_id = matching_spks[0] if matching_spks else available_spks[0]
                     print(f"[AIIA] Auto-selecting speaker based on gender({base_gender}): {spk_id}")
                 else:
-                    # 0.5B models typically have no spk2info. Use internal neutral seed for "Pure Instruct"
                     use_seed_fallback = True
                     print("[AIIA] No Identity provided for Zero-Shot model. Falling back to internal 'Neutral Canvas' seed.")
 
@@ -630,58 +664,18 @@ class AIIA_CosyVoice_TTS:
                     print(f"[AIIA] CosyVoice: Pure Instruct Mode using {base_gender} seed ({sample_rate}Hz).")
 
                 try:
-                    if not os.path.exists(ref_path):
-                        raise FileNotFoundError(f"Internal seed audio not found at {ref_path}. Please check installation.")
-
                     if is_v3 or is_v2:
-                        print(f"[AIIA] CosyVoice V3/V2 Core: Multi-modal Inference.")
-                        
-                        # --- Preset Assembly (Fusion Logic) ---
-                        preset_instructs = []
-                        dialect_core = dialect.split(' ')[0] if dialect != "None (Auto)" else None
-                        emotion_core = emotion.split(' ')[0] if emotion != "None (Neutral)" else None
-                        
-                        if dialect_core and emotion_core:
-                            # Combined case: Merge into one sentence for better LLM attention
-                            if "机器人" in emotion_core:
-                                preset_instructs.append(f"请用{dialect_core}，并且尝试用机器人的方式解答。")
-                            elif "小猪佩奇" in emotion_core:
-                                preset_instructs.append(f"请用{dialect_core}，并且我想体验一下小猪佩奇风格。")
-                            else:
-                                preset_instructs.append(f"请用{dialect_core}，并且非常{emotion_core}地说一句话。")
-                        elif dialect_core:
-                            preset_instructs.append(f"请用{dialect_core}表达。")
-                        elif emotion_core:
-                            if "机器人" in emotion_core:
-                                preset_instructs.append("你可以尝试用机器人的方式解答吗？")
-                            elif "小猪佩奇" in emotion_core:
-                                preset_instructs.append("我想体验一下小猪佩奇风格，可以吗？")
-                            else:
-                                preset_instructs.append(f"请非常{emotion_core}地说一句话。")
-                                
-                        combined_custom = " ".join(preset_instructs)
-                        if instruct_text:
-                            combined_custom = f"{combined_custom} {instruct_text}".strip()
-                        
-                        modified_instruct = combined_custom
-                        if combined_custom and "<|endofprompt|>" not in combined_custom:
-                            modified_instruct = f"You are a helpful assistant. {combined_custom}<|endofprompt|>"
-                            print(f"[AIIA] Applied V3 Instruction Formatting: {modified_instruct[:80]}...")
-                        elif combined_custom:
-                            print(f"[AIIA] Using Raw Instruction: {combined_custom[:50]}...")
-                        
                         output = cosyvoice_model.inference_instruct2(
                             tts_text=tts_text, 
-                            instruct_text=modified_instruct, 
+                            instruct_text=final_instruct, 
                             prompt_wav=ref_path, 
                             zero_shot_spk_id=spk_id, 
                             stream=False, 
                             speed=speed
                         )
                     else:
-                        # V1 path: In V1, we cannot easily combine ref_audio + custom instructions in one CLI call.
-                        # Always use zero_shot if we have a reference audio (including seed).
-                        # For V1, prompt_text is REQUIRED to be accurate. Mismatch causes LLM 'max_trials 100' crash!
+                        # V1 path: Always use zero_shot if we have a reference audio (including seed).
+                        # For V1, prompt_text is REQUIRED to be accurate.
                         p_text = ""
                         if use_seed_fallback:
                             # Try finding a .txt for the seed, else use hardcoded ONLY for female (official asset copy)
@@ -709,7 +703,7 @@ class AIIA_CosyVoice_TTS:
                 if is_v3 or is_v2:
                     output = cosyvoice_model.inference_instruct2(
                         tts_text=tts_text, 
-                        instruct_text=instruct_text, 
+                        instruct_text=final_instruct, 
                         prompt_wav=None, 
                         zero_shot_spk_id=spk_id, 
                         stream=False, 
@@ -717,19 +711,11 @@ class AIIA_CosyVoice_TTS:
                     )
                 else:
                     # For V1, we must have a valid speaker ID. 
-                    # If empty, default to 'pure_1' which exists in most official 300M checkpoints.
                     effective_spk = spk_id if (spk_id and spk_id.strip()) else "pure_1"
-                    if "SFT" in type(cosyvoice_model).__name__ or not instruct_text:
+                    if "SFT" in type(cosyvoice_model).__name__ or not final_instruct:
                         output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
                     else:
-                        # --- CRITICAL: Add Gender Hint for V1 Instruct ---
-                        # V1 Instruct models delete LLM embedding, so they MUST have a text gender hint.
-                        gender_hint = "一个磁性的男声。" if base_gender == "Male" else "一个温柔的女声。"
-                        if gender_hint not in instruct_text:
-                            instruct_text = gender_hint + instruct_text
-                            
-                        print(f"[AIIA] CosyVoice V1 Instruct: Applied Gender Hint -> {instruct_text}")
-                        output = cosyvoice_model.inference_instruct(tts_text, effective_spk, instruct_text, stream=False, speed=speed)
+                        output = cosyvoice_model.inference_instruct(tts_text, effective_spk, final_instruct, stream=False, speed=speed)
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
                 final_waveform = torch.cat(all_speech, dim=-1)
