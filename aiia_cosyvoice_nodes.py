@@ -272,8 +272,8 @@ class AIIA_CosyVoice_ModelLoader:
         except Exception as e:
            raise RuntimeError(f"Failed to initialize CosyVoice model: {e}")
            
-        # IMPORTANT: The Voice Conversion node expects 'model' key.
-        return ({"model": model_instance},)
+        # IMPORTANT: The TTS node expects version flags.
+        return ({"model": model_instance, "model_dir": model_dir, "is_v3": (is_v3 if 'is_v3' in locals() else False), "is_v2": (os.path.exists(os.path.join(model_dir, "cosyvoice2.yaml")))},)
 
 class AIIA_CosyVoice_VoiceConversion:
     @classmethod
@@ -523,14 +523,15 @@ class AIIA_CosyVoice_TTS:
         final_waveform = None
 
         try:
-            # Detect Model Type
-            is_v3 = "CosyVoice3" in type(cosyvoice_model).__name__
-            is_v2 = "CosyVoice2" in type(cosyvoice_model).__name__
+            # Detect Model Type from dictionary if available, else class name
+            is_v3 = model.get("is_v3", "CosyVoice3" in type(cosyvoice_model).__name__)
+            is_v2 = model.get("is_v2", "CosyVoice2" in type(cosyvoice_model).__name__)
+            model_dir = model.get("model_dir", getattr(cosyvoice_model, 'model_dir', ''))
             
             # --- Model Version Verification ---
-            llm_pt = os.path.join(cosyvoice_model.model_dir, "llm.pt")
+            llm_pt = os.path.join(model_dir, "llm.pt") if model_dir else None
             active_model = "Unknown"
-            if os.path.islink(llm_pt):
+            if llm_pt and os.path.exists(llm_pt) and os.path.islink(llm_pt):
                 active_model = os.readlink(llm_pt)
             print(f"[AIIA] CosyVoice Active LLM: {active_model}")
             
@@ -547,8 +548,17 @@ class AIIA_CosyVoice_TTS:
                     raise ValueError(f"Speaker ID '{spk_id}' not found. Available: {available_spks if available_spks else 'None (Zero-Shot model)'}")
             elif reference_audio is None:
                 if available_spks:
-                    spk_id = available_spks[0]
-                    print(f"[AIIA] Auto-selecting first available speaker: {spk_id}")
+                    # Improve auto-selection based on base_gender
+                    gender_keyword = "男" if base_gender == "Male" else "女"
+                    # Try to find a speaker that matches the requested gender (Chinese/English keywords)
+                    matching_spks = [s for s in available_spks if gender_keyword in s or base_gender.lower() in s.lower()]
+                    
+                    if matching_spks:
+                        spk_id = matching_spks[0]
+                    else:
+                        spk_id = available_spks[0]
+                    
+                    print(f"[AIIA] Auto-selecting speaker based on gender({base_gender}): {spk_id}")
                 else:
                     # 0.5B models typically have no spk2info. Use internal neutral seed for "Pure Instruct"
                     use_seed_fallback = True
@@ -640,7 +650,10 @@ class AIIA_CosyVoice_TTS:
                     else:
                         # V1 path: In V1, we cannot easily combine ref_audio + custom instructions in one CLI call.
                         # Always use zero_shot if we have a reference audio (including seed).
-                        output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text="", prompt_wav=ref_path, stream=False, speed=speed)
+                        # For V1, prompt_text is REQUIRED for zero-shot to work correctly.
+                        # If using the seed fallback, provide a default transcript.
+                        p_text = "希望你以后能够做的比我还好呦。" if use_seed_fallback else ""
+                        output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=speed)
                     
                     all_speech = [chunk['tts_speech'] for chunk in output]
                     final_waveform = torch.cat(all_speech, dim=-1)
