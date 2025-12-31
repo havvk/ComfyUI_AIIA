@@ -272,7 +272,16 @@ class AIIA_CosyVoice_ModelLoader:
                 try:
                     model_instance = CV1(model_dir, fp16=use_fp16)
                 except TypeError:
-                     model_instance = CV1(model_dir)
+                    model_instance = CV1(model_dir)
+            
+            # --- Model Flavor Detection (SFT/Instruct/Base) ---
+            # Used for precise inference routing in V1 models
+            model_id_lower = os.path.basename(model_dir).lower()
+            is_sft = "sft" in model_id_lower
+            is_instruct = "instruct" in model_id_lower
+            is_base = not is_sft and not is_instruct
+            
+            print(f"[AIIA] Model Type: V{3 if is_v3 else (2 if is_v2 else 1)} | SFT: {is_sft} | Instruct: {is_instruct} | Base: {is_base}")
 
             # --- CRITICAL: Clear Matcha-TTS Internal Caches ---
             # This prevents STFT window size mismatch errors when switching between 22k and 24k models.
@@ -308,7 +317,7 @@ class AIIA_CosyVoice_ModelLoader:
            raise RuntimeError(f"Failed to initialize CosyVoice model: {e}")
            
         # IMPORTANT: The TTS node expects version flags.
-        return ({"model": model_instance, "model_dir": model_dir, "is_v3": is_v3, "is_v2": is_v2},)
+        return ({"model": model_instance, "model_dir": model_dir, "is_v3": is_v3, "is_v2": is_v2, "is_sft": is_sft, "is_instruct": is_instruct, "is_base": is_base},)
 
 class AIIA_CosyVoice_VoiceConversion:
     @classmethod
@@ -559,16 +568,19 @@ class AIIA_CosyVoice_TTS:
 
         try:
             # Detect Model Type from dictionary if available, else class name
-            is_v3 = model.get("is_v3", "CosyVoice3" in type(cosyvoice_model).__name__)
-            is_v2 = model.get("is_v2", "CosyVoice2" in type(cosyvoice_model).__name__)
-            model_dir = model.get("model_dir", getattr(cosyvoice_model, 'model_dir', ''))
+            is_v3 = model.get("is_v3", False)
+            is_v2 = model.get("is_v2", False)
+            is_sft = model.get("is_sft", False)
+            is_instruct = model.get("is_instruct", False)
+            is_base = model.get("is_base", False)
+            model_dir = model.get("model_dir", "")
             
             # --- Model Version Verification ---
             llm_pt = os.path.join(model_dir, "llm.pt") if model_dir else None
             active_model = "Unknown"
             if llm_pt and os.path.exists(llm_pt) and os.path.islink(llm_pt):
                 active_model = os.readlink(llm_pt)
-            print(f"[AIIA] CosyVoice Active LLM: {active_model}")
+            print(f"[AIIA] CosyVoice Active LLM: {active_model} | SFT: {is_sft} | Instruct: {is_instruct}")
             
             # --- 1. Centralized Instruction Assembly (Fusion Logic) ---
             preset_instructs = []
@@ -623,8 +635,15 @@ class AIIA_CosyVoice_TTS:
             elif reference_audio is None:
                 if available_spks:
                     # Improve auto-selection based on base_gender
+                    # Prioritize both Chinese and English keywords
                     gender_keyword = "男" if base_gender == "Male" else "女"
-                    matching_spks = [s for s in available_spks if gender_keyword in s or base_gender.lower() in s.lower()]
+                    gender_en = "male" if base_gender == "Male" else "female"
+                    matching_spks = [s for s in available_spks if gender_keyword in s or gender_en in s.lower()]
+                    
+                    # If multiple, favor the one that matches base_gender specifically (e.g. avoid 'female' matching 'male')
+                    if base_gender == "Male":
+                        matching_spks = [s for s in matching_spks if "female" not in s.lower()]
+                    
                     spk_id = matching_spks[0] if matching_spks else available_spks[0]
                     print(f"[AIIA] Auto-selecting speaker based on gender({base_gender}): {spk_id}")
                 else:
@@ -659,9 +678,11 @@ class AIIA_CosyVoice_TTS:
                     
                     import torchaudio
                     seed_wav, seed_sr = torchaudio.load(raw_seed_path)
-                    # Mono conversion
+                    
+                    # --- FIX: Mono conversion via channel selection instead of averaging ---
+                    # Averaging can cause phase-cancellation and muffle high frequencies.
                     if seed_wav.shape[0] > 1:
-                        seed_wav = torch.mean(seed_wav, dim=0, keepdim=True)
+                        seed_wav = seed_wav[0:1, :] # Just take the first channel
                         
                     if seed_sr != sample_rate:
                         print(f"[AIIA] Resampling seed audio from {seed_sr}Hz to {sample_rate}Hz...")
@@ -724,29 +745,36 @@ class AIIA_CosyVoice_TTS:
                         speed=speed
                     )
                 else:
-                    # For V1, we must have valid ID. Try matching gender if spk_id is empty.
+                    # Precise Routing for V1 Models
                     effective_spk = spk_id
                     if not effective_spk or not effective_spk.strip():
                         gender_keyword = "男" if base_gender == "Male" else "女"
-                        matching_spks = [s for s in available_spks if gender_keyword in s or base_gender.lower() in s.lower()]
+                        matching_spks = [s for s in available_spks if gender_keyword in s]
                         effective_spk = matching_spks[0] if matching_spks else (available_spks[0] if available_spks else "pure_1")
                     
-                    print(f"[AIIA] V1 Speaker Selection: {effective_spk} (Gender: {base_gender})")
+                    print(f"[AIIA] V1 Routing: Model={os.path.basename(model_dir)} | SFT_ID={effective_spk}")
                     
-                    if "SFT" in type(cosyvoice_model).__name__ or not final_instruct:
+                    # 1. SFT models ONLY support SFT path.
+                    # 2. Instruct models use SFT if no instructions, else Instruct.
+                    if is_sft or (is_instruct and not final_instruct):
                         output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
-                    else:
-                        print(f"[AIIA] WARNING: V1 Instruct models will read the instruction text aloud due to lack of separator.")
+                    elif is_instruct:
+                        # Only hit this if there IS final_instruct
+                        print(f"[AIIA] Using V1 Instruct path. May read text instructions.")
                         output = cosyvoice_model.inference_instruct(tts_text, effective_spk, final_instruct, stream=False, speed=speed)
+                    else:
+                        # Fallback for base or unknown V1
+                        output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
                 final_waveform = torch.cat(all_speech, dim=-1)
             
             # --- 3. Peak Normalization ---
-            # Maximize volume while preventing clipping
+            # Maximize volume to the limit
             if final_waveform.abs().max() > 0:
-                final_waveform = (final_waveform / final_waveform.abs().max()) * 0.85
-                print(f"[AIIA] CosyVoice: Applied Peak Normalization (max=0.85).")
+                # Use 0.98 to avoid inter-sample peaks causes clipping in some players
+                final_waveform = (final_waveform / final_waveform.abs().max()) * 0.98
+                print(f"[AIIA] CosyVoice: Applied Peak Normalization (max=0.98).")
 
         except Exception as e:
             if isinstance(e, (ValueError, FileNotFoundError)): raise e
