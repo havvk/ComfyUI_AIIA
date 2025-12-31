@@ -253,21 +253,25 @@ class AIIA_CosyVoice_ModelLoader:
                 print(f"[AIIA] Detected V3 Model. Using CosyVoice3 class (fp16={use_fp16}).")
                 model_instance = CV3(model_dir, fp16=use_fp16)
                 is_v3 = True
+            elif os.path.exists(os.path.join(model_dir, "cosyvoice.yaml")):
+                # V1 takes precedence over 'flow.pt' check for V2
+                print(f"[AIIA] Detected V1 Model. Using CosyVoice class (fp16={use_fp16}).")
+                # V1 CosyVoice might not support fp16 arg in all versions
+                try:
+                    model_instance = CV1(model_dir, fp16=use_fp16)
+                except TypeError:
+                     print("[AIIA] V1 Class rejected fp16 argument. Initializing default.")
+                     model_instance = CV1(model_dir)
             elif os.path.exists(os.path.join(model_dir, "cosyvoice2.yaml")) or os.path.exists(os.path.join(model_dir, "flow.pt")):
                 print(f"[AIIA] Detected V2 Model. Using CosyVoice2 class (fp16={use_fp16}).")
                 model_instance = CV2(model_dir, fp16=use_fp16)
                 is_v2 = True
             else:
-                print(f"[AIIA] Detected V1 Model (or default). Using CosyVoice class (fp16={use_fp16}).")
-                # V1 CosyVoice might not support fp16 arg in all versions, but typical implementations do or ignore it.
-                # Checking source is hard securely, but we aim for V3 support mainly.
-                # If V1 signature differs, we might need try-except.
-                # Official CosyVoice V1 init: (model_dir). No fp16 arg in old versions?
-                # Let's try passing it. If TypeError, fallback.
+                # Catch-all
+                print(f"[AIIA] Defaulting to V1 initialization for {model_dir}")
                 try:
                     model_instance = CV1(model_dir, fp16=use_fp16)
                 except TypeError:
-                     print("[AIIA] V1 Class rejected fp16 argument. Initializing default.")
                      model_instance = CV1(model_dir)
 
             # --- CRITICAL: Clear Matcha-TTS Internal Caches ---
