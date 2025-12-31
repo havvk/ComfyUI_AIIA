@@ -1,47 +1,51 @@
 
 import { app } from "../../../scripts/app.js";
 
-// Extension to handle static labels (AIIA_LABEL)
+// Extension to handle static labels (identifying by 'is_label' flag in metadata)
 app.registerExtension({
     name: "AIIA.Labels",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        // Iterate through inputs to find ones marked as AIIA_LABEL
-        const allInputs = { ...nodeData.input?.required, ...nodeData.input?.optional };
+        // Iterate through required inputs to find ones marked as is_label
+        const requiredInputs = nodeData.input?.required || {};
 
-        let hasLabel = false;
-        for (const [name, input] of Object.entries(allInputs)) {
-            if (input[0] === "AIIA_LABEL") {
-                hasLabel = true;
-                break;
+        let labelWidgetNames = [];
+        for (const [name, inputDef] of Object.entries(requiredInputs)) {
+            // inputDef is [type, metadata_dict]
+            if (inputDef[1] && inputDef[1].is_label === true) {
+                labelWidgetNames.push(name);
             }
         }
 
-        if (hasLabel) {
-            // Hijack onNodeCreated to style our label widgets
+        if (labelWidgetNames.length > 0) {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 const r = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
 
                 for (const w of this.widgets) {
-                    // Check if this widget was defined as AIIA_LABEL in Python
-                    // Since nodeData.input is available, we can verify by name
-                    const inputDef = allInputs[w.name];
-                    if (inputDef && inputDef[0] === "AIIA_LABEL") {
-                        w.type = "text"; // Change to text so it renders
-                        w.draw = function (ctx, node, widget_width, y, widget_height) {
-                            const show_text = true;
-                            const outline_color = app.canvas.ds.outline_color;
+                    if (labelWidgetNames.includes(w.name)) {
+                        // Change type to avoid standard text box rendering
+                        w.type = "AIIA_STATIC_TEXT";
 
+                        w.draw = function (ctx, node, widget_width, y, widget_height) {
                             ctx.save();
+                            // Background or subtle underline if needed
+                            // ctx.fillStyle = "#222222";
+                            // ctx.fillRect(0, y, widget_width, widget_height);
+
                             ctx.fillStyle = "#AAAAAA"; // Label color
                             ctx.font = "italic 12px Arial";
-                            // Center or offset as needed
+                            // Draw the text
                             ctx.fillText(this.value, 15, y + widget_height * 0.7);
                             ctx.restore();
                         };
-                        // Disable interaction
+
+                        // Disable interaction 
                         w.mouse = () => { };
                         w.computeSize = () => [200, 20];
+
+                        // Prevent this widget from being converted to a socket (though it's already a Primitive STRING)
+                        w.inputKey = null;
+                        w.serializeValue = async () => ""; // Don't send label text back to Python
                     }
                 }
                 return r;

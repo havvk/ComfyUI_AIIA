@@ -203,10 +203,13 @@ class AIIA_CosyVoice_ModelLoader:
                 os.remove(llm_pt)
 
         # 2. Determine target based on use_rl_model
-        print(f"[AIIA] Loader Debug: use_rl_model={use_rl_model} (type: {type(use_rl_model)})")
+        # Use an explicit truthy check to handle string inputs if ComfyUI sends them as such
+        is_rl_requested = str(use_rl_model).lower() == 'true' if not isinstance(use_rl_model, bool) else use_rl_model
+        
+        print(f"[AIIA] Loader Debug: use_rl_model_raw={use_rl_model} (type: {type(use_rl_model)}) -> effective_rl={is_rl_requested}")
         print(f"[AIIA] Loader Debug: llm_rl exists: {os.path.exists(llm_rl)}")
         
-        target_source = llm_rl if use_rl_model and os.path.exists(llm_rl) else llm_base
+        target_source = llm_rl if is_rl_requested and os.path.exists(llm_rl) else llm_base
         
         # 3. Aggressively Manage Symlink
         if os.path.exists(target_source):
@@ -486,9 +489,9 @@ class AIIA_CosyVoice_TTS:
         return {
             "required": {
                 "model": ("COSYVOICE_MODEL",),
-                "提示1_说的内容": ("AIIA_LABEL", {"default": "📖 第一步：在此输入您想让 AI 说的话 (TTS Text)"}),
+                "提示1_说的内容": ("STRING", {"default": "📖 第一步：在此输入您想让 AI 说的话 (TTS Text)", "is_label": True}),
                 "tts_text": ("STRING", {"multiline": True, "default": "你好，这是 CosyVoice 3.0 的全能模式测试。"}),
-                "提示2_音色描述": ("AIIA_LABEL", {"default": "🎨 第二步：在此输入对声音的文字描述 (Voice Description)"}),
+                "提示2_音色描述": ("STRING", {"default": "🎨 第二步：在此输入对声音的文字描述 (Voice Description)", "is_label": True}),
                 "instruct_text": ("STRING", {"multiline": True, "default": "一个沉稳、磁性的成熟男性声音，语法标准，情感饱满。"}),
                 "spk_id": ("STRING", {"default": "", "tooltip": "固定音色 ID (如 pure_1)。对于 0.5B/V3 等 Zero-Shot 模型，此项通常为空，需配合参考音频使用。"}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
