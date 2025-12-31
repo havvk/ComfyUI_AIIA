@@ -297,6 +297,11 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
     # 下载 CosyVoice 2.0 (0.5B)
     modelscope download --model iic/CosyVoice2-0.5B --local_dir CosyVoice2-0.5B
+
+    # 下载 CosyVoice 300M 系列 (V1)
+    modelscope download --model iic/CosyVoice-300M --local_dir CosyVoice-300M
+    modelscope download --model iic/CosyVoice-300M-SFT --local_dir CosyVoice-300M-SFT
+    modelscope download --model iic/CosyVoice-300M-Instruct --local_dir CosyVoice-300M-Instruct
     ```
 
     **2. 使用 HuggingFace:**
@@ -306,6 +311,11 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
     # 下载 CosyVoice 2.0 (0.5B)
     huggingface-cli download FunAudioLLM/CosyVoice2-0.5B --local-dir CosyVoice2-0.5B
+
+    # 下载 CosyVoice 300M 系列 (V1)
+    huggingface-cli download FunAudioLLM/CosyVoice-300M --local-dir CosyVoice-300M
+    huggingface-cli download FunAudioLLM/CosyVoice-300M-SFT --local-dir CosyVoice-300M-SFT
+    huggingface-cli download FunAudioLLM/CosyVoice-300M-Instruct --local-dir CosyVoice-300M-Instruct
     ```
 
 **2. Voice Conversion (AIIA Unlimited)**
@@ -333,6 +343,14 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   3. **混合控制 (Hybrid)**: **音频 + 描述**。在克隆音色的基础上，通过描述词改变情感或表现力。
   4. **跨语言 (Cross-Lingual)**: 让中文音频开口说地道的英文、日文等 9 种语言。
   5. **固定 ID (SFT)**: 通过 `spk_id` 指定固定官方音色（如 pure_1, joy_1）。
+
+- **⚠️ 300M 系列 (V1) 模型特性说明**:
+  如果您使用旧版的 300M 系列模型，请注意以下功能差异：
+  - **不支持描述生成 (Instruct)**: 300M 基础版不支持通过文字描述（如“磁性的声音”）生成音色。
+  - **Instruct 版差异**: 必须选择 `CosyVoice-300M-Instruct` 才能支持指令，但其对描述的理解能力较 V3 弱，主要侧重于情感词。
+  - **SFT 版锁定**: `CosyVoice-300M-SFT` 仅支持官方内置的 speaker，无法进行 Zero-Shot 音色克隆。
+  - **推荐使用**: 建议优先选择 `Fun-CosyVoice3-0.5B-2512` 以获得最佳的描述生成和克隆效果。
+
 - **参数说明**:
   - `tts_text`: 说的内容。
   - `instruct_text`: 对声音风格、情感、口音的文字描述。**会自动封装官方指令格式。**
