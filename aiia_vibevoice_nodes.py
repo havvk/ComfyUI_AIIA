@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import torchaudio
 import folder_paths
-print(f"\n[AIIA DEBUG] Loaded aiia_vibevoice_nodes.py from: {os.path.abspath(__file__)}\n")
+# print(f"\n[AIIA DEBUG] Loaded aiia_vibevoice_nodes.py from: {os.path.abspath(__file__)}\n")
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer, Qwen2TokenizerFast
 

@@ -298,7 +298,7 @@ class AIIA_Audio_Enhance:
                              tau = getattr(model.config, "tau", tau)
                              
                         # DEBUG: Trace Execution
-                        print(f"[AIIA DEBUG] safe_inference_chunk: NFE={nfe}, Solver={solver}, Tau={tau}")
+                        # print(f"[AIIA DEBUG] safe_inference_chunk: NFE={nfe}, Solver={solver}, Tau={tau}")
                         
                         t = torch.linspace(0, 1, nfe + 1, device=device)
                         
@@ -311,7 +311,7 @@ class AIIA_Audio_Enhance:
                              hwav = model.ode_solve(dwav, t, solver=solver, tau=tau)
                         else:
                              # Standard Path for EnhancerStage2
-                             print(f"[AIIA DEBUG] Running model forward pass (NFE={nfe})...")
+                             # print(f"[AIIA DEBUG] Running model forward pass (NFE={nfe})...")
                              out = model(dwav.unsqueeze(0))
                              if isinstance(out, tuple): out = out[0]
                              hwav = out[0]
@@ -407,7 +407,7 @@ class AIIA_Audio_Enhance:
                          # The library default is 0.5.
                          
                          _cached_enhancer.configurate_(nfe=nfe, solver=solver.lower(), lambd=denoise_strength, tau=tau)
-                         print(f"[AIIA DEBUG] Configured model: nfe={nfe}, solver={solver.lower()}, lambd={denoise_strength}, tau={tau}")
+                         # print(f"[AIIA DEBUG] Configured model: nfe={nfe}, solver={solver.lower()}, lambd={denoise_strength}, tau={tau}")
                     except Exception as e:
                          print(f"[AIIA WARNING] configurate_ failed: {e}")
                 else:
@@ -460,7 +460,7 @@ class AIIA_Audio_Enhance:
                         # Pad with silence at the end
                         dwav = F.pad(dwav, (0, pad_diff))
                         has_padded = True
-                        print(f"[AIIA DEBUG] Padding last chunk to {target_len_samples} samples to hit JIT cache...")
+                        # print(f"[AIIA DEBUG] Padding last chunk to {target_len_samples} samples to hit JIT cache...")
 
                     # 1. Padding (Alignment for Model)
                     # PAD to be divisible by 64 (or whatever the model needs)

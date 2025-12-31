@@ -23,14 +23,11 @@ if _is_duplicate:
     NODE_CLASS_MAPPINGS = {}
     NODE_DISPLAY_NAME_MAPPINGS = {}
 else:
-    print("--- 正在加载 ComfyUI_AIIA 自定义节点包 ---")
+    # print("--- 正在加载 ComfyUI_AIIA 自定义节点包 ---")
 
     # 初始化空的映射字典
     NODE_CLASS_MAPPINGS = {}
     NODE_DISPLAY_NAME_MAPPINGS = {}
-
-# --- 模块导入和映射合并 ---
-# (为了代码简洁，我将重复的导入逻辑封装成一个函数)
 
     # --- 模块导入和映射合并 ---
     # (为了代码简洁，我将重复的导入逻辑封装成一个函数)
@@ -125,8 +122,6 @@ else:
         # print("严重警告: [ComfyUI_AIIA __init__] 未从任何模块加载到节点类映射。AIIA 节点将不可用。")
         pass
     else:
-        loaded_node_count = len(NODE_CLASS_MAPPINGS)
-        print(f"--- ComfyUI_AIIA 自定义节点包: 成功处理导入。最终 NODE_CLASS_MAPPINGS 包含 {loaded_node_count} 个条目 ---")
-        # 你可以在这里打印加载了哪些类，用于调试
-        # print("已加载的节点类:", list(NODE_CLASS_MAPPINGS.keys()))
-        # print("已加载的显示名称:", list(NODE_DISPLAY_NAME_MAPPINGS.keys()))
+        # loaded_node_count = len(NODE_CLASS_MAPPINGS)
+        # print(f"--- ComfyUI_AIIA 自定义节点包: 成功处理导入。最终 NODE_CLASS_MAPPINGS 包含 {loaded_node_count} 个条目 ---")
+        pass
