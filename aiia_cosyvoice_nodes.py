@@ -637,9 +637,8 @@ class AIIA_CosyVoice_TTS:
                     final_instruct = f"You are a helpful assistant. {combined_custom}<|endofprompt|>"
                     print(f"[AIIA] Applied V3 Instruction Formatting: {final_instruct[:80]}...")
             
-            if "base" in active_model.lower() and combined_custom:
-                print("\033[93m" + "[AIIA] WARNING: You are using the BASE model with instructions." + "\033[0m")
-                print("\033[93m" + "[AIIA] It will LIKELY read your instructions aloud. Switch to RL model in Loader!" + "\033[0m")
+            if ("base" in active_model.lower() or is_base) and combined_custom and not is_v3 and not is_v2:
+                print("\033[93m" + f"[AIIA] WARNING: {active_model} is likely a BASE model. Instructions may be read aloud." + "\033[0m")
         
             # --- Speaker Identity Validation & Fallback ---
             available_spks = list(cosyvoice_model.frontend.spk2info.keys())
@@ -690,7 +689,13 @@ class AIIA_CosyVoice_TTS:
                     
                     if not os.path.exists(raw_seed_path):
                         # Fallback for server structure or library default
-                        raw_seed_path = os.path.join(os.path.dirname(__file__), "libs", "CosyVoice", "asset", "zero_shot_prompt.wav")
+                        raw_seed_path = os.path.join(os.path.dirname(__file__), "assets", f"seed_{base_gender.lower()}.wav")
+                    # Use high-quality male seed if available
+                    if base_gender == "Male":
+                        hq_path = os.path.join(os.path.dirname(__file__), "assets", "seed_male_hq.wav")
+                        if os.path.exists(hq_path):
+                            raw_seed_path = hq_path
+                            print("[AIIA] Using High-Quality Male Seed (Self-Generated).")
                     
                     import torchaudio
                     seed_wav, seed_sr = torchaudio.load(raw_seed_path)
@@ -771,21 +776,22 @@ class AIIA_CosyVoice_TTS:
                         matching_spks = [s for s in available_spks if gender_keyword in s]
                         effective_spk = matching_spks[0] if matching_spks else (available_spks[0] if available_spks else "pure_1")
                     
-                    print(f"[AIIA] V1 Routing: Model={os.path.basename(model_dir)} | SFT_ID={effective_spk} | Instruct={bool(final_instruct)}")
+                    print(f"[AIIA] V1 Routing: Model={os.path.basename(model_dir)} | SFT_ID={effective_spk} | Instruct={bool(instruct_text)}")
                     
                     # Routing logic:
-                    # 1. If instructions present AND model is Instruct, use Instruct path.
-                    # 2. Otherwise use SFT path to prevent prompt reading for SFT models or base models.
-                    if final_instruct and is_instruct:
-                        # V1 Instruct can handle dialect/emotion if we use inference_instruct 
-                        # This works for both SFT and Instruct models if they share the same LLM architecture.
-                        print(f"[AIIA] Using V1 Instruct path for instructions. Note: V1 may read prompts aloud.")
-                        # Add a tiny "pause" marker to prompt to try and separate it (not 100% reliable)
+                    # 1. If CUSTOM instructions (instruct_text) present, use Instruct path.
+                    # 2. If only Dialect/Emotion presets, STAY ON SFT path for V1 to prevent reading prompts aloud.
+                    # 3. V1 300M-SFT and 300M-Instruct share the same SFT capability.
+                    if instruct_text and instruct_text.strip():
+                        # ONLY use Instruct path if the user typed something in.
+                        print(f"[AIIA] Using V1 Instruct path for custom text. Note: V1 may read prompts aloud.")
                         v1_final_instruct = final_instruct + " ..."
                         output = cosyvoice_model.inference_instruct(tts_text, effective_spk, v1_final_instruct, stream=False, speed=speed)
                     else:
-                        if final_instruct and is_sft:
-                             print("\033[93m" + f"[AIIA] WARNING: {os.path.basename(model_dir)} (SFT) does not natively support instructions. Using SFT path to prevent reading prompts." + "\033[0m")
+                        # For Dialect/Emotion presets, we prefer SFT path to keep the voice clean.
+                        # V1 doesn't follow presets well in inference_instruct anyway.
+                        if final_instruct and final_instruct != combined_custom: # i.e. preset used
+                             print("\033[93m" + f"[AIIA] WARNING: Dialect presets on 300M series are experimental. Forcing SFT path for stability." + "\033[0m")
                         output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
