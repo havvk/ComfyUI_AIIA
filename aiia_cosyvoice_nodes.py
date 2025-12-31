@@ -7,8 +7,10 @@ import soundfile as sf
 import warnings
 
 # Suppress annoying warnings
-warnings.filterwarnings("ignore", category=FutureWarning, module="torch.nn.utils.weight_norm")
-warnings.filterwarnings("ignore", category=FutureWarning, module="torch.amp.autocast")
+# Suppress FutureWarnings (autocast, weight_norm, etc)
+warnings.filterwarnings("ignore", category=FutureWarning)
+# Suppress specific ONNX/Torch warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="onnxruntime")
 warnings.filterwarnings("ignore", message="Specified provider 'CUDAExecutionProvider' is not in available provider names")
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["ONNXRUNTIME_QUIET"] = "1"
@@ -520,6 +522,10 @@ class AIIA_CosyVoice_TTS:
             if os.path.islink(llm_pt):
                 active_model = os.readlink(llm_pt)
             print(f"[AIIA] CosyVoice Active LLM: {active_model}")
+            
+            if "base" in active_model.lower() and instruct_text:
+                print("\033[93m" + "[AIIA] WARNING: You are using the BASE model with instructions." + "\033[0m")
+                print("\033[93m" + "[AIIA] It will LIKELY read your instructions aloud. Switch to RL model in Loader!" + "\033[0m")
         
         # --- Speaker Identity Validation & Fallback ---
             available_spks = list(cosyvoice_model.frontend.spk2info.keys())
