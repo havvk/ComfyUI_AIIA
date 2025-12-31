@@ -481,9 +481,9 @@ class AIIA_CosyVoice_TTS:
         return {
             "required": {
                 "model": ("COSYVOICE_MODEL",),
-                "提示1_说的内容": ("STRING", {"default": "📖 第一步：在此输入您想让 AI 说的话 (TTS Text)", "multiline": False}),
+                "提示1_说的内容": ("AIIA_LABEL", {"default": "📖 第一步：在此输入您想让 AI 说的话 (TTS Text)"}),
                 "tts_text": ("STRING", {"multiline": True, "default": "你好，这是 CosyVoice 3.0 的全能模式测试。"}),
-                "提示2_音色描述": ("STRING", {"default": "🎨 第二步：在此输入对声音的文字描述 (Voice Description)", "multiline": False}),
+                "提示2_音色描述": ("AIIA_LABEL", {"default": "🎨 第二步：在此输入对声音的文字描述 (Voice Description)"}),
                 "instruct_text": ("STRING", {"multiline": True, "default": "一个沉稳、磁性的成熟男性声音，语法标准，情感饱满。"}),
                 "spk_id": ("STRING", {"default": "", "tooltip": "固定音色 ID (如 pure_1)。对于 0.5B/V3 等 Zero-Shot 模型，此项通常为空，需配合参考音频使用。"}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
