@@ -308,6 +308,22 @@ class AIIA_CosyVoice_ModelLoader:
                 import types
                 model_instance.frontend._extract_speech_feat = types.MethodType(patched_extract_speech_feat, model_instance.frontend)
                 print("[AIIA] Successfully patched V1 frontend _extract_speech_feat.")
+
+            # --- CRITICAL: Monkeypatch Frontend for V1 Instruct Gender Fix ---
+            if is_instruct and not is_v3 and not is_v2:
+                print(f"[AIIA] Patching 300M-Instruct Frontend to keep LLM Embedding (Fixes Gender)...")
+                def patched_frontend_instruct(frontend_self, tts_text, spk_id, instruct_text):
+                    # Original logic deletes llm_embedding, causing gender failure if prompt is weak.
+                    # We keep it to ensure spk_id (embedding) still provides gender hint.
+                    model_input = frontend_self.frontend_sft(tts_text, spk_id)
+                    instruct_text_token, instruct_text_token_len = frontend_self._extract_text_token(instruct_text)
+                    model_input['prompt_text'] = instruct_text_token
+                    model_input['prompt_text_len'] = instruct_text_token_len
+                    return model_input
+                
+                import types
+                model_instance.frontend.frontend_instruct = types.MethodType(patched_frontend_instruct, model_instance.frontend)
+                print("[AIIA] Successfully patched V1 frontend_instruct.")
                 
         except ImportError:
              # Fallback if library is old
@@ -679,6 +695,9 @@ class AIIA_CosyVoice_TTS:
                     import torchaudio
                     seed_wav, seed_sr = torchaudio.load(raw_seed_path)
                     
+                    if base_gender == "Male":
+                        print("\033[93m" + "[AIIA] WARNING: seed_male.wav has limited bandwidth (~6kHz). For higher quality, use a 24k/44k Male reference audio." + "\033[0m")
+                    
                     # --- FIX: Mono conversion via channel selection instead of averaging ---
                     # Averaging can cause phase-cancellation and muffle high frequencies.
                     if seed_wav.shape[0] > 1:
@@ -752,29 +771,37 @@ class AIIA_CosyVoice_TTS:
                         matching_spks = [s for s in available_spks if gender_keyword in s]
                         effective_spk = matching_spks[0] if matching_spks else (available_spks[0] if available_spks else "pure_1")
                     
-                    print(f"[AIIA] V1 Routing: Model={os.path.basename(model_dir)} | SFT_ID={effective_spk}")
+                    print(f"[AIIA] V1 Routing: Model={os.path.basename(model_dir)} | SFT_ID={effective_spk} | Instruct={bool(final_instruct)}")
                     
-                    # 1. SFT models ONLY support SFT path.
-                    # 2. Instruct models use SFT if no instructions, else Instruct.
-                    if is_sft or (is_instruct and not final_instruct):
-                        output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
-                    elif is_instruct:
-                        # Only hit this if there IS final_instruct
-                        print(f"[AIIA] Using V1 Instruct path. May read text instructions.")
-                        output = cosyvoice_model.inference_instruct(tts_text, effective_spk, final_instruct, stream=False, speed=speed)
+                    # Routing logic:
+                    # 1. If instructions present, use Instruct path.
+                    # 2. If no instructions, use SFT path (bypasses prompt reading).
+                    if final_instruct:
+                        # V1 Instruct can handle dialect/emotion if we use inference_instruct 
+                        # This works for both SFT and Instruct models if they share the same LLM architecture.
+                        print(f"[AIIA] Using V1 Instruct path for instructions. Note: V1 may read prompts aloud.")
+                        # Add a tiny "pause" marker to prompt to try and separate it (not 100% reliable)
+                        v1_final_instruct = final_instruct + " ..."
+                        output = cosyvoice_model.inference_instruct(tts_text, effective_spk, v1_final_instruct, stream=False, speed=speed)
                     else:
-                        # Fallback for base or unknown V1
                         output = cosyvoice_model.inference_sft(tts_text, effective_spk, stream=False, speed=speed)
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
                 final_waveform = torch.cat(all_speech, dim=-1)
             
-            # --- 3. Peak Normalization ---
-            # Maximize volume to the limit
+            # --- 3. RMS Normalization ---
+            # Maximize volume while maintaining natural energy balance
             if final_waveform.abs().max() > 0:
-                # Use 0.98 to avoid inter-sample peaks causes clipping in some players
-                final_waveform = (final_waveform / final_waveform.abs().max()) * 0.98
-                print(f"[AIIA] CosyVoice: Applied Peak Normalization (max=0.98).")
+                # Target RMS 0.15 is roughly -18 LUFS (loud but safe)
+                current_rms = torch.sqrt(torch.mean(final_waveform**2))
+                if current_rms > 0:
+                    scale = 0.18 / current_rms.item()
+                    final_waveform = final_waveform * scale
+                    print(f"[AIIA] CosyVoice: Applied RMS Normalization (RMS: {current_rms.item():.4f} -> 0.18).")
+                
+                # Safety cap to prevent hard digital clipping
+                if final_waveform.abs().max() > 0.99:
+                    final_waveform = final_waveform / (final_waveform.abs().max() / 0.99)
 
         except Exception as e:
             if isinstance(e, (ValueError, FileNotFoundError)): raise e
