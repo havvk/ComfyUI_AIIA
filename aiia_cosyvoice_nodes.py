@@ -297,7 +297,6 @@ class AIIA_CosyVoice_ModelLoader:
                 print(f"[AIIA] Patching 300M Frontend SR to {model_instance.sample_rate}Hz...")
                 def patched_extract_speech_feat(frontend_self, prompt_wav):
                     from cosyvoice.utils.file_utils import load_wav
-                    # model_instance is available in closure, or use frontend_self.feat_extractor
                     sr = model_instance.sample_rate # 300M models are 22050
                     speech = load_wav(prompt_wav, sr)
                     speech_feat = frontend_self.feat_extractor(speech).squeeze(dim=0).transpose(0, 1).to(frontend_self.device)
@@ -309,21 +308,8 @@ class AIIA_CosyVoice_ModelLoader:
                 model_instance.frontend._extract_speech_feat = types.MethodType(patched_extract_speech_feat, model_instance.frontend)
                 print("[AIIA] Successfully patched V1 frontend _extract_speech_feat.")
 
-            # --- CRITICAL: Monkeypatch Frontend for V1 Instruct Gender Fix ---
-            if not is_v3 and not is_v2:
-                print(f"[AIIA] Patching 300M-Series Frontend to keep LLM Embedding (Fixes Gender)...")
-                def patched_frontend_instruct(frontend_self, tts_text, spk_id, instruct_text):
-                    # Original logic deletes llm_embedding, causing gender failure if prompt is weak.
-                    # We keep it to ensure spk_id (embedding) still provides gender hint.
-                    model_input = frontend_self.frontend_sft(tts_text, spk_id)
-                    instruct_text_token, instruct_text_token_len = frontend_self._extract_text_token(instruct_text)
-                    model_input['prompt_text'] = instruct_text_token
-                    model_input['prompt_text_len'] = instruct_text_token_len
-                    return model_input
-                
-                import types
-                model_instance.frontend.frontend_instruct = types.MethodType(patched_frontend_instruct, model_instance.frontend)
-                print("[AIIA] Successfully patched V1 frontend_instruct for ALL V1 flavors.")
+            # Note: We rely on text hints for V1-Instruct gender, as the official 300M Instruct model 
+            # ignores the embedding when the instruction token is active.
                 
         except ImportError:
              # Fallback if library is old
@@ -599,38 +585,61 @@ class AIIA_CosyVoice_TTS:
             print(f"[AIIA] CosyVoice Active LLM: {active_model} | SFT: {is_sft} | Instruct: {is_instruct}")
             
             # --- 1. Centralized Instruction Assembly (Fusion Logic) ---
-            preset_instructs = []
             dialect_core = dialect.split(' ')[0] if dialect != "None (Auto)" else None
             emotion_core = emotion.split(' ')[0] if emotion != "None (Neutral)" else None
             
-            if dialect_core and emotion_core:
-                if "机器人" in emotion_core:
-                    preset_instructs.append(f"请用{dialect_core}，并且尝试用机器人的方式解答。")
-                elif "小猪佩奇" in emotion_core:
-                    preset_instructs.append(f"请用{dialect_core}，并且我想体验一下小猪佩奇风格。")
-                else:
-                    preset_instructs.append(f"请用{dialect_core}，并且非常{emotion_core}地说一句话。")
-            elif dialect_core:
-                preset_instructs.append(f"请用{dialect_core}表达。")
-            elif emotion_core:
-                if "机器人" in emotion_core:
-                    preset_instructs.append("你可以尝试用机器人的方式解答吗？")
-                elif "小猪佩奇" in emotion_core:
-                    preset_instructs.append("我想体验一下小猪佩奇风格，可以吗？")
-                else:
-                    preset_instructs.append(f"请非常{emotion_core}地说一句话。")
-                    
-            combined_custom = " ".join(preset_instructs)
-            if instruct_text:
-                combined_custom = f"{combined_custom} {instruct_text}".strip()
+            if not is_v3 and not is_v2:
+                # V1 (300M) series performs better with English descriptions rather than Chinese commands.
+                # This also helps distinguish instruction from TTS text to prevent "reading aloud".
+                dialect_map = {"粤语": "Cantonese accent", "广东话": "Cantonese accent", "四川话": "Sichuan accent", 
+                               "韩语": "Korean accent", "日语": "Japanese accent", "英语": "English accent", "英文": "English accent"}
+                emotion_map = {"开心": "happy", "生气": "angry", "悲伤": "sad", "恐惧": "fearful", "惊讶": "surprised"}
+                
+                parts = []
+                d_eng = dialect_map.get(dialect_core)
+                e_eng = emotion_map.get(emotion_core)
+                
+                # Prefix gender hint to fix the "always female" bug in V1 Instruct
+                gender_prefix = "A male speaker" if base_gender == "Male" else "A female speaker"
+                
+                if d_eng and e_eng: parts.append(f"{gender_prefix} with a {d_eng} in a {e_eng} mood.")
+                elif d_eng: parts.append(f"{gender_prefix} with a {d_eng}.")
+                elif e_eng: parts.append(f"{gender_prefix} in a {e_eng} mood.")
+                else: parts.append(f"{gender_prefix}.")
+                
+                combined_custom = " ".join(parts)
+                if instruct_text:
+                    combined_custom = f"{combined_custom} {instruct_text}".strip()
+                
+                if combined_custom:
+                    # Strictly follow <|endofprompt|> format for V1 Instruct as per official examples
+                    combined_custom = f"{combined_custom.replace('<|endofprompt|>', '')}<|endofprompt|>"
+                    print(f"[AIIA] V1 Instruct Formatting applied: {combined_custom[:100]}...")
             
-            # --- 2. V1-Specific Gender Hint Injection (REMOVED) ---
-            # NOTE: We no longer auto-inject text hints for V1 because it causes the model to read them aloud.
-            # V1 models should rely on spk_id (SFT) or reference audio (Zero-Shot) for identity.
-            if not is_v3 and not is_v2 and combined_custom:
-                pass # Rely on spk_id fallback or custom instruct_text if provided
+            else:
+                # V2/V3 Command Mode
+                preset_instructs = []
+                if dialect_core and emotion_core:
+                    if "机器人" in emotion_core:
+                        preset_instructs.append(f"请用{dialect_core}，并且尝试用机器人的方式解答。")
+                    elif "小猪佩奇" in emotion_core:
+                        preset_instructs.append(f"请用{dialect_core}，并且我想体验一下小猪佩奇风格。")
+                    else:
+                        preset_instructs.append(f"请用{dialect_core}，并且非常{emotion_core}地说一句话。")
+                elif dialect_core:
+                    preset_instructs.append(f"请用{dialect_core}表达。")
+                elif emotion_core:
+                    if "机器人" in emotion_core:
+                        preset_instructs.append("你可以尝试用机器人的方式解答吗？")
+                    elif "小猪佩奇" in emotion_core:
+                        preset_instructs.append("我想体验一下小猪佩奇风格，可以吗？")
+                    else:
+                        preset_instructs.append(f"请非常{emotion_core}地说一句话。")
+                        
+                combined_custom = " ".join(preset_instructs)
+                if instruct_text:
+                    combined_custom = f"{combined_custom} {instruct_text}".strip()
 
-            # --- 3. V3-Specific System Prompt & endofprompt Formatting ---
             final_instruct = combined_custom
             if (is_v3 or is_v2) and combined_custom:
                 if "<|endofprompt|>" not in combined_custom:
@@ -683,16 +692,12 @@ class AIIA_CosyVoice_TTS:
                         sf.write(ref_path, ref_np, sample_rate, subtype='FLOAT')
                         cleanup_ref = True
                 else:
-                    # Pure Instruct Fallback: Use built-in asset based on selection
-                    assets_dir = os.path.join(os.path.dirname(__file__), "assets")
+                    assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
                     raw_seed_path = os.path.join(assets_dir, "seed_male.wav" if base_gender == "Male" else "seed_female.wav")
                     
-                    if not os.path.exists(raw_seed_path):
-                        # Fallback for server structure or library default
-                        raw_seed_path = os.path.join(os.path.dirname(__file__), "assets", f"seed_{base_gender.lower()}.wav")
                     # Use high-quality male seed if available
                     if base_gender == "Male":
-                        hq_path = os.path.join(os.path.dirname(__file__), "assets", "seed_male_hq.wav")
+                        hq_path = os.path.join(assets_dir, "seed_male_hq.wav")
                         if os.path.exists(hq_path):
                             raw_seed_path = hq_path
                             print("[AIIA] Using High-Quality Male Seed (Self-Generated).")
@@ -700,13 +705,12 @@ class AIIA_CosyVoice_TTS:
                     import torchaudio
                     seed_wav, seed_sr = torchaudio.load(raw_seed_path)
                     
-                    if base_gender == "Male" and not os.path.exists(os.path.join(os.path.dirname(__file__), "assets", "seed_male_hq.wav")):
+                    if base_gender == "Male" and "seed_male_hq.wav" not in raw_seed_path:
                         print("\033[93m" + "[AIIA] WARNING: seed_male.wav has limited bandwidth (~6kHz). For higher quality, use a 24k/44k Male reference audio." + "\033[0m")
                     
                     # --- FIX: Mono conversion via channel selection instead of averaging ---
-                    # Averaging can cause phase-cancellation and muffle high frequencies.
                     if seed_wav.shape[0] > 1:
-                        seed_wav = seed_wav[0:1, :] # Just take the first channel
+                        seed_wav = seed_wav[0:1, :]
                         
                     if seed_sr != sample_rate:
                         print(f"[AIIA] Resampling seed audio from {seed_sr}Hz to {sample_rate}Hz...")
@@ -717,7 +721,8 @@ class AIIA_CosyVoice_TTS:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_seed:
                         ref_path = tmp_seed.name
                         seed_np = seed_wav.squeeze().cpu().numpy()
-                        sf.write(ref_path, seed_np, sample_rate, subtype='FLOAT')
+                        # Use PCM_16 for maximum compatibility with all model frontends
+                        sf.write(ref_path, seed_np, sample_rate, subtype='PCM_16')
                         cleanup_ref = True
                         
                     print(f"[AIIA] CosyVoice: Pure Instruct Mode using {base_gender} seed ({sample_rate}Hz).")
@@ -748,10 +753,11 @@ class AIIA_CosyVoice_TTS:
                                 p_text = "希望你以后能够做的比我还好呦。"
                             elif base_gender == "Male":
                                 # Check for hq transcript first
-                                hq_txt_path = os.path.join(os.path.dirname(__file__), "assets", "seed_male_hq.txt")
+                                hq_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male_hq.txt")
                                 if os.path.exists(hq_txt_path):
                                     with open(hq_txt_path, 'r', encoding='utf-8') as f:
                                         p_text = f.read().strip()
+                                        print(f"[AIIA] Loaded male seed transcript: {p_text}")
                                 else:
                                     p_text = "我都一年没吃苹果了,到超市偷了一袋苹果,大家觉得这不道歉你一年没吃苹果,就能偷苹果了"
                         
