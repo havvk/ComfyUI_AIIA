@@ -24,6 +24,26 @@ from huggingface_hub import snapshot_download
 # Lazy-loaded global variable
 CosyVoice = None
 
+def safe_frontend_instruct(self, tts_text, spk_id, instruct_text):
+    """
+    Surgical Monkeypatch for V1 Instruct Model.
+    Official V1 frontend explicitly deletes llm_embedding, making it impossible to force a male voice.
+    This patch allows injecting a 'hidden' embedding if it exists on the self object.
+    """
+    import torch
+    # 1. Standard V1 Logic
+    model_input = self.frontend_sft(tts_text, spk_id)
+    # 2. Add Instruction
+    model_input['text_instruct'] = self._extract_text_token(instruct_text)
+    
+    # 3. Surgical Injection: If a hidden identity is requested, force it back in.
+    if hasattr(self, '_injected_llm_emb') and self._injected_llm_emb is not None:
+        model_input['llm_embedding'] = self._injected_llm_emb
+        # Also clean it up after use to avoid pollution
+        self._injected_llm_emb = None
+        
+    return model_input
+
 def _install_cosyvoice_if_needed():
     global CosyVoice
     if CosyVoice is not None:
@@ -299,6 +319,12 @@ class AIIA_CosyVoice_ModelLoader:
         except Exception as e:
            raise RuntimeError(f"Failed to initialize CosyVoice model: {e}")
            
+        # --- Apply V1 Instruct Monkeypatch ---
+        if not is_v3 and not is_v2 and is_instruct:
+            print("[AIIA] Applying Surgical Identity Injection Patch to V1 Instruct Frontend.")
+            if hasattr(model_instance, 'frontend'):
+                model_instance.frontend.frontend_instruct = types.MethodType(safe_frontend_instruct, model_instance.frontend)
+
         # IMPORTANT: The TTS node expects version flags.
         return ({"model": model_instance, "model_dir": model_dir, "is_v3": is_v3, "is_v2": is_v2, "is_sft": is_sft, "is_instruct": is_instruct, "is_base": is_base},)
 
@@ -647,12 +673,12 @@ class AIIA_CosyVoice_TTS:
                     spk_id = "" # Clear it to avoid confusion in native paths
             elif reference_audio is None:
                 # --- V1 (300M) Special Handling for Gender ---
-                if not is_v3 and not is_v2 and is_base and base_gender in ["Male", "Female"]:
-                    # Force Zero-Shot fallback ONLY for Base models (since they have no native Instruct/SFT gender support).
+                if not is_v3 and not is_v2 and (is_base or is_instruct) and base_gender in ["Male", "Female"]:
+                    # Force Zero-Shot fallback for Base (Stability) and Instruct (Gender Control via Injection)
                     use_seed_fallback = True
-                    print(f"[AIIA] V1 Base detected. Forcing Zero-Shot fallback for {base_gender} stability.")
+                    print(f"[AIIA] V1 { 'Instruct' if is_instruct else 'Base' } detected. Using seed fallback for {base_gender} control.")
                 
-                # Instruct and SFT models go through normal speaker selection
+                # SFT models go through normal speaker selection
                 elif available_spks:
                     # SFT mode path or confirmed good IDs
                     # Improve auto-selection based on base_gender
@@ -690,18 +716,11 @@ class AIIA_CosyVoice_TTS:
                     assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
                     raw_seed_path = os.path.join(assets_dir, "seed_male.wav" if base_gender == "Male" else "seed_female.wav")
                     
-                    # Use high-quality male seed if available
-                    if base_gender == "Male":
-                        hq_path = os.path.join(assets_dir, "seed_male_hq.wav")
-                        if os.path.exists(hq_path):
-                            raw_seed_path = hq_path
-                            print("[AIIA] Using High-Quality Male Seed (Self-Generated).")
+                    # Use standard seed by default as HQ seed was reported too deep
+                    print(f"[AIIA] Using Standard V1 {base_gender} Seed.")
                     
                     import torchaudio
                     seed_wav, seed_sr = torchaudio.load(raw_seed_path)
-                    
-                    if base_gender == "Male" and "seed_male_hq.wav" not in raw_seed_path:
-                        print("\033[93m" + "[AIIA] WARNING: seed_male.wav has limited bandwidth (~6kHz). For higher quality, use a 24k/44k Male reference audio." + "\033[0m")
                     
                     # --- FIX: Mono conversion via channel selection instead of averaging ---
                     if seed_wav.shape[0] > 1:
@@ -733,34 +752,37 @@ class AIIA_CosyVoice_TTS:
                             speed=speed
                         )
                     else:
-                        # --- V1 (300M) Native Zero-Shot Fusion Path ---
-                        # For V1, the Instruct model natively supports inference_zero_shot.
-                        # We use this to "fuse" the instruction into the prompt_text.
-                        p_text = ""
-                        if use_seed_fallback:
-                            # Get Literal Transcript of the seed
-                            if base_gender == "Male":
-                                hq_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male_hq.txt")
-                                if os.path.exists(hq_txt_path):
-                                    try:
-                                        with open(hq_txt_path, 'r', encoding='utf-8') as f:
-                                            p_text = f.read().strip()
-                                    except: p_text = "希望你以后能够做的比我还好呦。"
-                                else:
-                                    p_text = "希望你以后能够做的比我还好呦。"
-                            else:
-                                p_text = "希望你以后能够做的比我还好呦。"
+                        # --- V1 (300M) Native Path Selection ---
+                        if not is_v3 and not is_v2 and is_instruct:
+                            # 1. Instruct Path with Identity Injection
+                            # Extract embedding from seed for injection
+                            prompt_speech_16k = torchaudio.transforms.Resample(sample_rate, 16000)(seed_wav)
+                            query_emb = cosyvoice_model.frontend._extract_speech_feat(prompt_speech_16k)
+                            cosyvoice_model.frontend._injected_llm_emb = query_emb
                             
-                            # FUSION: For Instruct models, fuse instruction into the prompt
-                            if is_instruct and final_instruct and final_instruct.strip():
-                                 # Following v3 fusion pattern: [seed_txt]<|endofprompt|>[instruction]
-                                 p_text = f"{p_text}<|endofprompt|>{final_instruct}"
+                            print(f"[AIIA] CosyVoice: Instruct Mode with Identity Injection ({base_gender}).")
+                            output = cosyvoice_model.inference_instruct(tts_text, spk_id, final_instruct, speed=speed)
+                        else:
+                            # 2. Zero-Shot Path (Base model)
+                            # Get Literal Transcript of the seed
+                            p_text = ""
+                            if use_seed_fallback:
+                                # Standard seed transcript
+                                p_text = "希望你以后能够做的比我还好呦。"
+                                if base_gender == "Male":
+                                    txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male.txt")
+                                    if os.path.exists(txt_path):
+                                        try:
+                                            with open(txt_path, 'r', encoding='utf-8') as f:
+                                                p_text = f.read().strip()
+                                        except: pass
 
-                        # V1 Speed Handling: Only boost if using the "slow" male seed
-                        v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male" and use_seed_fallback) else 1.0
-                        effective_speed = speed * v1_speed_boost
-                        
-                        output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
+                            # V1 Speed Handling: Only boost if using the "slow" male seed
+                            v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male" and use_seed_fallback) else 1.0
+                            effective_speed = speed * v1_speed_boost
+                            
+                            print(f"[AIIA] CosyVoice: Zero-Shot Path ({base_gender}).")
+                            output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
                     
                     all_speech = [chunk['tts_speech'] for chunk in output]
                     final_waveform = torch.cat(all_speech, dim=-1)
