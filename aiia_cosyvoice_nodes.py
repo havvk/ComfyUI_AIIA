@@ -767,24 +767,24 @@ class AIIA_CosyVoice_TTS:
                 finally:
                     if cleanup_ref and os.path.exists(ref_path): os.unlink(ref_path)
 
-        # 2. SFT (Fixed Speaker ID, No Reference Audio)
-        else:
-            print(f"[AIIA] CosyVoice: SFT Mode. Speaker: {spk_id}")
-            if is_v3 or is_v2:
-                output = cosyvoice_model.inference_instruct2(
-                    tts_text=tts_text, 
-                    instruct_text=final_instruct, 
-                    prompt_wav=None, 
-                    zero_shot_spk_id=spk_id, 
-                    stream=False, 
-                    speed=speed
-                )
+            # 2. SFT (Fixed Speaker ID, No Reference Audio)
             else:
-                # Normal SFT path for fixed identities
-                output = cosyvoice_model.inference_sft(tts_text, spk_id, speed=speed)
-            
-            all_speech = [chunk['tts_speech'] for chunk in output]
-            final_waveform = torch.cat(all_speech, dim=-1)
+                print(f"[AIIA] CosyVoice: SFT Mode. Speaker: {spk_id}")
+                if is_v3 or is_v2:
+                    output = cosyvoice_model.inference_instruct2(
+                        tts_text=tts_text, 
+                        instruct_text=final_instruct, 
+                        prompt_wav=None, 
+                        zero_shot_spk_id=spk_id, 
+                        stream=False, 
+                        speed=speed
+                    )
+                else:
+                    # Normal SFT path for fixed identities
+                    output = cosyvoice_model.inference_sft(tts_text, spk_id, speed=speed)
+                
+                all_speech = [chunk['tts_speech'] for chunk in output]
+                final_waveform = torch.cat(all_speech, dim=-1)
             
             # --- 3. RMS Normalization ---
             # Maximize volume while maintaining natural energy balance
