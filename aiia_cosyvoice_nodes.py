@@ -291,44 +291,6 @@ class AIIA_CosyVoice_ModelLoader:
                 if hasattr(matcha_audio, "mel_basis"): matcha_audio.mel_basis.clear()
                 if hasattr(matcha_audio, "hann_window"): matcha_audio.hann_window.clear()
             except: pass
-
-            # --- CRITICAL: Monkeypatch Frontend Hardcoded 24000 ---
-            # V1 models use 22050, but official frontend hardcodes 24000 in _extract_speech_feat
-            if hasattr(model_instance, 'frontend') and not is_v3 and not is_v2:
-                print(f"[AIIA] Patching 300M Frontend SR to {model_instance.sample_rate}Hz...")
-                def patched_extract_speech_feat(frontend_self, prompt_wav):
-                    from cosyvoice.utils.file_utils import load_wav
-                    sr = model_instance.sample_rate # 300M models are 22050
-                    speech = load_wav(prompt_wav, sr)
-                    speech_feat = frontend_self.feat_extractor(speech).squeeze(dim=0).transpose(0, 1).to(frontend_self.device)
-                    speech_feat = speech_feat.unsqueeze(dim=0)
-                    speech_feat_len = torch.tensor([speech_feat.shape[1]], dtype=torch.int32).to(frontend_self.device)
-                    return speech_feat, speech_feat_len
-                
-                model_instance.frontend._extract_speech_feat = types.MethodType(patched_extract_speech_feat, model_instance.frontend)
-                print("[AIIA] Successfully patched V1 frontend _extract_speech_feat.")
-
-            # --- CRITICAL: Monkeypatch Frontend for V1 Instruct Identity Injection ---
-            if not is_v3 and not is_v2:
-                print(f"[AIIA] Patching V1 Frontend for Identity Injection...")
-                def safe_frontend_instruct(self, tts_text, spk_id, instruct_text):
-                    # Use a copy to avoid polluting the global spk2info cache
-                    model_input = self.frontend_sft(tts_text, spk_id).copy()
-                    
-                    if hasattr(self, '_injected_llm_emb') and self._injected_llm_emb is not None:
-                        # Inject BOTH LLM and Flow embeddings to ensure consistent gender
-                        target_emb = self._injected_llm_emb.to(self.device).detach()
-                        model_input['llm_embedding'] = target_emb
-                        model_input['flow_embedding'] = target_emb
-                    
-                    instruct_text_token, instruct_text_token_len = self._extract_text_token(instruct_text)
-                    model_input['prompt_text'] = instruct_text_token
-                    model_input['prompt_text_len'] = instruct_text_token_len
-                    return model_input
-                
-                model_instance.frontend.frontend_instruct = types.MethodType(safe_frontend_instruct, model_instance.frontend)
-                model_instance.frontend._injected_llm_emb = None # Initialize
-                print("[AIIA] Successfully patched V1 frontend_instruct for Identity Injection.")
                 
         except ImportError:
              # Fallback if library is old
@@ -761,109 +723,68 @@ class AIIA_CosyVoice_TTS:
                     print(f"[AIIA] CosyVoice: Pure Instruct Mode using {base_gender} seed ({sample_rate}Hz).")
 
                 try:
-                    if is_v3 or is_v2:
-                        output = cosyvoice_model.inference_instruct2(
-                            tts_text=tts_text, 
-                            instruct_text=final_instruct, 
-                            prompt_wav=ref_path, 
-                            zero_shot_spk_id=spk_id, 
-                            stream=False, 
-                            speed=speed
-                        )
-                    else:
-                        # V1 path: Always use zero_shot if we have a reference audio (including seed).
-                        # For V1, prompt_text is REQUIRED to be accurate.
-                        p_text = ""
-                        if use_seed_fallback:
-                            if base_gender == "Male":
-                                # Check for hq transcript first as a fallback
-                                hq_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male_hq.txt")
-                                if os.path.exists(hq_txt_path):
-                                    try:
-                                        with open(hq_txt_path, 'r', encoding='utf-8') as f:
-                                            p_text = f.read().strip()
-                                    except: pass
-                                
-                                if not p_text:
-                                    p_text = "希望你以后能够做的比我还好呦。"
-                            elif base_gender == "Female":
-                                p_text = "希望你以后能够做的比我还好呦。"
-                            else:
-                                # Generic fallback
-                                p_text = "希望你以后能够做的比我还好呦。"
-                            
-                        if not is_v3 and not is_v2: # V1 Zero-Shot path
-                            # CRITICAL: Base models MUST NOT have instructions in the transcript
-                            # It causes babbling/hallucination.
-                            pass
-
-                        # V1 Speed Handling: Only boost if using the "slow" male seed fallback
-                        v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male" and use_seed_fallback) else 1.0
-                        effective_speed = speed * v1_speed_boost
-                        output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
-                    
-                    all_speech = [chunk['tts_speech'] for chunk in output]
-                    final_waveform = torch.cat(all_speech, dim=-1)
-                finally:
-                    if cleanup_ref and os.path.exists(ref_path): os.unlink(ref_path)
-
-            # 2. SFT / Instruct (Fixed Speaker ID, No Reference Audio)
-            else:
-                print(f"[AIIA] CosyVoice: Fixed Identity Mode (SFT/ID). Speaker: {spk_id}")
                 if is_v3 or is_v2:
                     output = cosyvoice_model.inference_instruct2(
                         tts_text=tts_text, 
                         instruct_text=final_instruct, 
-                        prompt_wav=None, 
+                        prompt_wav=ref_path, 
                         zero_shot_spk_id=spk_id, 
                         stream=False, 
                         speed=speed
                     )
                 else:
-                    # --- V1 (300M) Special Identity & Speed Handling ---
-                    effective_spk = spk_id
-                    if not effective_spk or not effective_spk.strip():
-                        gender_keyword = "男" if base_gender == "Male" else "女"
-                        matching_spks = [s for s in available_spks if gender_keyword in s]
-                        effective_spk = matching_spks[0] if matching_spks else (available_spks[0] if available_spks else "pure_1")
-
-                    # Apply V1 identity injection for Instruct models to fix gender bias
-                    if is_instruct and base_gender in ["Male", "Female"]:
-                        try:
-                            seed_keyword = "male_hq" if base_gender == "Male" else "female"
-                            injected_seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", f"seed_{seed_keyword}.wav")
-                            if os.path.exists(injected_seed_path):
-                                # pos 4 is zero_shot_spk_id='' to trigger extraction
-                                dummy_input = cosyvoice_model.frontend.frontend_zero_shot('test', 'hope you do better', injected_seed_path, 22050, '')
-                                cosyvoice_model.frontend._injected_llm_emb = dummy_input['llm_embedding']
-                                print(f"[AIIA] V1 Instruct Identity Injection activated for {base_gender}.")
-                        except Exception as e:
-                            print(f"[AIIA] Warning: Identity injection failed: {e}")
-                    else:
-                        if hasattr(cosyvoice_model.frontend, '_injected_llm_emb'):
-                            cosyvoice_model.frontend._injected_llm_emb = None
-
-                    # V1 Speed Handling: Only boost if using the "slow" male fallback (which uses seed_male_hq)
-                    v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male") else 1.0
-                    effective_speed = speed * v1_speed_boost
-
-                    try:
-                        if is_instruct:
-                            # Use English-only hints for V1 to minimize "prompt reading"
-                            v1_eng_instruct = final_instruct
-                            # Ensure it doesn't end abruptly to minimize reading
-                            if not v1_eng_instruct.endswith("<|endofprompt|>"):
-                                v1_eng_instruct += "<|endofprompt|>"
-                            
-                            output = cosyvoice_model.inference_instruct(tts_text, effective_spk, v1_eng_instruct, speed=effective_speed)
+                    # --- V1 (300M) Native Zero-Shot Fusion Path ---
+                    # For V1, the Instruct model natively supports inference_zero_shot.
+                    # We use this to "fuse" the instruction into the prompt_text.
+                    p_text = ""
+                    if use_seed_fallback:
+                        # Get Literal Transcript of the seed
+                        if base_gender == "Male":
+                            hq_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male_hq.txt")
+                            if os.path.exists(hq_txt_path):
+                                try:
+                                    with open(hq_txt_path, 'r', encoding='utf-8') as f:
+                                        p_text = f.read().strip()
+                                except: p_text = "希望你以后能够做的比我还好呦。"
+                            else:
+                                p_text = "希望你以后能够做的比我还好呦。"
                         else:
-                            output = cosyvoice_model.inference_sft(tts_text, effective_spk, speed=effective_speed)
-                    finally:
-                        if hasattr(cosyvoice_model.frontend, '_injected_llm_emb'):
-                            cosyvoice_model.frontend._injected_llm_emb = None
+                            p_text = "希望你以后能够做的比我还好呦。"
+                        
+                        # FUSION: For Instruct models, fuse instruction into the prompt
+                        if is_instruct and final_instruct and final_instruct.strip():
+                             # Following v3 fusion pattern: [seed_txt]<|endofprompt|>[instruction]
+                             p_text = f"{p_text}<|endofprompt|>{final_instruct}"
+
+                    # V1 Speed Handling: Only boost if using the "slow" male seed
+                    v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male" and use_seed_fallback) else 1.0
+                    effective_speed = speed * v1_speed_boost
+                    
+                    output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
                 
                 all_speech = [chunk['tts_speech'] for chunk in output]
                 final_waveform = torch.cat(all_speech, dim=-1)
+            finally:
+                if cleanup_ref and os.path.exists(ref_path): os.unlink(ref_path)
+
+        # 2. SFT (Fixed Speaker ID, No Reference Audio)
+        else:
+            print(f"[AIIA] CosyVoice: SFT Mode. Speaker: {spk_id}")
+            if is_v3 or is_v2:
+                output = cosyvoice_model.inference_instruct2(
+                    tts_text=tts_text, 
+                    instruct_text=final_instruct, 
+                    prompt_wav=None, 
+                    zero_shot_spk_id=spk_id, 
+                    stream=False, 
+                    speed=speed
+                )
+            else:
+                # Normal SFT path for fixed identities
+                output = cosyvoice_model.inference_sft(tts_text, spk_id, speed=speed)
+            
+            all_speech = [chunk['tts_speech'] for chunk in output]
+            final_waveform = torch.cat(all_speech, dim=-1)
             
             # --- 3. RMS Normalization ---
             # Maximize volume while maintaining natural energy balance
