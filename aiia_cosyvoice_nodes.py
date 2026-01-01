@@ -24,26 +24,6 @@ from huggingface_hub import snapshot_download
 # Lazy-loaded global variable
 CosyVoice = None
 
-def safe_frontend_instruct(self, tts_text, spk_id, instruct_text):
-    """
-    Surgical Monkeypatch for V1 Instruct Model.
-    Official V1 frontend explicitly deletes llm_embedding, making it impossible to force a male voice.
-    This patch allows injecting a 'hidden' embedding if it exists on the self object.
-    """
-    import torch
-    # 1. Standard V1 Logic
-    model_input = self.frontend_sft(tts_text, spk_id)
-    # 2. Add Instruction
-    model_input['text_instruct'] = self._extract_text_token(instruct_text)
-    
-    # 3. Surgical Injection: If a hidden identity is requested, force it back in.
-    if hasattr(self, '_injected_llm_emb') and self._injected_llm_emb is not None:
-        model_input['llm_embedding'] = self._injected_llm_emb
-        # Also clean it up after use to avoid pollution
-        self._injected_llm_emb = None
-        
-    return model_input
-
 def _install_cosyvoice_if_needed():
     global CosyVoice
     if CosyVoice is not None:
@@ -319,12 +299,6 @@ class AIIA_CosyVoice_ModelLoader:
         except Exception as e:
            raise RuntimeError(f"Failed to initialize CosyVoice model: {e}")
            
-        # --- Apply V1 Instruct Monkeypatch ---
-        if not is_v3 and not is_v2 and is_instruct:
-            print("[AIIA] Applying Surgical Identity Injection Patch to V1 Instruct Frontend.")
-            if hasattr(model_instance, 'frontend'):
-                model_instance.frontend.frontend_instruct = types.MethodType(safe_frontend_instruct, model_instance.frontend)
-
         # IMPORTANT: The TTS node expects version flags.
         return ({"model": model_instance, "model_dir": model_dir, "is_v3": is_v3, "is_v2": is_v2, "is_sft": is_sft, "is_instruct": is_instruct, "is_base": is_base},)
 
@@ -596,33 +570,21 @@ class AIIA_CosyVoice_TTS:
             emotion_core = emotion.split(' ')[0] if emotion != "None (Neutral)" else None
             
             if not is_v3 and not is_v2:
-                # V1 (300M) series performs better with English descriptions rather than Chinese commands.
-                # This also helps distinguish instruction from TTS text to prevent "reading aloud".
-                dialect_map = {"粤语": "Cantonese accent", "广东话": "Cantonese accent", "四川话": "Sichuan accent", 
-                               "韩语": "Korean accent", "日语": "Japanese accent", "英语": "English accent", "英文": "English accent"}
-                emotion_map = {"开心": "happy", "生气": "angry", "悲伤": "sad", "恐惧": "fearful", "惊讶": "surprised"}
-                
+                # V1 (300M) series performs better with simpler descriptors.
                 parts = []
-                d_eng = dialect_map.get(dialect_core)
-                e_eng = emotion_map.get(emotion_core)
-                
-                # Prefix gender hint to fix the "always female" bug in V1 Instruct
-                # Note: Identity injection is the primary control, but text hints help the LLM align.
+                # Prefix gender hint sparingly - native speaker ID is the primary control.
                 gender_prefix = "A male speaker" if base_gender == "Male" else "A female speaker"
                 
-                if d_eng and e_eng: parts.append(f"{gender_prefix} with a {d_eng} in a {e_eng} mood.")
-                elif d_eng: parts.append(f"{gender_prefix} with a {d_eng}.")
-                elif e_eng: parts.append(f"{gender_prefix} in a {e_eng} mood.")
-                else: parts.append(f"{gender_prefix}.")
+                parts.append(gender_prefix)
+                if dialect != "None (Auto)": parts.append(f"with a {dialect_core} accent")
+                if emotion != "None (Neutral)": parts.append(f"in a {emotion_core} mood")
                 
-                combined_custom = " ".join(parts)
+                combined_custom = " ".join(parts) + "."
                 if instruct_text:
                     combined_custom = f"{combined_custom} {instruct_text}".strip()
                 
                 if combined_custom:
-                    # Strictly follow <|endofprompt|> format for V1 Instruct as per official examples
-                    combined_custom = f"{combined_custom.replace('<|endofprompt|>', '')}<|endofprompt|>"
-                    print(f"[AIIA] V1 Instruct Formatting applied: {combined_custom[:100]}...")
+                    print(f"[AIIA] V1 Instruct format: {combined_custom[:100]}...")
             
             else:
                 # V2/V3 Command Mode
@@ -673,12 +635,12 @@ class AIIA_CosyVoice_TTS:
                     spk_id = "" # Clear it to avoid confusion in native paths
             elif reference_audio is None:
                 # --- V1 (300M) Special Handling for Gender ---
-                if not is_v3 and not is_v2 and (is_base or is_instruct) and base_gender in ["Male", "Female"]:
-                    # Force Zero-Shot fallback for Base (Stability) and Instruct (Gender Control via Injection)
+                if not is_v3 and not is_v2 and is_base and base_gender in ["Male", "Female"]:
+                    # ONLY Base models (Zero-Shot) use seed fallback because they lack native Identity support.
                     use_seed_fallback = True
-                    print(f"[AIIA] V1 { 'Instruct' if is_instruct else 'Base' } detected. Using seed fallback for {base_gender} control.")
+                    print(f"[AIIA] V1 Base detected. Using seed fallback for {base_gender} stability.")
                 
-                # SFT models go through normal speaker selection
+                # Instruct and SFT models go through official speaker selection
                 elif available_spks:
                     # SFT mode path or confirmed good IDs
                     # Improve auto-selection based on base_gender
@@ -716,7 +678,6 @@ class AIIA_CosyVoice_TTS:
                     assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
                     raw_seed_path = os.path.join(assets_dir, "seed_male.wav" if base_gender == "Male" else "seed_female.wav")
                     
-                    # Use standard seed by default as HQ seed was reported too deep
                     print(f"[AIIA] Using Standard V1 {base_gender} Seed.")
                     
                     import torchaudio
@@ -754,28 +715,19 @@ class AIIA_CosyVoice_TTS:
                     else:
                         # --- V1 (300M) Native Path Selection ---
                         if not is_v3 and not is_v2 and is_instruct:
-                            # 1. Instruct Path with Identity Injection
-                            # Extract embedding from seed for injection
-                            prompt_speech_16k = torchaudio.transforms.Resample(sample_rate, 16000)(seed_wav)
-                            query_emb = cosyvoice_model.frontend._extract_speech_feat(prompt_speech_16k)
-                            cosyvoice_model.frontend._injected_llm_emb = query_emb
-                            
-                            print(f"[AIIA] CosyVoice: Instruct Mode with Identity Injection ({base_gender}).")
-                            output = cosyvoice_model.inference_instruct(tts_text, spk_id, final_instruct, speed=speed)
+                            # 1. Official Instruct Path (Supports native Dialect/Emotion parameter)
+                            print(f"[AIIA] CosyVoice: Native Instruct Path. Speaker: {spk_id}")
+                            output = cosyvoice_model.inference_instruct(tts_text=tts_text, spk_id=spk_id, instruct_text=final_instruct, speed=speed)
                         else:
-                            # 2. Zero-Shot Path (Base model)
-                            # Get Literal Transcript of the seed
-                            p_text = ""
-                            if use_seed_fallback:
-                                # Standard seed transcript
-                                p_text = "希望你以后能够做的比我还好呦。"
-                                if base_gender == "Male":
-                                    txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male.txt")
-                                    if os.path.exists(txt_path):
-                                        try:
-                                            with open(txt_path, 'r', encoding='utf-8') as f:
-                                                p_text = f.read().strip()
-                                        except: pass
+                            # 2. Zero-Shot Path (Reserved for Base model fallback)
+                            p_text = "希望你以后能够做的比我还好呦。"
+                            if base_gender == "Male":
+                                txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male.txt")
+                                if os.path.exists(txt_path):
+                                    try:
+                                        with open(txt_path, 'r', encoding='utf-8') as f:
+                                            p_text = f.read().strip()
+                                    except: pass
 
                             # V1 Speed Handling: Only boost if using the "slow" male seed
                             v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male" and use_seed_fallback) else 1.0
