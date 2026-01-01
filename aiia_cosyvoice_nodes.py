@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import types
 import os
 import random
 import tempfile
@@ -325,7 +326,6 @@ class AIIA_CosyVoice_ModelLoader:
                     model_input['prompt_text_len'] = instruct_text_token_len
                     return model_input
                 
-                import types
                 model_instance.frontend.frontend_instruct = types.MethodType(safe_frontend_instruct, model_instance.frontend)
                 model_instance.frontend._injected_llm_emb = None # Initialize
                 print("[AIIA] Successfully patched V1 frontend_instruct for Identity Injection.")
