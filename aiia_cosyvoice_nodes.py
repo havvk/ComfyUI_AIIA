@@ -723,49 +723,49 @@ class AIIA_CosyVoice_TTS:
                     print(f"[AIIA] CosyVoice: Pure Instruct Mode using {base_gender} seed ({sample_rate}Hz).")
 
                 try:
-                if is_v3 or is_v2:
-                    output = cosyvoice_model.inference_instruct2(
-                        tts_text=tts_text, 
-                        instruct_text=final_instruct, 
-                        prompt_wav=ref_path, 
-                        zero_shot_spk_id=spk_id, 
-                        stream=False, 
-                        speed=speed
-                    )
-                else:
-                    # --- V1 (300M) Native Zero-Shot Fusion Path ---
-                    # For V1, the Instruct model natively supports inference_zero_shot.
-                    # We use this to "fuse" the instruction into the prompt_text.
-                    p_text = ""
-                    if use_seed_fallback:
-                        # Get Literal Transcript of the seed
-                        if base_gender == "Male":
-                            hq_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male_hq.txt")
-                            if os.path.exists(hq_txt_path):
-                                try:
-                                    with open(hq_txt_path, 'r', encoding='utf-8') as f:
-                                        p_text = f.read().strip()
-                                except: p_text = "希望你以后能够做的比我还好呦。"
+                    if is_v3 or is_v2:
+                        output = cosyvoice_model.inference_instruct2(
+                            tts_text=tts_text, 
+                            instruct_text=final_instruct, 
+                            prompt_wav=ref_path, 
+                            zero_shot_spk_id=spk_id, 
+                            stream=False, 
+                            speed=speed
+                        )
+                    else:
+                        # --- V1 (300M) Native Zero-Shot Fusion Path ---
+                        # For V1, the Instruct model natively supports inference_zero_shot.
+                        # We use this to "fuse" the instruction into the prompt_text.
+                        p_text = ""
+                        if use_seed_fallback:
+                            # Get Literal Transcript of the seed
+                            if base_gender == "Male":
+                                hq_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male_hq.txt")
+                                if os.path.exists(hq_txt_path):
+                                    try:
+                                        with open(hq_txt_path, 'r', encoding='utf-8') as f:
+                                            p_text = f.read().strip()
+                                    except: p_text = "希望你以后能够做的比我还好呦。"
+                                else:
+                                    p_text = "希望你以后能够做的比我还好呦。"
                             else:
                                 p_text = "希望你以后能够做的比我还好呦。"
-                        else:
-                            p_text = "希望你以后能够做的比我还好呦。"
-                        
-                        # FUSION: For Instruct models, fuse instruction into the prompt
-                        if is_instruct and final_instruct and final_instruct.strip():
-                             # Following v3 fusion pattern: [seed_txt]<|endofprompt|>[instruction]
-                             p_text = f"{p_text}<|endofprompt|>{final_instruct}"
+                            
+                            # FUSION: For Instruct models, fuse instruction into the prompt
+                            if is_instruct and final_instruct and final_instruct.strip():
+                                 # Following v3 fusion pattern: [seed_txt]<|endofprompt|>[instruction]
+                                 p_text = f"{p_text}<|endofprompt|>{final_instruct}"
 
-                    # V1 Speed Handling: Only boost if using the "slow" male seed
-                    v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male" and use_seed_fallback) else 1.0
-                    effective_speed = speed * v1_speed_boost
+                        # V1 Speed Handling: Only boost if using the "slow" male seed
+                        v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male" and use_seed_fallback) else 1.0
+                        effective_speed = speed * v1_speed_boost
+                        
+                        output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
                     
-                    output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
-                
-                all_speech = [chunk['tts_speech'] for chunk in output]
-                final_waveform = torch.cat(all_speech, dim=-1)
-            finally:
-                if cleanup_ref and os.path.exists(ref_path): os.unlink(ref_path)
+                    all_speech = [chunk['tts_speech'] for chunk in output]
+                    final_waveform = torch.cat(all_speech, dim=-1)
+                finally:
+                    if cleanup_ref and os.path.exists(ref_path): os.unlink(ref_path)
 
         # 2. SFT (Fixed Speaker ID, No Reference Audio)
         else:
