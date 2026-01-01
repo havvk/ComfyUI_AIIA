@@ -674,8 +674,15 @@ class AIIA_CosyVoice_TTS:
             use_seed_fallback = False
             
             if spk_id:
-                if spk_id not in available_spks:
-                    raise ValueError(f"Speaker ID '{spk_id}' not found. Available: {available_spks if available_spks else 'None (Zero-Shot model)'}")
+                # Only strictly validate if the model actually has SFT identities.
+                # Base models (Zero-Shot) will have an empty available_spks.
+                if available_spks:
+                    if spk_id not in available_spks:
+                        raise ValueError(f"Speaker ID '{spk_id}' not found. Available: {available_spks}")
+                else:
+                    # If it's a Base model, just ignore the spk_id and use zero-shot fallback
+                    print(f"[AIIA] Speaker ID '{spk_id}' ignored for Base model (Zero-Shot mode).")
+                    spk_id = "" # Clear it to avoid confusion in native paths
             elif reference_audio is None:
                 # --- V1 (300M) Special Handling for Gender ---
                 if not is_v3 and not is_v2 and is_base and base_gender in ["Male", "Female"]:
