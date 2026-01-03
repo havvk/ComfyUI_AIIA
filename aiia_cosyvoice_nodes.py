@@ -805,7 +805,10 @@ class AIIA_CosyVoice_TTS:
                             # CRITICAL: Re-inject llm_embedding to prevent gender drift/female voice issue
                             # Official frontend_instruct deletes it, but we need it for Identity stability
                             if 'llm_embedding' not in model_input and spk_id in cosyvoice_model.frontend.spk2info:
-                                model_input['llm_embedding'] = cosyvoice_model.frontend.spk2info[spk_id]['llm_embedding']
+                                # The key inside spk2info[id] is 'embedding' (not 'llm_embedding')
+                                spk_data = cosyvoice_model.frontend.spk2info[spk_id]
+                                if isinstance(spk_data, dict) and 'embedding' in spk_data:
+                                    model_input['llm_embedding'] = spk_data['embedding']
                                 
                             for o in cosyvoice_model.model.tts(**model_input, stream=False, speed=speed):
                                 yield o
