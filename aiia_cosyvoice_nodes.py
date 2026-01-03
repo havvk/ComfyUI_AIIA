@@ -749,52 +749,22 @@ class AIIA_CosyVoice_TTS:
                             speed=speed
                         )
                     else:
-                        # --- V1 (300M) Native Path Selection ---
-                        if not is_v3 and not is_v2 and is_instruct:
-                            # 1. Surgical Instruct Routing (Critical for male voices and preventing reading instructions)
-                            print(f"[AIIA] CosyVoice: V1 Surgical Instruct Path. Speaker: {spk_id}")
-                            
-                            # For V1 Instruct, we DON'T use <|endofprompt|> or other V3 tags.
-                            clean_inst = final_instruct.strip()
-                            if "<|" in clean_inst:
-                                clean_inst = clean_inst.split("<|")[0].strip()
-                            
-                            # CRITICAL: Normalize instruction text for V1 (previously missing)
-                            clean_inst = cosyvoice_model.frontend.text_normalize(clean_inst, split=False)
-                            
-                            def manual_instruct_gen():
-                                # The official inference_instruct normalizes tts_text
-                                chunks = cosyvoice_model.frontend.text_normalize(tts_text, split=True)
-                                for chunk in chunks:
-                                    # Use frontend_instruct with our clean_inst
-                                    model_input = cosyvoice_model.frontend.frontend_instruct(chunk, spk_id, clean_inst)
-                                    
-                                    # CRITICAL for V1 Instruct: remove llm_embedding to avoid gender drift/leakage
-                                    if 'llm_embedding' in model_input:
-                                        del model_input['llm_embedding']
-                                    
-                                    # Direct TTS call
-                                    for o in cosyvoice_model.model.tts(**model_input, stream=False, speed=speed):
-                                        yield o
-                            
-                            output = manual_instruct_gen()
-                        else:
-                            # 2. Zero-Shot Path (Reserved for Base model fallback)
-                            p_text = "希望你以后能够做的比我还好呦。"
-                            if base_gender == "Male":
-                                txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male.txt")
-                                if os.path.exists(txt_path):
-                                    try:
-                                        with open(txt_path, 'r', encoding='utf-8') as f:
-                                            p_text = f.read().strip()
-                                    except: pass
+                        # --- V1 (300M) Native Path Selection (Always Zero-Shot for Audio Path) ---
+                        p_text = "希望你以后能够做的比我还好呦。"
+                        if base_gender == "Male":
+                            txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "seed_male.txt")
+                            if os.path.exists(txt_path):
+                                try:
+                                    with open(txt_path, 'r', encoding='utf-8') as f:
+                                        p_text = f.read().strip()
+                                except: pass
 
-                            # V1 Speed Handling: Only boost if using the "slow" male seed
-                            v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male" and use_seed_fallback) else 1.0
-                            effective_speed = speed * v1_speed_boost
-                            
-                            print(f"[AIIA] CosyVoice: Zero-Shot Path ({base_gender}).")
-                            output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
+                        # V1 Speed Handling: Only boost if using the "slow" male seed
+                        v1_speed_boost = 1.1 if (not is_v3 and not is_v2 and base_gender == "Male" and use_seed_fallback) else 1.0
+                        effective_speed = speed * v1_speed_boost
+                        
+                        print(f"[AIIA] CosyVoice: V1 Zero-Shot Path ({base_gender}).")
+                        output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
                     
                     all_speech = [chunk['tts_speech'] for chunk in output]
                     final_waveform = torch.cat(all_speech, dim=-1)
@@ -803,8 +773,8 @@ class AIIA_CosyVoice_TTS:
 
             # 2. SFT (Fixed Speaker ID, No Reference Audio)
             else:
-                print(f"[AIIA] CosyVoice: SFT Mode. Speaker: {spk_id}")
                 if is_v3 or is_v2:
+                    print(f"[AIIA] CosyVoice: V2/V3 Identity Path. Speaker: {spk_id}")
                     output = cosyvoice_model.inference_instruct2(
                         tts_text=tts_text, 
                         instruct_text=final_instruct, 
@@ -813,7 +783,27 @@ class AIIA_CosyVoice_TTS:
                         stream=False, 
                         speed=speed
                     )
+                elif is_instruct and final_instruct:
+                    # --- V1 (300M) Surgical Instruct Routing ---
+                    print(f"[AIIA] CosyVoice: V1 Surgical Instruct Path. Speaker: {spk_id}")
+                    
+                    clean_inst = final_instruct.strip()
+                    if "<|" in clean_inst:
+                        clean_inst = clean_inst.split("<|")[0].strip()
+                    clean_inst = cosyvoice_model.frontend.text_normalize(clean_inst, split=False)
+                    
+                    def manual_instruct_gen():
+                        chunks = cosyvoice_model.frontend.text_normalize(tts_text, split=True)
+                        for chunk in chunks:
+                            model_input = cosyvoice_model.frontend.frontend_instruct(chunk, spk_id, clean_inst)
+                            if 'llm_embedding' in model_input:
+                                del model_input['llm_embedding']
+                            for o in cosyvoice_model.model.tts(**model_input, stream=False, speed=speed):
+                                yield o
+                    output = manual_instruct_gen()
                 else:
+                    # --- V1 (300M) Regular SFT Mode ---
+                    print(f"[AIIA] CosyVoice: SFT Mode. Speaker: {spk_id}")
                     # Normal SFT path for fixed identities
                     output = cosyvoice_model.inference_sft(tts_text, spk_id, speed=speed)
                 
