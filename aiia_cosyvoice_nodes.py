@@ -589,21 +589,24 @@ class AIIA_CosyVoice_TTS:
             emotion_core = emotion.split(' ')[0] if emotion != "None (Neutral)" else None
             
             if not is_v3 and not is_v2:
-                # V1 (300M) series performs better with simpler descriptors.
+                # V1 (300M) series performs better with concise descriptors.
                 parts = []
-                # Prefix gender hint sparingly - native speaker ID is the primary control.
-                gender_prefix = "A male speaker" if base_gender == "Male" else "A female speaker"
+                # Combine English and Chinese hints for maximum stability in V1
+                if base_gender == "Male":
+                    parts.append("A male speaker (一个男人的声音)")
+                else:
+                    parts.append("A female speaker (一个女人的声音)")
                 
-                parts.append(gender_prefix)
-                if dialect != "None (Auto)": parts.append(f"with a {dialect_core} accent")
-                if emotion != "None (Neutral)": parts.append(f"in a {emotion_core} mood")
+                if dialect != "None (Auto)": parts.append(f"with a {dialect_core} accent ({dialect_core}方言)")
+                if emotion != "None (Neutral)": parts.append(f"in a {emotion_core} mood (感觉很{emotion_core})")
                 
-                combined_custom = " ".join(parts) + "."
+                v1_preset = ". ".join(parts) + "."
                 if instruct_text:
-                    combined_custom = f"{combined_custom} {instruct_text}".strip()
+                    combined_custom = f"{v1_preset} {instruct_text}".strip()
+                else:
+                    combined_custom = v1_preset
                 
-                if combined_custom:
-                    print(f"[AIIA] V1 Instruct format: {combined_custom[:100]}...")
+                print(f"[AIIA] V1 Instruct Prep: {combined_custom[:100]}...")
             
             else:
                 # V2/V3 Command Mode
@@ -784,35 +787,11 @@ class AIIA_CosyVoice_TTS:
                         speed=speed
                     )
                 elif is_instruct and final_instruct:
-                    # --- V1 (300M) Surgical Instruct Routing ---
-                    print(f"[AIIA] CosyVoice: V1 Surgical Instruct Path. Speaker: {spk_id}")
-                    
-                    # For V1 Instruct, we MUST use <|endofprompt|> to separate instruction from text
-                    clean_inst = final_instruct.strip()
-                    if "<|" in clean_inst:
-                        clean_inst = clean_inst.split("<|")[0].strip()
-                    if clean_inst and "<|endofprompt|>" not in clean_inst:
-                        clean_inst += "<|endofprompt|>"
-                    
-                    def manual_instruct_gen():
-                        # The official inference_instruct normalizes both text and instruction
-                        # We do it here to match official flow exactly
-                        norm_inst = cosyvoice_model.frontend.text_normalize(clean_inst, split=False)
-                        chunks = cosyvoice_model.frontend.text_normalize(tts_text, split=True)
-                        for chunk in chunks:
-                            model_input = cosyvoice_model.frontend.frontend_instruct(chunk, spk_id, norm_inst)
-                            
-                            # CRITICAL: Re-inject llm_embedding to prevent gender drift/female voice issue
-                            # Official frontend_instruct deletes it, but we need it for Identity stability
-                            if 'llm_embedding' not in model_input and spk_id in cosyvoice_model.frontend.spk2info:
-                                # The key inside spk2info[id] is 'embedding' (not 'llm_embedding')
-                                spk_data = cosyvoice_model.frontend.spk2info[spk_id]
-                                if isinstance(spk_data, dict) and 'embedding' in spk_data:
-                                    model_input['llm_embedding'] = spk_data['embedding']
-                                
-                            for o in cosyvoice_model.model.tts(**model_input, stream=False, speed=speed):
-                                yield o
-                    output = manual_instruct_gen()
+                    # --- V1 (300M) Native Instruct Path ---
+                    # Using the official high-level API which handles normalization, 
+                    # chunking, and boundary tokens internally and correctly.
+                    print(f"[AIIA] CosyVoice: V1 Native Instruct Path. Speaker: {spk_id}")
+                    output = cosyvoice_model.inference_instruct(tts_text, spk_id, final_instruct, speed=speed)
                 else:
                     # --- V1 (300M) Regular SFT Mode ---
                     print(f"[AIIA] CosyVoice: SFT Mode. Speaker: {spk_id}")
