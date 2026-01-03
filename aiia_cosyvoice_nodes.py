@@ -703,9 +703,15 @@ class AIIA_CosyVoice_TTS:
                         cleanup_ref = True
                 else:
                     assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
-                    raw_seed_path = os.path.join(assets_dir, "seed_male.wav" if base_gender == "Male" else "seed_female.wav")
+                    # Prioritize HQ seeds for V2/V3 if available
+                    seed_name = "seed_male" if base_gender == "Male" else "seed_female"
+                    raw_seed_path = os.path.join(assets_dir, f"{seed_name}_hq.wav")
                     
-                    print(f"[AIIA] Using Standard {('V1' if not (is_v2 or is_v3) else 'V2/V3 Fallback')} {base_gender} Seed.")
+                    if (is_v3 or is_v2) and os.path.exists(raw_seed_path):
+                        print(f"[AIIA] Using High-Fidelity {base_gender} Seed for V2/V3.")
+                    else:
+                        raw_seed_path = os.path.join(assets_dir, f"{seed_name}.wav")
+                        print(f"[AIIA] Using Standard {base_gender} Seed.")
                     
                     import torchaudio
                     seed_wav, seed_sr = torchaudio.load(raw_seed_path)
@@ -748,12 +754,13 @@ class AIIA_CosyVoice_TTS:
                             # 1. Surgical Instruct Routing (Critical for male voices and preventing reading instructions)
                             print(f"[AIIA] CosyVoice: V1 Surgical Instruct Path. Speaker: {spk_id}")
                             
-                            # Ensure clean instruction without problematic prefixes or illegal tags
+                            # For V1 Instruct, we DON'T use <|endofprompt|> or other V3 tags.
                             clean_inst = final_instruct.strip()
-                            if "<|" in clean_inst and "<|endofprompt|>" not in clean_inst:
+                            if "<|" in clean_inst:
                                 clean_inst = clean_inst.split("<|")[0].strip()
-                            if clean_inst and "<|endofprompt|>" not in clean_inst:
-                                clean_inst += "<|endofprompt|>"
+                            
+                            # CRITICAL: Normalize instruction text for V1 (previously missing)
+                            clean_inst = cosyvoice_model.frontend.text_normalize(clean_inst, split=False)
                             
                             def manual_instruct_gen():
                                 # The official inference_instruct normalizes tts_text
