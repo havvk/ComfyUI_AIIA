@@ -297,10 +297,29 @@ class AIIA_CosyVoice_ModelLoader:
              print("[AIIA] Warning: Advanced CosyVoice classes not found. Fallback to default global class.")
              model_instance = CosyVoice(model_dir)
         except Exception as e:
-           raise RuntimeError(f"Failed to initialize CosyVoice model: {e}")
-           
+            raise RuntimeError(f"Failed to initialize CosyVoice model: {e}")
+
+        # --- Speaker Identity Detection ---
+        available_spks = []
+        spk2info_path = os.path.join(model_dir, "spk2info.pt")
+        if os.path.exists(spk2info_path):
+            try:
+                available_spks = list(torch.load(spk2info_path, map_location='cpu').keys())
+            except: pass
+        
+        # If still empty for 0.5B+, attempt to look into the model instance's own frontend
+        if not available_spks and hasattr(model_instance, 'frontend') and hasattr(model_instance.frontend, 'spk2info'):
+             available_spks = list(model_instance.frontend.spk2info.keys())
+
+        # Fallback for V1 Instruct or 0.5B+ models missing metadata on disk
+        if "instruct" in model_dir.lower() or is_v2 or is_v3:
+            if not available_spks:
+                # Generic high-quality IDs often supported by these models
+                available_spks = ["Chinese Male", "Chinese Female", "English Male", "English Female", "Japanese Male", "Cantonese Female", "Korean Female"]
+                print(f"[AIIA] V2/V3: No spk2info.pt found. Injecting standard virtual speaker IDs.")
+                
         # IMPORTANT: The TTS node expects version flags.
-        return ({"model": model_instance, "model_dir": model_dir, "is_v3": is_v3, "is_v2": is_v2, "is_sft": is_sft, "is_instruct": is_instruct, "is_base": is_base},)
+        return ({"model": model_instance, "model_dir": model_dir, "is_v3": is_v3, "is_v2": is_v2, "is_sft": is_sft, "is_instruct": is_instruct, "is_base": is_base, "available_spks": available_spks},)
 
 class AIIA_CosyVoice_VoiceConversion:
     @classmethod
@@ -620,42 +639,50 @@ class AIIA_CosyVoice_TTS:
                 print("\033[93m" + f"[AIIA] WARNING: {active_model} is likely a BASE model. Instructions may be read aloud." + "\033[0m")
         
             # --- Speaker Identity Validation & Fallback ---
-            available_spks = list(cosyvoice_model.frontend.spk2info.keys())
+            available_spks = model.get("available_spks", [])
             use_seed_fallback = False
             
             if spk_id:
-                # Only strictly validate if the model actually has SFT identities.
-                # Base models (Zero-Shot) will have an empty available_spks.
-                if available_spks:
-                    if spk_id not in available_spks:
-                        raise ValueError(f"Speaker ID '{spk_id}' not found. Available: {available_spks}")
-                else:
-                    # If it's a Base model, just ignore the spk_id and use zero-shot fallback
-                    print(f"[AIIA] Speaker ID '{spk_id}' ignored for Base model (Zero-Shot mode).")
-                    spk_id = "" # Clear it to avoid confusion in native paths
+                # Strictly validate against available IDs (including virtual ones)
+                if available_spks and spk_id not in available_spks:
+                    print(f"[AIIA] Chosen spk_id '{spk_id}' not in metadata. Proceeding cautiously.")
+                
             elif reference_audio is None:
+                # --- V2/V3 Specialized Handling (Bypass V1 Seeds if possible) ---
+                if (is_v3 or is_v2):
+                    # Check if model actually has internal SFT speakers (spk2info.pt)
+                    has_real_spks = hasattr(cosyvoice_model.frontend, 'spk2info') and len(cosyvoice_model.frontend.spk2info) > 0
+                    
+                    if has_real_spks:
+                        gender_keyword = "男" if base_gender == "Male" else "女"
+                        # Use keys() from frontend directly for absolute safety in SFT mode
+                        real_keys = list(cosyvoice_model.frontend.spk2info.keys())
+                        matching_spks = [s for s in real_keys if gender_keyword in s or base_gender.lower() in s.lower()]
+                        spk_id = matching_spks[0] if matching_spks else real_keys[0]
+                        print(f"[AIIA] V2/V3 Auto-select Identity: {spk_id}")
+                        use_seed_fallback = False
+                    else:
+                        # CRITICAL: If no internal speakers found (like Fun-CosyVoice3-0.5B),
+                        # we MUST provide a reference audio to avoid AudioDecoder(None) crash.
+                        use_seed_fallback = True
+                        print("[AIIA] V2/V3 Zero-Shot Model: No internal speakers found. Forcing seed fallback to prevent crash.")
+                
                 # --- V1 (300M) Special Handling for Gender ---
-                if not is_v3 and not is_v2 and is_base and base_gender in ["Male", "Female"]:
-                    # ONLY Base models (Zero-Shot) use seed fallback because they lack native Identity support.
+                elif is_base and base_gender in ["Male", "Female"]:
                     use_seed_fallback = True
                     print(f"[AIIA] V1 Base detected. Using seed fallback for {base_gender} stability.")
                 
-                # Instruct and SFT models go through official speaker selection
+                # Instruct and SFT models
                 elif available_spks:
-                    # SFT mode path or confirmed good IDs
-                    # Improve auto-selection based on base_gender
                     gender_keyword = "男" if base_gender == "Male" else "女"
-                    gender_en = "male" if base_gender == "Male" else "female"
-                    matching_spks = [s for s in available_spks if gender_keyword in s or gender_en in s.lower()]
-                    
-                    if base_gender == "Male":
-                        matching_spks = [s for s in matching_spks if "female" not in s.lower()]
-                    
+                    # Include virtual ones in the search
+                    matching_spks = [s for s in available_spks if gender_keyword in s or base_gender.lower() in s.lower()]
                     spk_id = matching_spks[0] if matching_spks else available_spks[0]
-                    print(f"[AIIA] Auto-selecting speaker based on gender({base_gender}): {spk_id}")
+                    print(f"[AIIA] V1 Auto-select Identity: {spk_id}")
+                    use_seed_fallback = False # If we found a matching internal speaker, don't use seed
                 else:
                     use_seed_fallback = True
-                    print("[AIIA] No Identity provided for Zero-Shot model. Falling back to internal 'Neutral Canvas' seed.")
+                    print("[AIIA] V1: No Identity found. Falling back to V1 seed.")
 
             # 1. Hybrid / Cross-Lingual / Zero-Shot / Pure Instruct (Audio-driven Logic)
             if reference_audio is not None or use_seed_fallback:
@@ -678,17 +705,16 @@ class AIIA_CosyVoice_TTS:
                     assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
                     raw_seed_path = os.path.join(assets_dir, "seed_male.wav" if base_gender == "Male" else "seed_female.wav")
                     
-                    print(f"[AIIA] Using Standard V1 {base_gender} Seed.")
+                    print(f"[AIIA] Using Standard {('V1' if not (is_v2 or is_v3) else 'V2/V3 Fallback')} {base_gender} Seed.")
                     
                     import torchaudio
                     seed_wav, seed_sr = torchaudio.load(raw_seed_path)
                     
-                    # --- FIX: Mono conversion via channel selection instead of averaging ---
                     if seed_wav.shape[0] > 1:
                         seed_wav = seed_wav[0:1, :]
                         
                     if seed_sr != sample_rate:
-                        print(f"[AIIA] Resampling seed audio from {seed_sr}Hz to {sample_rate}Hz...")
+                        print(f"[AIIA] Resampling fallback seed audio from {seed_sr}Hz to {sample_rate}Hz...")
                         seed_wav = torchaudio.transforms.Resample(seed_sr, sample_rate)(seed_wav)
                     
                     if seed_wav.abs().max() > 1.0: seed_wav = seed_wav / seed_wav.abs().max()
@@ -696,28 +722,55 @@ class AIIA_CosyVoice_TTS:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_seed:
                         ref_path = tmp_seed.name
                         seed_np = seed_wav.squeeze().cpu().numpy()
-                        # Use PCM_16 for maximum compatibility with all model frontends
                         sf.write(ref_path, seed_np, sample_rate, subtype='PCM_16')
                         cleanup_ref = True
                         
-                    print(f"[AIIA] CosyVoice: Pure Instruct Mode using {base_gender} seed ({sample_rate}Hz).")
+                    print(f"[AIIA] CosyVoice: Recovery Mode using {base_gender} seed ({sample_rate}Hz).")
 
                 try:
                     if is_v3 or is_v2:
+                        # CRITICAL FIX: zero_shot_spk_id MUST be an EMPTY STRING ('') to trigger 
+                        # the audio prompt path in frontend_zero_shot. Passing None causes KeyError.
+                        pass_spk_id = spk_id if spk_id else ""
+                        print(f"[AIIA] CosyVoice V2/V3 Inference (Ref: {os.path.basename(ref_path) if ref_path else 'None'}, Spk: {pass_spk_id or 'Zero-Shot Mode'})")
+                        
                         output = cosyvoice_model.inference_instruct2(
                             tts_text=tts_text, 
                             instruct_text=final_instruct, 
                             prompt_wav=ref_path, 
-                            zero_shot_spk_id=spk_id, 
+                            zero_shot_spk_id=pass_spk_id, 
                             stream=False, 
                             speed=speed
                         )
                     else:
                         # --- V1 (300M) Native Path Selection ---
                         if not is_v3 and not is_v2 and is_instruct:
-                            # 1. Official Instruct Path (Supports native Dialect/Emotion parameter)
-                            print(f"[AIIA] CosyVoice: Native Instruct Path. Speaker: {spk_id}")
-                            output = cosyvoice_model.inference_instruct(tts_text=tts_text, spk_id=spk_id, instruct_text=final_instruct, speed=speed)
+                            # 1. Surgical Instruct Routing (Critical for male voices and preventing reading instructions)
+                            print(f"[AIIA] CosyVoice: V1 Surgical Instruct Path. Speaker: {spk_id}")
+                            
+                            # Ensure clean instruction without problematic prefixes or illegal tags
+                            clean_inst = final_instruct.strip()
+                            if "<|" in clean_inst and "<|endofprompt|>" not in clean_inst:
+                                clean_inst = clean_inst.split("<|")[0].strip()
+                            if clean_inst and "<|endofprompt|>" not in clean_inst:
+                                clean_inst += "<|endofprompt|>"
+                            
+                            def manual_instruct_gen():
+                                # The official inference_instruct normalizes tts_text
+                                chunks = cosyvoice_model.frontend.text_normalize(tts_text, split=True)
+                                for chunk in chunks:
+                                    # Use frontend_instruct with our clean_inst
+                                    model_input = cosyvoice_model.frontend.frontend_instruct(chunk, spk_id, clean_inst)
+                                    
+                                    # CRITICAL for V1 Instruct: remove llm_embedding to avoid gender drift/leakage
+                                    if 'llm_embedding' in model_input:
+                                        del model_input['llm_embedding']
+                                    
+                                    # Direct TTS call
+                                    for o in cosyvoice_model.model.tts(**model_input, stream=False, speed=speed):
+                                        yield o
+                            
+                            output = manual_instruct_gen()
                         else:
                             # 2. Zero-Shot Path (Reserved for Base model fallback)
                             p_text = "希望你以后能够做的比我还好呦。"
