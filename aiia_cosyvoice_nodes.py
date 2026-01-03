@@ -787,17 +787,26 @@ class AIIA_CosyVoice_TTS:
                     # --- V1 (300M) Surgical Instruct Routing ---
                     print(f"[AIIA] CosyVoice: V1 Surgical Instruct Path. Speaker: {spk_id}")
                     
+                    # For V1 Instruct, we MUST use <|endofprompt|> to separate instruction from text
                     clean_inst = final_instruct.strip()
                     if "<|" in clean_inst:
                         clean_inst = clean_inst.split("<|")[0].strip()
-                    clean_inst = cosyvoice_model.frontend.text_normalize(clean_inst, split=False)
+                    if clean_inst and "<|endofprompt|>" not in clean_inst:
+                        clean_inst += "<|endofprompt|>"
                     
                     def manual_instruct_gen():
+                        # The official inference_instruct normalizes both text and instruction
+                        # We do it here to match official flow exactly
+                        norm_inst = cosyvoice_model.frontend.text_normalize(clean_inst, split=False)
                         chunks = cosyvoice_model.frontend.text_normalize(tts_text, split=True)
                         for chunk in chunks:
-                            model_input = cosyvoice_model.frontend.frontend_instruct(chunk, spk_id, clean_inst)
-                            if 'llm_embedding' in model_input:
-                                del model_input['llm_embedding']
+                            model_input = cosyvoice_model.frontend.frontend_instruct(chunk, spk_id, norm_inst)
+                            
+                            # CRITICAL: Re-inject llm_embedding to prevent gender drift/female voice issue
+                            # Official frontend_instruct deletes it, but we need it for Identity stability
+                            if 'llm_embedding' not in model_input and spk_id in cosyvoice_model.frontend.spk2info:
+                                model_input['llm_embedding'] = cosyvoice_model.frontend.spk2info[spk_id]['llm_embedding']
+                                
                             for o in cosyvoice_model.model.tts(**model_input, stream=False, speed=speed):
                                 yield o
                     output = manual_instruct_gen()
