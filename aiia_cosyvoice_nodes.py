@@ -194,13 +194,13 @@ class AIIA_CosyVoice_ModelLoader:
         # --- RL Model Switching Logic (Strict Symlink Strategy) ---
         llm_pt = os.path.join(model_dir, "llm.pt")
         llm_rl = os.path.join(model_dir, "llm.rl.pt")
-        llm_base = os.path.join(model_dir, "llm.base.pt")
+        llm_orig = os.path.join(model_dir, "llm.orig.pt")
 
-        # 1. Ensure we have a persistent llm.base.pt backup if llm.pt is a real file
+        # 1. Ensure we have a persistent llm.orig.pt backup if llm.pt is a real file
         if os.path.exists(llm_pt) and not os.path.islink(llm_pt):
-             if not os.path.exists(llm_base):
-                print(f"[AIIA] Initializing: Renaming original llm.pt to llm.base.pt")
-                os.rename(llm_pt, llm_base)
+             if not os.path.exists(llm_orig):
+                print(f"[AIIA] Initializing: Renaming original llm.pt to llm.orig.pt")
+                os.rename(llm_pt, llm_orig)
              else:
                 # If both exist and llm.pt is real, something is messy. Delete llm.pt to make room for link
                 os.remove(llm_pt)
@@ -212,7 +212,7 @@ class AIIA_CosyVoice_ModelLoader:
         print(f"[AIIA] Loader Debug: use_rl_model_raw={use_rl_model} (type: {type(use_rl_model)}) -> effective_rl={is_rl_requested}")
         print(f"[AIIA] Loader Debug: llm_rl exists: {os.path.exists(llm_rl)}")
         
-        target_source = llm_rl if is_rl_requested and os.path.exists(llm_rl) else llm_base
+        target_source = llm_rl if is_rl_requested and os.path.exists(llm_rl) else llm_orig
         
         # 3. Aggressively Manage Symlink
         if os.path.exists(target_source):
@@ -589,16 +589,15 @@ class AIIA_CosyVoice_TTS:
             emotion_core = emotion.split(' ')[0] if emotion != "None (Neutral)" else None
             
             if not is_v3 and not is_v2:
-                # V1 (300M) series performs better with concise descriptors.
+                # V1 (300M) series needs concise prompts + the crucial <|endofprompt|> boundary.
                 parts = []
-                # Combine English and Chinese hints for maximum stability in V1
                 if base_gender == "Male":
-                    parts.append("A male speaker (一个男人的声音)")
+                    parts.append("A male speaker (男人的声音)")
                 else:
-                    parts.append("A female speaker (一个女人的声音)")
+                    parts.append("A female speaker (女人的声音)")
                 
-                if dialect != "None (Auto)": parts.append(f"with a {dialect_core} accent ({dialect_core}方言)")
-                if emotion != "None (Neutral)": parts.append(f"in a {emotion_core} mood (感觉很{emotion_core})")
+                if dialect != "None (Auto)": parts.append(f"with a {dialect_core} accent")
+                if emotion != "None (Neutral)": parts.append(f"in a {emotion_core} mood")
                 
                 v1_preset = ". ".join(parts) + "."
                 if instruct_text:
@@ -606,7 +605,13 @@ class AIIA_CosyVoice_TTS:
                 else:
                     combined_custom = v1_preset
                 
-                print(f"[AIIA] V1 Instruct Prep: {combined_custom[:100]}...")
+                # Add boundary token to final_instruct for V1 as well
+                if combined_custom and "<|endofprompt|>" not in combined_custom:
+                    final_instruct = f"{combined_custom}<|endofprompt|>"
+                else:
+                    final_instruct = combined_custom
+                
+                print(f"[AIIA] V1 Instruct format: {final_instruct[:100]}...")
             
             else:
                 # V2/V3 Command Mode
@@ -638,8 +643,8 @@ class AIIA_CosyVoice_TTS:
                     final_instruct = f"You are a helpful assistant. {combined_custom}<|endofprompt|>"
                     print(f"[AIIA] Applied V3 Instruction Formatting: {final_instruct[:80]}...")
             
-            if ("base" in active_model.lower() or is_base) and combined_custom and not is_v3 and not is_v2:
-                print("\033[93m" + f"[AIIA] WARNING: {active_model} is likely a BASE model. Instructions may be read aloud." + "\033[0m")
+            if is_base and combined_custom and not is_v3 and not is_v2:
+                print("\033[93m" + f"[AIIA] WARNING: Base V1 model detected. Instructions may be read aloud." + "\033[0m")
         
             # --- Speaker Identity Validation & Fallback ---
             available_spks = model.get("available_spks", [])
@@ -787,11 +792,27 @@ class AIIA_CosyVoice_TTS:
                         speed=speed
                     )
                 elif is_instruct and final_instruct:
-                    # --- V1 (300M) Native Instruct Path ---
-                    # Using the official high-level API which handles normalization, 
-                    # chunking, and boundary tokens internally and correctly.
-                    print(f"[AIIA] CosyVoice: V1 Native Instruct Path. Speaker: {spk_id}")
-                    output = cosyvoice_model.inference_instruct(tts_text, spk_id, final_instruct, speed=speed)
+                    # --- V1 (300M) Surgical Instruct Path (Identity Preservation) ---
+                    # We manually call tts to ensure llm_embedding doesn't get stripped.
+                    print(f"[AIIA] CosyVoice: V1 Surgical Instruct Path. Speaker: {spk_id}")
+                    
+                    def manual_instruct_gen():
+                        norm_inst = cosyvoice_model.frontend.text_normalize(final_instruct, split=False)
+                        chunks = cosyvoice_model.frontend.text_normalize(tts_text, split=True)
+                        for chunk in chunks:
+                            # 1. Create model input using the instruct frontend
+                            model_input = cosyvoice_model.frontend.frontend_instruct(chunk, spk_id, norm_inst)
+                            
+                            # 2. CRITICAL: Re-inject the speaker embedding for identity stability
+                            # Official frontend_instruct DELETES it, which causes the female voice issue.
+                            if 'llm_embedding' not in model_input and spk_id in cosyvoice_model.frontend.spk2info:
+                                spk_data = cosyvoice_model.frontend.spk2info[spk_id]
+                                if isinstance(spk_data, dict) and 'embedding' in spk_data:
+                                    model_input['llm_embedding'] = spk_data['embedding']
+                                
+                            for o in cosyvoice_model.model.tts(**model_input, stream=False, speed=speed):
+                                yield o
+                    output = manual_instruct_gen()
                 else:
                     # --- V1 (300M) Regular SFT Mode ---
                     print(f"[AIIA] CosyVoice: SFT Mode. Speaker: {spk_id}")
