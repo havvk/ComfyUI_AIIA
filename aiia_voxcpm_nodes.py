@@ -49,36 +49,39 @@ class AIIA_VoxCPM_Loader:
         
         print(f"[AIIA] Loading VoxCPM from {model_path}...")
         
+        # Add local core directory to sys.path to allow importing 'voxcpm' package from source
+        voxcpm_core_path = os.path.join(base_path, "voxcpm_core")
+        if voxcpm_core_path not in sys.path:
+            sys.path.insert(0, voxcpm_core_path)
+
         try:
             from voxcpm import VoxCPM
-        except ImportError:
-            # User warned about dependency conflicts (especially torch>=2.5.0 requirement of voxcpm)
-            # breaking standard ComfyUI environments.
-            # We will NOT auto-install. We will guide the user.
-            raise ImportError(
-                "VoxCPM package is missing. \n"
-                "Please manually install it: `pip install voxcpm`\n"
-                "⚠️ WARNING: VoxCPM requires PyTorch >= 2.5.0. \n"
-                "If your ComfyUI environment uses an older Torch version, installing this MAY BREAK your setup. \n"
-                "Proceed with caution."
-            )
+        except ImportError as e:
+            # Check for specific missing dependencies of the core package
+            missing_package = str(e).split("'")[-2] if "'" in str(e) else str(e)
+            
+            error_msg = f"Failed to import local VoxCPM core. Missing dependency: {missing_package}.\n"
+            error_msg += "Please install lightweight dependencies: `pip install wetext inflect`\n"
+            error_msg += f"Detailed Error: {e}"
+            raise ImportError(error_msg)
 
         try:
             # Initialize VoxCPM using its native class
-            # Assumption: VoxCPM(pretrained=path) or from_pretrained(path)
-            # Search results suggest instantiation might be direct or via helper.
-            # Let's try standard HF style if supported by wrapper, or constructor.
-            # If 'voxcpm' is a wrapper around the model code, it likely has a nice API.
+            # The usage from core.py is: VoxCPM(hf_model_id=..., voxcpm_model_path=...)
+            # We see in core.py __init__: def __init__(self, hf_model_id=None, voxcpm_model_path=None, ...)
             
-            # Trying standard init first
-            if hasattr(VoxCPM, 'from_pretrained'):
-                model = VoxCPM.from_pretrained(model_path, device=device)
-            else:
-                # Fallback to constructor
-                model = VoxCPM(pretrained=model_path, device=device)
+            # Since we downloaded manually to 'model_path', we should likely pass it as voxcpm_model_path
+            # AND set hf_model_id to something to satisfy the check "if not repo_id: raise ValueError"
+            # OR looking at code:
+            # repo_id = hf_model_id
+            # if not repo_id: raise ...
+            # if os.path.isdir(repo_id): local_path = repo_id
             
-            # The 'voxcpm' package usually handles tokenizer internally
-            tokenizer = None 
+            # So if we pass the absolute local path as hf_model_id, it should work!
+            
+            model = VoxCPM(hf_model_id=model_path, device=device)
+            
+            tokenizer = None # handled internally
             
             return ({"model": model, "tokenizer": tokenizer, "device": device, "dtype": dtype},)
             
