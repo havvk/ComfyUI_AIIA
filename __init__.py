@@ -112,6 +112,9 @@ else:
     # 17. 处理 aiia_vibevoice_preset_maker.py
     _load_nodes_from_module(".aiia_vibevoice_preset_maker", "aiia_vibevoice_preset_maker")
 
+    # 18. 处理 aiia_voxcpm_nodes.py (新增 VoxCPM 1.5)
+    _load_nodes_from_module(".aiia_voxcpm_nodes", "aiia_voxcpm_nodes")
+
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
 
