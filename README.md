@@ -681,6 +681,13 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
    pip install modelscope
    modelscope download --model iic/speech_zipenhancer_ans_multiloss_16k_base --local_dir models/voxcpm/speech_zipenhancer_ans_multiloss_16k_base
    ```
+
+   > [!NOTE]
+   > **频谱特征说明 (Spectral Analysis Note)**:
+   > 用户实测发现，尽管该模型输出 44.1kHz 格式，但在频谱图上可能观察到以下特征：
+   > 1. **静音区能量较高 (High Noise Floor)**: 并非绝对静默。
+   > 2. **水平条纹 (Horizontal Stripes)**: 特别是在低频区域，这通常是 Neural Upsampling (VAE/GAN) 重构波形的典型痕迹。
+   > 3. **听感**: 这种“升频痕迹”可能会带来轻微的机械感或金属音，这属于模型权重的固有特性。
  
  #### 💡 用户实测与选型指南 (Model Comparison & Selection)
 
@@ -688,8 +695,8 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 | 维度 | **VoxCPM 1.5** (800M) | **CosyVoice 3.0** (0.5B/1.5B) | **VibeVoice** (1.5B/7B) |
 | :--- | :--- | :--- | :--- |
-| **音质 (Fidelity)** | **👑 冠军 (44.1kHz)**<br>原生高频保留最好，声音最“实”。采用了 Tokenizer-free 架构，消除了机械感。 | **优秀**<br>听感自然，但采样率稍低 (22/24kHz)，有时需 AI 增强。 | **良好**<br>主要强在语气自然度，纯音质略逊。 |
-| **推理速度 (Speed)** | **🚀 极速 (RTF ~0.17)**<br>得益于 Tokenizer-free，极其高效。 | **极快**<br>流式响应仅 150ms，且支持 TensorRT 加速。 | **一般/较慢**<br>7B 版本较重，更适合离线生成。 |
+| **音质 (Fidelity)** | **44.1kHz 格式**<br>虽然物理格式为 44.1k，但因采用 **Neural Upsampling** (神经升频) 技术，听感上会有**含混 (Muffled)** 或**金属感**，且伴有底噪。 | **优秀**<br>听感最自然，但采样率稍低 (22/24kHz)，有时需 AI 增强。 | **良好**<br>主要强在语气自然度，纯音质略逊。 |
+| **推理速度 (Speed)** | **🚀 冠军 (RTF ~0.17)**<br>得益于 Tokenizer-free，极其高效。 | **极快**<br>流式响应仅 150ms，且支持 TensorRT 加速。 | **一般/较慢**<br>7B 版本较重，更适合离线生成。 |
 | **克隆能力 (Cloning)** | **SOTA** (Zero-Shot)<br>只需 3-10秒，对**音色质感**还原极高。 | **SOTA** (稳定性)<br>对**说话韵律/口音**的捕捉最准。 | **良好**<br>适合克隆特定语气，而非纯粹音色。 |
 | **多语言/方言** | **中/英** (双语优化) | **👑 霸主** (9种语言 + 18种方言) | **中/英** |
 | **语音转换 (VC)** (Audio-to-Audio) | ❌ **不支持**<br>仅支持 TTS (Text-to-Speech)。无法改变已有音频的音色。 | ✅ **支持**<br>可以将任意音频转换为任意音色 (保留语调/停顿)。 | ❌ **不支持**<br>纯 TTS 模型。仅支持 Text-to-Speech。 |
