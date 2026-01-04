@@ -66,22 +66,21 @@ class AIIA_VoxCPM_Loader:
             raise ImportError(error_msg)
 
         try:
-            # Initialize VoxCPM using its native class
-            # The usage from core.py is: VoxCPM(hf_model_id=..., voxcpm_model_path=...)
-            # We see in core.py __init__: def __init__(self, hf_model_id=None, voxcpm_model_path=None, ...)
+            # Initialize VoxCPM using its native class wrapper
+            # The signature is: VoxCPM(voxcpm_model_path=..., ...) and it does NOT accept 'device'.
+            # It seems it auto-detects or defaults to CUDA in the config.
+
+            # We pass the local model path. 
+            # Note: The class does 'VoxCPMModel.from_local(voxcpm_model_path, ...)' inside.
             
-            # Since we downloaded manually to 'model_path', we should likely pass it as voxcpm_model_path
-            # AND set hf_model_id to something to satisfy the check "if not repo_id: raise ValueError"
-            # OR looking at code:
-            # repo_id = hf_model_id
-            # if not repo_id: raise ...
-            # if os.path.isdir(repo_id): local_path = repo_id
+            model = VoxCPM(voxcpm_model_path=model_path)
             
-            # So if we pass the absolute local path as hf_model_id, it should work!
+            # Since the init doesn't take device, we might need to manually move it if it didn't default correctly.
+            # But core.py:44 says 'self.tts_model = VoxCPMModel.from_local(...)'.
+            # Usually these libraries put things on CUDA by default if available.
+            # Let's check if we can move it explicitly if needed, but for now just initializing correctly is step 1.
             
-            model = VoxCPM(hf_model_id=model_path, device=device)
-            
-            tokenizer = None # handled internally
+            tokenizer = None 
             
             return ({"model": model, "tokenizer": tokenizer, "device": device, "dtype": dtype},)
             
