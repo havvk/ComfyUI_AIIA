@@ -27,6 +27,7 @@ class AIIA_VoxCPM_Loader:
         
         # Define paths
         hf_repo_id = "openbmb/VoxCPM1.5"
+        base_path = os.path.dirname(os.path.abspath(__file__))
         
         # Use ComfyUI standard models directory
         # folder_paths.base_path gives the ComfyUI root
