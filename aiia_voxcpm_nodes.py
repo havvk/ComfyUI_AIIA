@@ -178,48 +178,48 @@ class AIIA_VoxCPM_TTS:
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(seed)
 
-            # Ensure strict parity between prompt_wav_path and prompt_text
-            # VoxCPM requires both to be None, or both to be valid.
-            if prompt_wav_path is None:
-                prompt_text = None
-            
-            try:
-                with torch.no_grad():
-                    outputs = model.generate(
-                        text=text,
-                        prompt_wav_path=prompt_wav_path,
-                        prompt_text=prompt_text,
-                        cfg_value=cfg_scale,
-                        inference_timesteps=inference_timesteps,
-                        # temperature/top_p NOT supported by VoxCPM wrapper
-                    )
+        # Ensure strict parity between prompt_wav_path and prompt_text
+        # VoxCPM requires both to be None, or both to be valid.
+        if prompt_wav_path is None:
+            prompt_text = None
+        
+        try:
+            with torch.no_grad():
+                outputs = model.generate(
+                    text=text,
+                    prompt_wav_path=prompt_wav_path,
+                    prompt_text=prompt_text,
+                    cfg_value=cfg_scale,
+                    inference_timesteps=inference_timesteps,
+                    # temperature/top_p NOT supported by VoxCPM wrapper
+                )
+                
+                # Determine output format
+                out_audio = outputs
+                out_sr = 44100
+                
+                if isinstance(outputs, tuple):
+                    out_sr, out_audio = outputs
+                elif isinstance(outputs, dict):
+                    out_audio = outputs.get("audio", outputs.get("waveform"))
+                    out_sr = outputs.get("sample_rate", 44100)
+                
+                # Clean up
+                if temp_name and os.path.exists(temp_name):
+                    os.remove(temp_name)
                     
-                    # Determine output format
-                    out_audio = outputs
-                    out_sr = 44100
-                    
-                    if isinstance(outputs, tuple):
-                        out_sr, out_audio = outputs
-                    elif isinstance(outputs, dict):
-                        out_audio = outputs.get("audio", outputs.get("waveform"))
-                        out_sr = outputs.get("sample_rate", 44100)
-                    
-                    # Clean up
-                    if temp_name and os.path.exists(temp_name):
-                        os.remove(temp_name)
-                        
-                    # Convert to tensor
-                    if not isinstance(out_audio, torch.Tensor):
-                        out_audio = torch.from_numpy(out_audio)
-                    
-                    if out_audio.ndim == 1: out_audio = out_audio.unsqueeze(0)
-                    
-                    # Speed adj post-processing
-                    if speed != 1.0:
-                        resampler_speed = torchaudio.transforms.Resample(orig_freq=out_sr, new_freq=int(out_sr*speed))
-                        out_audio = resampler_speed(out_audio)
-                    
-                    return ({"waveform": out_audio.cpu(), "sample_rate": out_sr},)
+                # Convert to tensor
+                if not isinstance(out_audio, torch.Tensor):
+                    out_audio = torch.from_numpy(out_audio)
+                
+                if out_audio.ndim == 1: out_audio = out_audio.unsqueeze(0)
+                
+                # Speed adj post-processing
+                if speed != 1.0:
+                    resampler_speed = torchaudio.transforms.Resample(orig_freq=out_sr, new_freq=int(out_sr*speed))
+                    out_audio = resampler_speed(out_audio)
+                
+                return ({"waveform": out_audio.cpu(), "sample_rate": out_sr},)
                 
         except Exception as e:
             import traceback
