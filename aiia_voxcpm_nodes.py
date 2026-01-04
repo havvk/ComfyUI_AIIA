@@ -204,6 +204,10 @@ class AIIA_VoxCPM_TTS:
                     out_audio = outputs.get("audio", outputs.get("waveform"))
                     out_sr = outputs.get("sample_rate", 44100)
                 
+                print(f"[AIIA Debug] Raw Output Type: {type(out_audio)}")
+                if hasattr(out_audio, "shape"):
+                    print(f"[AIIA Debug] Raw Output Shape: {out_audio.shape}")
+
                 # Clean up
                 if temp_name and os.path.exists(temp_name):
                     os.remove(temp_name)
@@ -212,6 +216,8 @@ class AIIA_VoxCPM_TTS:
                 if not isinstance(out_audio, torch.Tensor):
                     out_audio = torch.from_numpy(out_audio)
                 
+                print(f"[AIIA Debug] Tensor Shape Before Unsqueeze: {out_audio.shape}")
+
                 if out_audio.ndim == 1: 
                     out_audio = out_audio.unsqueeze(0) # [C, T]
                 
@@ -219,14 +225,20 @@ class AIIA_VoxCPM_TTS:
                 if out_audio.ndim == 2:
                     out_audio = out_audio.unsqueeze(0) # [B, C, T]
                 
+                print(f"[AIIA Debug] Final Tensor Shape: {out_audio.shape}")
+
                 # Speed adj post-processing
                 if speed != 1.0:
-                    # Note: naive resampling changes duration AND pitch.
-                    # Ideally allow disabling this if unwanted. 
-                    b, c, t = out_audio.shape
-                    # Resample expects [..., time]
-                    resampler_speed = torchaudio.transforms.Resample(orig_freq=out_sr, new_freq=int(out_sr*speed))
-                    out_audio = resampler_speed(out_audio)
+                    try:
+                        # Note: naive resampling changes duration AND pitch.
+                        # Ideally allow disabling this if unwanted. 
+                        # Resample expects [..., time]
+                        resampler_speed = torchaudio.transforms.Resample(orig_freq=out_sr, new_freq=int(out_sr*speed))
+                        # Move to same device
+                        resampler_speed = resampler_speed.to(out_audio.device)
+                        out_audio = resampler_speed(out_audio)
+                    except Exception as e:
+                        print(f"[AIIA Warning] Speed adjustment failed: {e}")
                 
                 return ({"waveform": out_audio.cpu(), "sample_rate": out_sr},)
                 
