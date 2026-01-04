@@ -212,10 +212,19 @@ class AIIA_VoxCPM_TTS:
                 if not isinstance(out_audio, torch.Tensor):
                     out_audio = torch.from_numpy(out_audio)
                 
-                if out_audio.ndim == 1: out_audio = out_audio.unsqueeze(0)
+                if out_audio.ndim == 1: 
+                    out_audio = out_audio.unsqueeze(0) # [C, T]
+                
+                # Ensure it is 3D [Batch, Channels, Time] for ComfyUI
+                if out_audio.ndim == 2:
+                    out_audio = out_audio.unsqueeze(0) # [B, C, T]
                 
                 # Speed adj post-processing
                 if speed != 1.0:
+                    # Note: naive resampling changes duration AND pitch.
+                    # Ideally allow disabling this if unwanted. 
+                    b, c, t = out_audio.shape
+                    # Resample expects [..., time]
                     resampler_speed = torchaudio.transforms.Resample(orig_freq=out_sr, new_freq=int(out_sr*speed))
                     out_audio = resampler_speed(out_audio)
                 
