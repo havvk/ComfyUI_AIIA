@@ -67,16 +67,37 @@ class AIIA_VoxCPM_Loader:
             error_msg += f"Detailed Error: {e}"
             raise ImportError(error_msg)
 
+        # ZipEnhancer Path handling
+        zip_model_id = "iic/speech_zipenhancer_ans_multiloss_16k_base"
+        zip_local_path = os.path.join(models_dir, "speech_zipenhancer_ans_multiloss_16k_base")
+        
+        if enable_denoiser:
+             # Check if we need to download
+             if not os.path.exists(zip_local_path):
+                 print(f"[AIIA] Downloading ZipEnhancer (Denoiser) to {zip_local_path}...")
+                 try:
+                     # Try importing modelscope for download
+                     from modelscope.hub.snapshot_download import snapshot_download as ms_download
+                     ms_download(zip_model_id, local_dir=zip_local_path)
+                 except ImportError:
+                     print("[AIIA WARNING] `modelscope` package not found. Cannot auto-download to custom path.")
+                     print("It will likely download to default ~/.cache if the denoiser runs.")
+                     # We fall back to the ID string, relying on internal modelscope logic to find/dl it to cache
+                     zip_local_path = zip_model_id
+                 except Exception as e:
+                     print(f"[AIIA WARNING] ZipEnhancer download failed: {e}")
+                     zip_local_path = zip_model_id
+
         try:
             # Initialize VoxCPM using its native class wrapper
-            # The signature is: VoxCPM(voxcpm_model_path=..., enable_denoiser=...)
+            # The signature is: VoxCPM(voxcpm_model_path=..., enable_denoiser=..., zipenhancer_model_path=...)
             
-            model = VoxCPM(voxcpm_model_path=model_path, enable_denoiser=enable_denoiser)
-            
-            # Since the init doesn't take device, we might need to manually move it if it didn't default correctly.
-            # But core.py:44 says 'self.tts_model = VoxCPMModel.from_local(...)'.
-            # Usually these libraries put things on CUDA by default if available.
-            # Let's check if we can move it explicitly if needed, but for now just initializing correctly is step 1.
+            # Pass zipenhancer_model_path explicitely to avoid default cache path if possible
+            model = VoxCPM(
+                voxcpm_model_path=model_path, 
+                enable_denoiser=enable_denoiser,
+                zipenhancer_model_path=zip_local_path
+            )
             
             tokenizer = None 
             
