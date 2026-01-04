@@ -667,6 +667,16 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
    mkdir -p models/voxcpm/VoxCPM1.5
    hf download openbmb/VoxCPM1.5 --local-dir models/voxcpm/VoxCPM1.5
    ```
+
+   **降噪模型 (Optional Denoiser - ZipEnhancer)**:
+   默认开启 `enable_denoiser` 会自动从 ModelScope 下载 `speech_zipenhancer_ans_multiloss_16k_base`。
+   如需手动下载（或离线使用），请确保网络环境支持 ModelScope，或手动下载后缓存：
+   
+   ```bash
+   pip install modelscope
+   modelscope download --model iic/speech_zipenhancer_ans_multiloss_16k_base
+   ```
+   *(注：默认缓存路经通常为 `~/.cache/modelscope/hub/models/iic/speech_zipenhancer_ans_multiloss_16k_base`)*
  
  #### 💡 用户实测与选型指南 (Model Comparison & Selection)
 
