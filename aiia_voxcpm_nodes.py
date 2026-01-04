@@ -47,22 +47,34 @@ class AIIA_VoxCPM_Loader:
 
         print(f"[AIIA] Loading VoxCPM from {model_path}...")
         
-        from transformers import AutoModel, AutoTokenizer
+        print(f"[AIIA] Loading VoxCPM from {model_path}...")
         
         try:
-            # VoxCPM usually requires trust_remote_code=True
-            # It acts like a causal LM or a specialized TTS model
-            model = AutoModel.from_pretrained(model_path, trust_remote_code=True, torch_dtype=dtype).to(device)
-            # Some versions might use a specific tokenizer, lets try to load it if exists, otherwise None
-            tokenizer = None
-            try:
-                tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-            except:
-                pass
-                
-            model.eval()
+            from voxcpm import VoxCPM
+        except ImportError:
+            raise ImportError("VoxCPM package not installed! Please run: pip install voxcpm")
+
+        try:
+            # Initialize VoxCPM using its native class
+            # Assumption: VoxCPM(pretrained=path) or from_pretrained(path)
+            # Search results suggest instantiation might be direct or via helper.
+            # Let's try standard HF style if supported by wrapper, or constructor.
+            # If 'voxcpm' is a wrapper around the model code, it likely has a nice API.
+            
+            # Trying standard init first
+            if hasattr(VoxCPM, 'from_pretrained'):
+                model = VoxCPM.from_pretrained(model_path, device=device)
+            else:
+                # Fallback to constructor
+                model = VoxCPM(pretrained=model_path, device=device)
+            
+            # The 'voxcpm' package usually handles tokenizer internally
+            tokenizer = None 
             
             return ({"model": model, "tokenizer": tokenizer, "device": device, "dtype": dtype},)
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to load VoxCPM model: {e}")
             
         except Exception as e:
             raise RuntimeError(f"Failed to load VoxCPM model: {e}")
