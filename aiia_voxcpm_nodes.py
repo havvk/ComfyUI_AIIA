@@ -13,7 +13,7 @@ class AIIA_VoxCPM_Loader:
             "required": {
                 "model_name": (["VoxCPM-1.5-800M"], {"default": "VoxCPM-1.5-800M"}),
                 "precision": (["fp16", "fp32"], {"default": "fp16"}),
-                "enable_denoiser": ("BOOLEAN", {"default": True, "label_on": "Enable (Downloads ZipEnhancer)", "label_off": "Disable"}),
+                "enable_denoiser": ("BOOLEAN", {"default": True}),
             }
         }
 
