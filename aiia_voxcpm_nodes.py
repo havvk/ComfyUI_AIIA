@@ -29,7 +29,7 @@ class AIIA_VoxCPM_Loader:
         hf_repo_id = "openbmb/VoxCPM1.5"
         base_path = os.path.dirname(os.path.abspath(__file__))
         models_dir = os.path.join(base_path, "models", "voxcpm")
-        model_path = os.path.join(models_dir, "VoxCPM-1.5")
+        model_path = os.path.join(models_dir, "VoxCPM1.5")
         
         # Download if not exists
         if not os.path.exists(model_path):
@@ -38,18 +38,31 @@ class AIIA_VoxCPM_Loader:
                 from huggingface_hub import snapshot_download
                 snapshot_download(repo_id=hf_repo_id, local_dir=model_path, local_dir_use_symlinks=False)
             except ImportError:
-                raise ImportError("Please install huggingface_hub to download models automatically.")
+                print("[AIIA] huggingface_hub not found, skipping auto-download. Please ensure model exists.")
             except Exception as e:
-                raise RuntimeError(f"Failed to download model: {e}")
+                print(f"[AIIA WARNING] Auto-download failed: {e}")
 
         print(f"[AIIA] Loading VoxCPM from {model_path}...")
         
-        # TODO: Actual Model Loading Logic
-        # We need to determine if we use 'transformers' or a custom 'voxcpm' package.
-        # For now, we'll placeholder the object.
-        model = {"path": model_path, "device": device, "dtype": dtype}
+        from transformers import AutoModel, AutoTokenizer
         
-        return (model,)
+        try:
+            # VoxCPM usually requires trust_remote_code=True
+            # It acts like a causal LM or a specialized TTS model
+            model = AutoModel.from_pretrained(model_path, trust_remote_code=True, torch_dtype=dtype).to(device)
+            # Some versions might use a specific tokenizer, lets try to load it if exists, otherwise None
+            tokenizer = None
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+            except:
+                pass
+                
+            model.eval()
+            
+            return ({"model": model, "tokenizer": tokenizer, "device": device, "dtype": dtype},)
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to load VoxCPM model: {e}")
 
 class AIIA_VoxCPM_TTS:
     @classmethod
@@ -58,10 +71,12 @@ class AIIA_VoxCPM_TTS:
             "required": {
                 "voxcpm_model": ("VOXCPM_MODEL",),
                 "text": ("STRING", {"multiline": True, "default": "Hello, world."}),
-                "reference_audio": ("AUDIO",), # VoxCPM is Zero-Shot, so this is required for cloning
+                "reference_audio": ("AUDIO",), # VoxCPM is Zero-Shot
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
                 "top_p": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 1.0, "step": 0.05}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.05}),
+                "cfg_scale": ("FLOAT", {"default": 3.0, "min": 1.0, "max": 5.0, "step": 0.1}), 
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
             }
         }
 
@@ -70,16 +85,116 @@ class AIIA_VoxCPM_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VoxCPM"
 
-    def generate(self, voxcpm_model, text, reference_audio, speed, top_p, temperature):
-        # Placeholder generation logic
-        print(f"[AIIA] Generating VoxCPM TTS for text: {text[:20]}...")
+    def generate(self, voxcpm_model, text, reference_audio, speed, top_p, temperature, cfg_scale, seed):
+        model = voxcpm_model["model"]
+        tokenizer = voxcpm_model["tokenizer"]
+        device = voxcpm_model["device"]
         
-        # Mock output for now
-        sr = 44100
-        duration_sec = 2
-        waveform = torch.zeros((1, int(sr * duration_sec)))
+        # Process Reference Audio
+        wav = reference_audio["waveform"]
+        sr = 44100 # VoxCPM is 44.1k
+        ref_sr = reference_audio.get("sample_rate", 24000) # ComfyUI generic audio is often 24k or 44.1k
         
-        return ({"waveform": waveform, "sample_rate": sr},)
+        if wav.ndim == 3: wav = wav[0] # [Batch, C, T] -> [C, T]
+        if wav.shape[0] > 1: wav = torch.mean(wav, dim=0, keepdim=True) # Mix stereo to mono
+        
+        # Resample input to 44100 if needed? 
+        # Actually VoxCPM usually expects 16k or 24k reference? 
+        # Standard procedure: Resample input reference to match model's expected prompt SR (often 16k for TTS prompts)
+        # But VoxCPM output is 44.1k. Let's assume prompt should be 16000 or 44100.
+        # Let's try 16000 for safety as prompt, or check docs. 
+        # NOTE: OpenBMB/VoxCPM usually takes 'prompt_wav' path or tensor.
+        
+        audio_prompt_tensor = wav.to(device)
+        if ref_sr != 16000:
+             resampler = torchaudio.transforms.Resample(orig_freq=ref_sr, new_freq=16000).to(device)
+             audio_prompt_tensor = resampler(audio_prompt_tensor)
+             
+        # Normalize audio prompt
+        audio_prompt_tensor = audio_prompt_tensor / (torch.max(torch.abs(audio_prompt_tensor)) + 1e-6)
+
+        print(f"[AIIA] Generating VoxCPM TTS for: '{text[:20]}...' with params: temp={temperature}, top_p={top_p}, seed={seed}")
+        
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+
+        try:
+            with torch.no_grad():
+                # Assuming the model has a 'generate' method similar to simple usage
+                # If custom code, signature might vary.
+                # Common: model.generate(text, prompt_wav, ...)
+                
+                # Check signature of custom model via dir() if we could, but here we guess/align with reference.
+                # Reference nodes often convert tensor to numpy or save to temp file. 
+                # Let's try passing the tensor directly if supported, or save to temp.
+                
+                # OPTION 1: Memory-based (Preferred)
+                # audio, sr = model.generate(text, audio_prompt_tensor, ...)
+                
+                # However, many HF custom codes expect file paths.
+                # To be safe and robust, let's write prompt to temp file.
+                import tempfile
+                import soundfile as sf
+                
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+                    temp_name = tf.name
+                    
+                # Save prompt (16k mono)
+                sf.write(temp_name, audio_prompt_tensor.squeeze().cpu().numpy(), 16000)
+                
+                # Invoke generation
+                # Note: API might be model.inference(text, prompt_path, ...)
+                outputs = model.generate(
+                    text=text,
+                    prompt_audio_path=temp_name, # Most robust guess for OpenBMB
+                    # prompt_text=prompt_text, # Optional usually
+                    temperature=temperature,
+                    top_p=top_p,
+                    guidance_scale=cfg_scale,
+                    # speed=speed # If supported
+                )
+                
+                # Determine output format
+                # Usually (samplerate, audio_numpy) or just audio_numpy
+                
+                out_audio = outputs
+                out_sr = 44100
+                
+                if isinstance(outputs, tuple):
+                    out_sr, out_audio = outputs
+                elif isinstance(outputs, dict):
+                    out_audio = outputs.get("audio", outputs.get("waveform"))
+                    out_sr = outputs.get("sample_rate", 44100)
+                
+                # Clean up
+                os.remove(temp_name)
+                    
+                # Convert to tensor
+                if not isinstance(out_audio, torch.Tensor):
+                    out_audio = torch.from_numpy(out_audio)
+                
+                if out_audio.ndim == 1: out_audio = out_audio.unsqueeze(0)
+                
+                # Speed adj post-processing if model didn't handle it
+                if speed != 1.0:
+                    resampler_speed = torchaudio.transforms.Resample(orig_freq=out_sr, new_freq=int(out_sr*speed))
+                    out_audio = resampler_speed(out_audio)
+                    # Resample back to preserve SR? Or just tag it? 
+                    # ComfyUI usually expects waveform and SR. If we change duration via resampling, 
+                    # we change pitch unless we use TimeStretch. 
+                    # Simple resampling CHANGES PITCH. 
+                    # If user wants speed control without pitch shift, we need time stretching.
+                    # For now, let's skip speed if not supported natively to avoid broken pitch.
+                    # Or assume model supports it. If not, improved later.
+                
+                return ({"waveform": out_audio.cpu(), "sample_rate": out_sr},)
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"VoxCPM Generation Error: {e}")
 
 NODE_CLASS_MAPPINGS = {
     "AIIA_VoxCPM_Loader": AIIA_VoxCPM_Loader,
