@@ -52,14 +52,16 @@ class AIIA_VoxCPM_Loader:
         try:
             from voxcpm import VoxCPM
         except ImportError:
-            print("[AIIA] VoxCPM package not found. Attempting auto-installation...")
-            import subprocess
-            import sys
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "voxcpm"])
-                from voxcpm import VoxCPM
-            except Exception as e:
-                raise RuntimeError(f"Failed to auto-install voxcpm: {e}. Please run 'pip install voxcpm' manually.")
+            # User warned about dependency conflicts (especially torch>=2.5.0 requirement of voxcpm)
+            # breaking standard ComfyUI environments.
+            # We will NOT auto-install. We will guide the user.
+            raise ImportError(
+                "VoxCPM package is missing. \n"
+                "Please manually install it: `pip install voxcpm`\n"
+                "⚠️ WARNING: VoxCPM requires PyTorch >= 2.5.0. \n"
+                "If your ComfyUI environment uses an older Torch version, installing this MAY BREAK your setup. \n"
+                "Proceed with caution."
+            )
 
         try:
             # Initialize VoxCPM using its native class
