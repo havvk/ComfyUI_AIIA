@@ -178,7 +178,11 @@ class AIIA_VoxCPM_TTS:
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(seed)
 
-        try:
+            # Ensure strict parity between prompt_wav_path and prompt_text
+            # VoxCPM requires both to be None, or both to be valid.
+            if prompt_wav_path is None:
+                prompt_text = None
+            
             with torch.no_grad():
                 outputs = model.generate(
                     text=text,
