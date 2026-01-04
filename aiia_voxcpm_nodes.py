@@ -196,18 +196,20 @@ class AIIA_VoxCPM_TTS:
                 
                 # Determine output format
                 out_audio = outputs
-                out_sr = 44100
+                out_sr = model.tts_model.sample_rate
                 
                 if isinstance(outputs, tuple):
-                    out_sr, out_audio = outputs
+                    # Check if model returns specific SR, otherwise stick to model.sample_rate
+                    if isinstance(outputs[0], int):
+                        out_sr = outputs[0]
+                        out_audio = outputs[1]
+                    else:
+                        out_audio = outputs[0]
                 elif isinstance(outputs, dict):
                     out_audio = outputs.get("audio", outputs.get("waveform"))
-                    out_sr = outputs.get("sample_rate", 44100)
+                    if "sample_rate" in outputs:
+                         out_sr = outputs["sample_rate"]
                 
-                print(f"[AIIA Debug] Raw Output Type: {type(out_audio)}")
-                if hasattr(out_audio, "shape"):
-                    print(f"[AIIA Debug] Raw Output Shape: {out_audio.shape}")
-
                 # Clean up
                 if temp_name and os.path.exists(temp_name):
                     os.remove(temp_name)
@@ -216,25 +218,19 @@ class AIIA_VoxCPM_TTS:
                 if not isinstance(out_audio, torch.Tensor):
                     out_audio = torch.from_numpy(out_audio)
                 
-                print(f"[AIIA Debug] Tensor Shape Before Unsqueeze: {out_audio.shape}")
-
+                # Ensure it is 3D [Batch, Channels, Time] for ComfyUI
+                # Typically audio is [T] or [C, T] or [1, T] 
                 if out_audio.ndim == 1: 
                     out_audio = out_audio.unsqueeze(0) # [C, T]
                 
-                # Ensure it is 3D [Batch, Channels, Time] for ComfyUI
                 if out_audio.ndim == 2:
                     out_audio = out_audio.unsqueeze(0) # [B, C, T]
                 
-                print(f"[AIIA Debug] Final Tensor Shape: {out_audio.shape}")
-
                 # Speed adj post-processing
                 if speed != 1.0:
                     try:
                         # Note: naive resampling changes duration AND pitch.
-                        # Ideally allow disabling this if unwanted. 
-                        # Resample expects [..., time]
                         resampler_speed = torchaudio.transforms.Resample(orig_freq=out_sr, new_freq=int(out_sr*speed))
-                        # Move to same device
                         resampler_speed = resampler_speed.to(out_audio.device)
                         out_audio = resampler_speed(out_audio)
                     except Exception as e:
