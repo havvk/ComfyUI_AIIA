@@ -1,13 +1,13 @@
 [project]
 name = "aiia"
-description = "A comprehensive ComfyUI toolkit featuring the fixed CosyVoice Unified Node (V1/V2/V3), VibeVoice (1.5B/7B/0.5B), Media Browser, and OOM-safe video tools."
-version = "1.5.0"
+description = "A comprehensive ComfyUI toolkit featuring Podcast/Dialogue Generation, CosyVoice (V1/V2), VibeVoice (1.5B/7B), and OOM-safe video tools."
+version = "1.6.0"
 license = {file = "LICENSE"}
 readme = "README.md"
 authors = [
     { name = "Hawk Lee", email = "l.y@live.cn" }
 ]
-keywords = ["ComfyUI", "Audio", "Video", "CosyVoice", "PersonaLive", "NeMo", "Diarization"]
+keywords = ["ComfyUI", "Audio", "CosyVoice", "VibeVoice", "Podcast", "Dialogue"]
 dependencies = [
     "soundfile",
     "numpy",
