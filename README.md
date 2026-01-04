@@ -509,23 +509,6 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `normalize_text`: **True** - 帮助处理各种语言的特殊符号。
   - **特点**: 该模型支持包括**韩语、日语**在内的更多语种，速度极快。
 
-#### 💡 用户实测与选型指南 (Model Comparison & Selection)
-
-经过深度测试，我们在三个主流模型中整理了以下对比，助您选择最适合的引擎：
-
-| 维度 | **VoxCPM 1.5** (800M) | **CosyVoice 3.0** (0.5B/1.5B) | **VibeVoice** (1.5B/7B) |
-| :--- | :--- | :--- | :--- |
-| **音质 (Fidelity)** | **👑 冠军 (44.1kHz)**<br>原生高频保留最好，声音最“实”。采用了 Tokenizer-free 架构，消除了机械感。 | **优秀**<br>听感自然，但采样率稍低 (22/24kHz)，有时需 AI 增强。 | **良好**<br>主要强在语气自然度，纯音质略逊。 |
-| **推理速度 (Speed)** | **🚀 极速 (RTF ~0.17)**<br>得益于 Tokenizer-free，极其高效。 | **极快**<br>流式响应仅 150ms，且支持 TensorRT 加速。 | **一般/较慢**<br>7B 版本较重，更适合离线生成。 |
-| **克隆能力 (Cloning)** | **SOTA** (Zero-Shot)<br>只需 3-10秒，对**音色质感**还原极高。 | **SOTA** (稳定性)<br>对**说话韵律/口音**的捕捉最准。 | **良好**<br>适合克隆特定语气，而非纯粹音色。 |
-| **多语言/方言** | **中/英** (双语优化) | **👑 霸主** (9种语言 + 18种方言) | **中/英** |
-| **应用场景** | **高性能实时对话 / 高保真克隆** | **全能型 / 生产环境部署** | **播客 / 广播剧制作** (Context强) |
-
-**选型建议**:
--   **追求“听起来最像真人” (音质+音色)**: 选 **VoxCPM 1.5**。它的 Tokenizer-free 架构带来了质的飞跃。
--   **追求“方言/多语言/稳定性”**: 选 **CosyVoice 3.0**。目前依然是生产环境最稳的选择。
--   **要做“长篇广播剧/播客”**: 选 **VibeVoice**。它的长窗口上下文优势依然不可替代。
-
 #### 🔬 详细观察与进阶技巧
 1. **0.5B 实时版**:
 
@@ -661,6 +644,23 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/vocab.json -P models/vibevoice/vibevoice/VibeVoice-7B/
   wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/merges.txt -P models/vibevoice/vibevoice/VibeVoice-7B/
   ```
+
+#### 💡 用户实测与选型指南 (Model Comparison & Selection)
+
+经过深度测试，我们在三个主流模型中整理了以下对比，助您选择最适合的引擎：
+
+| 维度 | **VoxCPM 1.5** (800M) | **CosyVoice 3.0** (0.5B/1.5B) | **VibeVoice** (1.5B/7B) |
+| :--- | :--- | :--- | :--- |
+| **音质 (Fidelity)** | **👑 冠军 (44.1kHz)**<br>原生高频保留最好，声音最“实”。采用了 Tokenizer-free 架构，消除了机械感。 | **优秀**<br>听感自然，但采样率稍低 (22/24kHz)，有时需 AI 增强。 | **良好**<br>主要强在语气自然度，纯音质略逊。 |
+| **推理速度 (Speed)** | **🚀 极速 (RTF ~0.17)**<br>得益于 Tokenizer-free，极其高效。 | **极快**<br>流式响应仅 150ms，且支持 TensorRT 加速。 | **一般/较慢**<br>7B 版本较重，更适合离线生成。 |
+| **克隆能力 (Cloning)** | **SOTA** (Zero-Shot)<br>只需 3-10秒，对**音色质感**还原极高。 | **SOTA** (稳定性)<br>对**说话韵律/口音**的捕捉最准。 | **良好**<br>适合克隆特定语气，而非纯粹音色。 |
+| **多语言/方言** | **中/英** (双语优化) | **👑 霸主** (9种语言 + 18种方言) | **中/英** |
+| **语音转换 (VC)** (Audio-to-Audio) | ❌ **不支持**<br>仅支持 TTS (Text-to-Speech)。无法改变已有音频的音色。 | ✅ **支持**<br>可以将任意音频转换为任意音色 (保留语调/停顿)。 | ❌ **不支持**<br>纯 TTS 模型。仅支持 Text-to-Speech。 |
+
+**选型建议**:
+-   **追求“听起来最像真人” (音质+音色)**: 选 **VoxCPM 1.5**。它的 Tokenizer-free 架构带来了质的飞跃。
+-   **追求“方言/多语言/稳定性”**: 选 **CosyVoice 3.0**。目前依然是生产环境最稳的选择。
+-   **要做“长篇广播剧/播客”**: 选 **VibeVoice**。它的长窗口上下文优势依然不可替代。
 
 ### 4. 图像工具 (Image Utilities)
 
