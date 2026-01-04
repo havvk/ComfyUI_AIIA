@@ -688,7 +688,8 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - **指令跟随修复**: 强制注入官方缺失的 `<|endofprompt|>` 边界标识，完美解决了模型将指令文本读出来的问题。
   - **能力矩阵**:
     - ✅ **支持**: 情感控制 (Happy/Sad/Angry)、语速控制 (Fast/Slow)、基础性别 (Male/Female)。
-    - ❌ **不支持**: 方言指令 (Dialect) - 此模型架构原生不支持通过指令更改方言，请使用 V3 或 V2 模型获取方言能力。
+      > **Tip**: 插件会自动优化指令格式，因此**支持使用中文描述** (如 "用悲伤的语气" 或 "Sad tone")，效果均一致。
+    - ❌ **不支持**: 方言指令 (Dialect) - 此模型架构原生不支持通过指令更改方言 (无论中文或英文)，请使用 V3 或 V2 模型获取方言能力。
 - **300M-SFT / Base (V1)**: 恢复原生巅峰音质。
 - **稳定性**: 杜绝了 `AudioDecoder`、`KeyError` 以及 `llm_embedding` 缺失导致的各种崩溃。
 
