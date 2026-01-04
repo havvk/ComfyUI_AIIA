@@ -797,7 +797,20 @@ class AIIA_CosyVoice_TTS:
                     print(f"[AIIA] CosyVoice: V1 Surgical Instruct Path. Speaker: {spk_id}")
                     
                     def manual_instruct_gen():
-                        norm_inst = cosyvoice_model.frontend.text_normalize(final_instruct, split=False)
+                        # Protect <|endofprompt|> from text_normalize
+                        # If normalization changes "<" to "小于" or breaks the tag, inference fails.
+                        raw_inst = final_instruct
+                        end_token = "<|endofprompt|>"
+                        
+                        if end_token in raw_inst:
+                            base_content = raw_inst.split(end_token)[0]
+                            norm_content = cosyvoice_model.frontend.text_normalize(base_content, split=False)
+                            norm_inst = f"{norm_content}{end_token}"
+                        else:
+                            # Fallback if token missing (shouldn't happen with previous logic)
+                            norm_inst = cosyvoice_model.frontend.text_normalize(raw_inst, split=False)
+                            norm_inst += end_token
+
                         chunks = cosyvoice_model.frontend.text_normalize(tts_text, split=True)
                         for chunk in chunks:
                             # 1. Create model input using the instruct frontend
