@@ -226,16 +226,8 @@ class AIIA_VoxCPM_TTS:
                 if out_audio.ndim == 2:
                     out_audio = out_audio.unsqueeze(0) # [B, C, T]
                 
-                # CRITICAL: Users expect 44.1kHz output for "High Quality" compatibility.
-                # The model is native 16kHz. If we just save as 16k, users complain it is "low quality".
-                # If we just save as 44.1k without resampling, it plays fast (chipmunk).
-                # SOLUTION: We must explicitly resample 16k -> 44.1k.
-                target_sr = 44100
-                if out_sr != target_sr:
-                     resampler = torchaudio.transforms.Resample(orig_freq=out_sr, new_freq=target_sr)
-                     resampler = resampler.to(out_audio.device)
-                     out_audio = resampler(out_audio)
-                     out_sr = target_sr
+                # CRITICAL: Native 44.1kHz is now guaranteed by the core model fix.
+                # No manual resampling is performed here.
 
                 # Speed adj post-processing
                 if speed != 1.0:
