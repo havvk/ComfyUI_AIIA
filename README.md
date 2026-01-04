@@ -286,8 +286,10 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
     > [!TIP]
     > **国内用户推荐使用 ModelScope (魔搭)**，下载速度更快且无需代理。
+    >
 
     **1. 使用 ModelScope (推荐):**
+
     ```bash
     # 进入 ComfyUI/models/cosyvoice 目录
     cd ComfyUI/models/cosyvoice
@@ -305,6 +307,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
     ```
 
     **2. 使用 HuggingFace:**
+
     ```bash
     # 下载 CosyVoice 3.0 (0.5B)
     huggingface-cli download FunAudioLLM/Fun-CosyVoice3-0.5B-2512 --local-dir Fun-CosyVoice3-0.5B-2512
@@ -334,12 +337,16 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `chunk_size`: 目标切片大小（默认 25 秒）。
   - `overlap_size`: 重叠大小，用于平滑衔接。
 
+
 #### 3.5 CosyVoice 3.0 TTS (AIIA) (全版本集成文本转语音)
 
 - **用途**: 一个节点通连 CosyVoice 全系列模型 (V1, V2, V3)，支持从纯文字描述生成到高保真音色克隆的全场景需求。
 - **🔥 核心架构优势**:
   - **全版本自适应 (Version-Agnostic)**: 自动根据 `Model Loader` 加载的模型版本切换底层推理逻辑。无论是老牌的 300M 系列还是最新的 V3 0.5B 模型，均能获得最佳表现。
-  - **V1 专项精度优化 (Surgical Fix)**: 针对 300M-Instruct 模型进行了底层重构，手动绕过官方推理链路。通过**指令剥离技术**和**Embedding 精准控制**，彻底解决了 V1 指令版常见的“复读指令”和“性别偏移”问题。
+  - **300M-Instruct (V1) 专项修复**:
+    - **指令跟随**: 强制注入 `<|endofprompt|>` 边界标识，完美修复了模型将指令读出来的问题。
+    - **支持能力**: 完美支持 **情感** (Happy/Sad/Angry)、**语速** (Fast/Slow) 和 **基础性别** (Male/Female) 控制。
+    - **不支持**: 此模型架构 **不支持方言指令** (如 "Cantonese")。如需方言，请使用 V3/V2 模型。
   - **V3 稳定性引擎**: 深度适配 V3 模型的推理协议。内置自动补全机制，确保在任何配置下（即使缺少参考音频或内部音色）都能稳定运行，杜绝 `AudioDecoder` 和 `KeyError` 等常见崩溃。
 - **🚀 五种核心生成模式**:
   1. **风格/情感建模 (Instruct)**: **文字 + 描述**。通过文字描述（如“非常开心地说”、“四川话”、“语速极快”）来控制生成的表现力。
@@ -488,31 +495,34 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `cfg_scale` (默认: 1.3): CFG 引导强度。建议使用 **1.3**。
   - `ddpm_steps` (默认: 20): 扩散步数。
   - `do_sample` (默认: "auto"): **智能采样开关**。
+
     - `"auto"`: 自动适配。**1.5B 模型默认关闭**（保证稳定性），**7B 模型默认开启**（释放表达力）。
     - `"true"`: 强制开启。如果 1.5B 开启后出现电音或逻辑混乱，请切换回 `"auto"`。
     - `"false"`: 强制关闭（即 Greed Search）。
   - `temperature` (默认: 0.8): 采样温度。仅在 `do_sample` 开启时有效。
   - `top_k / top_p`: 采样约束。
   - `speed` (默认: 1.0): 播放速度。
-
   - `do_sample`: **"auto"** (或 `false`) - 保证极速和绝对稳定。
   - `normalize_text`: **True** - 帮助处理各种语言的特殊符号。
   - **特点**: 该模型支持包括**韩语、日语**在内的更多语种，速度极快。
 
 #### 💡 用户实测与模型对比 (User Observations)
+
 经过深度测试，我们在三个模型版本中观察到以下特性：
 
-1.  **0.5B 实时版**:
-    - **频谱特征**: 在静音区域（Silence）可能在全部频率范围内观察到较高的能量分布，尤其在中频区域。
-    - **听感**: 尽管频谱显示有能量，但**实际听感比较干净**，只有轻微的底噪。这表明其声码器可能存在某种特征泄露，但不影响实用性。
-    - **迭代次数**: 由于基于音素（Phoneme）和流式切片处理，其显示的迭代次数（Total Steps）通常多于标准版，这是正常的。
+1. **0.5B 实时版**:
 
-2.  **1.5B vs 7B 对比**:
-    - **音质与风格**: 在参数调整得当（如开启 `do_sample`）的情况下，1.5B 模型生成的语音内容、风格和音质与 7B 模型**几乎无法区分**。
-    - **性价比**: 1.5B 模型的推理速度约为 7B 的 **2倍**，显存占用仅为 1/4。除非对极细微的表达有极致要求，否则 **1.5B 是生产环境的最佳选择**。
-    - **迭代差异**: 1.5B 的迭代次数（Token数）可能略少于 7B，这反映了不同模型对同一文本编码的简洁程度差异，属正常现象。
+   - **频谱特征**: 在静音区域（Silence）可能在全部频率范围内观察到较高的能量分布，尤其在中频区域。
+   - **听感**: 尽管频谱显示有能量，但**实际听感比较干净**，只有轻微的底噪。这表明其声码器可能存在某种特征泄露，但不影响实用性。
+   - **迭代次数**: 由于基于音素（Phoneme）和流式切片处理，其显示的迭代次数（Total Steps）通常多于标准版，这是正常的。
+2. **1.5B vs 7B 对比**:
+
+   - **音质与风格**: 在参数调整得当（如开启 `do_sample`）的情况下，1.5B 模型生成的语音内容、风格和音质与 7B 模型**几乎无法区分**。
+   - **性价比**: 1.5B 模型的推理速度约为 7B 的 **2倍**，显存占用仅为 1/4。除非对极细微的表达有极致要求，否则 **1.5B 是生产环境的最佳选择**。
+   - **迭代差异**: 1.5B 的迭代次数（Token数）可能略少于 7B，这反映了不同模型对同一文本编码的简洁程度差异，属正常现象。
 
 ### 💡 7B 模型音质“全开”指南
+
 要达到官方 Benchmark 的水准，请对 7B 模型尝试以下组合：
 
 - `do_sample`: **True** (开启采样)
@@ -521,15 +531,18 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - `ddpm_steps`: **20 - 50**
 - `normalize_text`: **False**
 - **环境要求**:
+
   - **Flash Attention 2**: 强烈推荐安装（否则速度较慢）。
   - **Transformers**: `>= 4.51`（重要: 旧版本不支持该模型）。
 - **节点**:
+
   - `VibeVoice Loader`: 加载模型。支持从 HuggingFace 自动下载，也支持加载本地模型。
   - `VibeVoice TTS`: 支持 Zero-shot 音色克隆（输入 `reference_audio` 即可）。
 - **模型准备 (Model Preparation)**:
   如果遇到下载问题或分词器报错，请手动下载模型文件到 `models/vibevoice` 目录。
-  
+
   **必须的文件结构** (以 1.5B 为例，7B 类似):
+
   ```text
   ComfyUI/models/vibevoice/microsoft/VibeVoice-1.5B/  # 或 VibeVoice-7B/
   ├── model-*.safetensors (模型权重)
@@ -544,6 +557,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   **💡 说明**: 插件已内置并修复了所有 VibeVoice 的 Python 核心代码 (`vibevoice_core`)。你**不需要**也不建议在模型目录中保留 `modeling_vibevoice_*.py` 等 Python 脚本，以避免潜在的冲突。
 
   **⚠️ 重要提示**: VibeVoice 依赖 **Qwen2.5** 的分词器。如果模型包里没有 tokenizer 文件，请手动补全：
+
   - 1.5B 模型使用 [Qwen/Qwen2.5-1.5B](https://huggingface.co/Qwen/Qwen2.5-1.5B/tree/main) 的 tokenizer
   - 7B 模型使用 [Qwen/Qwen2.5-7B](https://huggingface.co/Qwen/Qwen2.5-7B/tree/main) 的 tokenizer
 
@@ -565,9 +579,9 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **功能**: 极速实时生成。基于预计算的 `.pt` 缓存文件生成语音。
 - **不支持**: `reference_audio` (直接克隆)。
 - **特点**:
-    - **极低延迟**: 首包延迟极低，适合即时交互。
-    - **BF16 加速**: 自动使用 Bloat16 精度进行推理（如果硬件支持），大幅提升速度。
-    - **多语言支持**: 官方预设涵盖英、日、韩、法、德等。
+  - **极低延迟**: 首包延迟极低，适合即时交互。
+  - **BF16 加速**: 自动使用 Bloat16 精度进行推理（如果硬件支持），大幅提升速度。
+  - **多语言支持**: 官方预设涵盖英、日、韩、法、德等。
 
 #### 3. 🎤 VibeVoice Preset Maker (0.5B) (Experimental ⚠️)
 
@@ -575,10 +589,10 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **现状**: **极不稳定**。
 - **原因**: 社区反馈和测试表明，VibeVoice-Realtime-0.5B 模型的权重似乎对自定义音色进行了限制或未进行充分的 Zero-Shot 泛化训练。即使使用长达 1 分钟的高质量音频，生成时也极易出现**死循环、胡言乱语或噪音**。
 - **建议**:
-    - **首选**: 请直接下载并在 `Realtime 0.5B` 节点中使用 **微软官方提供的预设** (Carter, Emma 等)。
-    - **尝试**: 如果您一定要克隆音色，请使用 **VibeVoice 1.5B / 7B (Standard)** 节点，它们原生支持完美的 Zero-Shot 克隆。
-    - **仅供研究**: 此节点保留给开发者进行研究调试，普通用户**不推荐**使用。
 
+  - **首选**: 请直接下载并在 `Realtime 0.5B` 节点中使用 **微软官方提供的预设** (Carter, Emma 等)。
+  - **尝试**: 如果您一定要克隆音色，请使用 **VibeVoice 1.5B / 7B (Standard)** 节点，它们原生支持完美的 Zero-Shot 克隆。
+  - **仅供研究**: 此节点保留给开发者进行研究调试，普通用户**不推荐**使用。
 
   **手动下载命令**:
 
@@ -600,7 +614,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
   # 下载核心音色 (仅示例，全部音色请参考官方 GitHub)
   # ⚠️ 注意：官方仓库目前暂未提供中文 (.pt) 预设，建议使用英文或日韩文测试，或自行制作预设。
-  
+
   # 英文 (English)
   wget -N --no-check-certificate https://github.com/microsoft/VibeVoice/raw/main/demo/voices/streaming_model/en-Carter_man.pt
   wget -N --no-check-certificate https://github.com/microsoft/VibeVoice/raw/main/demo/voices/streaming_model/en-Emma_woman.pt
@@ -667,11 +681,19 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 本次更新标志着 CosyVoice 架构的**完全大一统**。通过“手术级”精准推理逻辑，我们成功解决了 300M 系列模型的所有顽疾。
 
 #### ✅ 已完成 (Perfectly Supported)
+
 - **V3 系列 (0.5B)**: 完美支持。性别、方言、情感以及指令文本均能精准跟随。
 - **V2 系列 (0.5B)**: 完美支持。
-- **300M-Instruct (V1)**: **彻底修复**。通过强制注入 `<|endofprompt|>` 边界标识和重连 `llm_embedding`，彻底解决了指令被读出和性别偏移（变女声）的问题。
+- **300M-Instruct (V1)**: **彻底修复 (Fully Fixed)**。
+  - **指令跟随修复**: 强制注入官方缺失的 `<|endofprompt|>` 边界标识，完美解决了模型将指令文本读出来的问题。
+  - **能力矩阵**:
+    - ✅ **支持**: 情感控制 (Happy/Sad/Angry)、语速控制 (Fast/Slow)、基础性别 (Male/Female)。
+    - ❌ **不支持**: 方言指令 (Dialect) - 此模型架构原生不支持通过指令更改方言，请使用 V3 或 V2 模型获取方言能力。
 - **300M-SFT / Base (V1)**: 恢复原生巅峰音质。
 - **稳定性**: 杜绝了 `AudioDecoder`、`KeyError` 以及 `llm_embedding` 缺失导致的各种崩溃。
 
 #### 🔈 资源更新
+
 - **HQ 种子音色**: 内置从 300M-SFT 提取的高保真男声/女声种子音频。在零参考音频的“指令模式”下，V2/V3 将自动调用这些高保真资源，消除破碎感。
+
+#### 3.5 CosyVoice 3.0 TTS (AIIA) (全版本集成文本转语音)

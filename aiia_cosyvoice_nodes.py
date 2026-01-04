@@ -796,36 +796,15 @@ class AIIA_CosyVoice_TTS:
                     # We manually call tts to ensure llm_embedding doesn't get stripped.
                     print(f"[AIIA] CosyVoice: V1 Surgical Instruct Path. Speaker: {spk_id}")
                     
-                    def manual_instruct_gen():
-                        # Protect <|endofprompt|> from text_normalize
-                        # If normalization changes "<" to "小于" or breaks the tag, inference fails.
-                        raw_inst = final_instruct
-                        end_token = "<|endofprompt|>"
-                        
-                        if end_token in raw_inst:
-                            base_content = raw_inst.split(end_token)[0]
-                            norm_content = cosyvoice_model.frontend.text_normalize(base_content, split=False)
-                            norm_inst = f"{norm_content}{end_token}"
-                        else:
-                            # Fallback if token missing (shouldn't happen with previous logic)
-                            norm_inst = cosyvoice_model.frontend.text_normalize(raw_inst, split=False)
-                            norm_inst += end_token
-
-                        chunks = cosyvoice_model.frontend.text_normalize(tts_text, split=True)
-                        for chunk in chunks:
-                            # 1. Create model input using the instruct frontend
-                            model_input = cosyvoice_model.frontend.frontend_instruct(chunk, spk_id, norm_inst)
-                            
-                            # 2. CRITICAL: Re-inject the speaker embedding for identity stability
-                            # Official frontend_instruct DELETES it, which causes the female voice issue.
-                            if 'llm_embedding' not in model_input and spk_id in cosyvoice_model.frontend.spk2info:
-                                spk_data = cosyvoice_model.frontend.spk2info[spk_id]
-                                if isinstance(spk_data, dict) and 'embedding' in spk_data:
-                                    model_input['llm_embedding'] = spk_data['embedding']
-                                
-                            for o in cosyvoice_model.model.tts(**model_input, stream=False, speed=speed):
-                                yield o
-                    output = manual_instruct_gen()
+                    # For V1 Instruct, we MUST use <|endofprompt|> to separate instruction from text
+                    clean_inst = final_instruct.strip()
+                    if "<|" in clean_inst:
+                        clean_inst = clean_inst.split("<|")[0].strip()
+                    if clean_inst and "<|endofprompt|>" not in clean_inst:
+                        clean_inst += "<|endofprompt|>"
+                    
+                    print(f"[AIIA] CosyVoice: V1 Native Instruct Path. Instruction: {clean_inst}")
+                    output = cosyvoice_model.inference_instruct(tts_text, spk_id, clean_inst, stream=False, speed=speed)
                 else:
                     # --- V1 (300M) Regular SFT Mode ---
                     print(f"[AIIA] CosyVoice: SFT Mode. Speaker: {spk_id}")
