@@ -183,7 +183,8 @@ class AIIA_VoxCPM_TTS:
             if prompt_wav_path is None:
                 prompt_text = None
             
-            with torch.no_grad():
+            try:
+                with torch.no_grad():
                 outputs = model.generate(
                     text=text,
                     prompt_wav_path=prompt_wav_path,
