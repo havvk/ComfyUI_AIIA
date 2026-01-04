@@ -247,14 +247,32 @@ class AIIA_VibeVoice_TTS:
             text = "\n".join([f"Speaker 1: {line.strip()}" for line in lines if line.strip()])
 
         # Process Reference Audio
-        wav = reference_audio["waveform"]
-        ref_sr = reference_audio.get("sample_rate", 24000)
-        if wav.ndim == 3: wav = wav[0]
-        if wav.shape[0] > 1: wav = torch.mean(wav, dim=0, keepdim=True)
-        if ref_sr != 24000:
-            resampler = torchaudio.transforms.Resample(orig_freq=ref_sr, new_freq=24000)
-            wav = resampler(wav)
-        voice_samples = [wav.squeeze().cpu().numpy()]
+        voice_samples = []
+        
+        # Determine if input is list or single item
+        if isinstance(reference_audio, list):
+            raw_refs = reference_audio
+        else:
+            raw_refs = [reference_audio]
+            
+        for ref_item in raw_refs:
+            if ref_item is None:
+                # Should satisfy processor requirements, maybe silent audio
+                # But typically caller ensures validity. We'll use 1s silence.
+                voice_samples.append(np.zeros(24000, dtype=np.float32))
+                continue
+                
+            wav = ref_item["waveform"]
+            ref_sr = ref_item.get("sample_rate", 24000)
+            
+            if wav.ndim == 3: wav = wav[0]
+            if wav.shape[0] > 1: wav = torch.mean(wav, dim=0, keepdim=True)
+            
+            if ref_sr != 24000:
+                resampler = torchaudio.transforms.Resample(orig_freq=ref_sr, new_freq=24000)
+                wav = resampler(wav)
+                
+            voice_samples.append(wav.squeeze().cpu().numpy())
 
         try:
             with torch.no_grad():
@@ -311,13 +329,44 @@ class AIIA_VibeVoice_TTS:
                     audio_out = torchaudio.transforms.Resample(orig_freq=int(24000*speed), new_freq=24000)(audio_out)
                 
                 if audio_out.ndim == 2: audio_out = audio_out.unsqueeze(0)
+
+                # --- AIIA FIX: Trim Trailing Silence/Noise ---
+                # VibeVoice often generates trailing static/silence. We conservatively trim it.
+                try:
+                    # Convert to mono for energy calc
+                    w_mono = audio_out.squeeze()
+                    if w_mono.ndim > 1: w_mono = w_mono.mean(dim=0)
+                    
+                    # Window size for energy calculation (e.g., 50ms)
+                    win_size = int(24000 * 0.05)
+                    if w_mono.shape[-1] > win_size:
+                        # Calculate short-term energy
+                        energy = w_mono.unfold(0, win_size, win_size // 2).pow(2).mean(dim=1)
+                        # Threshold (approx -50dB)
+                        threshold = 1e-5 
+                        
+                        # Find last frame above threshold
+                        valid_frames = (energy > threshold).nonzero()
+                        if valid_frames.numel() > 0:
+                            last_valid_idx = valid_frames[-1].item()
+                            # Convert back to sample index (roughly)
+                            last_sample = (last_valid_idx + 1) * (win_size // 2) + win_size
+                            
+                            # Add small buffer (0.1s)
+                            last_sample = min(last_sample + 2400, w_mono.shape[0])
+                            
+                            # Apply Trim
+                            audio_out = audio_out[..., :last_sample]
+                            
+                            # Apply Fade Out (0.05s) to avoid clicks
+                            fade_len = int(24000 * 0.05)
+                            if audio_out.shape[-1] > fade_len:
+                                fade = torch.linspace(1, 0, fade_len).to(audio_out.device)
+                                audio_out[..., -fade_len:] *= fade
+                except Exception as e:
+                    print(f"[AIIA WARNING] Failed to trim audio: {e}")
+
                 return ({"waveform": audio_out.cpu(), "sample_rate": 24000},)
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            raise e
-
 
         except Exception as e:
             import traceback

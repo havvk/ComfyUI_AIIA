@@ -1,0 +1,212 @@
+import torch
+import numpy as np
+import os
+import random
+import tempfile
+import soundfile as sf
+import warnings
+import sys
+import subprocess
+import folder_paths
+from huggingface_hub import snapshot_download
+
+# Suppress annoying warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="onnxruntime")
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["ONNXRUNTIME_QUIET"] = "1"
+
+# Lazy-loaded global variable
+CosyVoice = None
+
+def _install_cosyvoice_if_needed():
+    global CosyVoice
+    if CosyVoice is not None: return
+    try:
+        from cosyvoice.cli.cosyvoice import CosyVoice as CV
+        CosyVoice = CV
+        return
+    except ImportError: pass
+    
+    try:
+        libs_dir = os.path.join(os.path.dirname(__file__), "libs")
+        cosyvoice_dir = os.path.join(libs_dir, "CosyVoice")
+        matcha_dir = os.path.join(cosyvoice_dir, "third_party", "Matcha-TTS")
+        if not os.path.exists(libs_dir): os.makedirs(libs_dir, exist_ok=True)
+        if not os.path.exists(cosyvoice_dir):
+            subprocess.check_call(["git", "clone", "--recursive", "https://github.com/FunAudioLLM/CosyVoice.git", cosyvoice_dir])
+        if cosyvoice_dir not in sys.path: sys.path.insert(0, cosyvoice_dir)
+        if matcha_dir not in sys.path: sys.path.insert(0, matcha_dir)
+        from cosyvoice.cli.cosyvoice import CosyVoice as CV
+        CosyVoice = CV
+    except Exception as e:
+        print(f"[AIIA] Failed to install/import CosyVoice: {e}")
+
+class AIIA_CosyVoice_ModelLoader:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model_name": ([
+                    "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+                    "FunAudioLLM/CosyVoice2-0.5B",
+                    "CosyVoice-300M",
+                    "CosyVoice-300M-SFT", 
+                    "CosyVoice-300M-Instruct"
+                ],),
+                "use_fp16": ("BOOLEAN", {"default": True}),
+            }
+        }
+    RETURN_TYPES = ("COSYVOICE_MODEL",)
+    RETURN_NAMES = ("model",)
+    FUNCTION = "load_model"
+    CATEGORY = "AIIA/Loaders"
+
+    def load_model(self, model_name, use_fp16):
+        _install_cosyvoice_if_needed()
+        if model_name.startswith("FunAudioLLM/"):
+            model_dir = os.path.join(folder_paths.models_dir, "cosyvoice", model_name.split("/")[-1])
+            if not os.path.exists(model_dir):
+                snapshot_download(repo_id=model_name, local_dir=model_dir)
+        else:
+            model_dir = os.path.join(folder_paths.models_dir, "cosyvoice", model_name)
+        
+        from cosyvoice.cli.cosyvoice import AutoModel
+        is_v3 = os.path.exists(os.path.join(model_dir, "cosyvoice3.yaml"))
+        is_v2 = os.path.exists(os.path.join(model_dir, "cosyvoice2.yaml")) or (not is_v3 and os.path.exists(os.path.join(model_dir, "flow.pt")))
+        
+        print(f"[AIIA] Loading {'V3' if is_v3 else ('V2' if is_v2 else 'V1')} model from {model_dir}")
+        model_instance = AutoModel(model_dir=model_dir, fp16=use_fp16)
+        
+        # Identity detection
+        available_spks = []
+        spk2info_path = os.path.join(model_dir, "spk2info.pt")
+        if os.path.exists(spk2info_path):
+            try: available_spks = list(torch.load(spk2info_path, map_location='cpu').keys())
+            except: pass
+        if "instruct" in model_dir.lower() and not is_v2 and not is_v3:
+            available_spks = sorted(list(set(available_spks + ["中文男", "中文女", "英文男", "英文女", "日语男", "粤语女", "韩语女"])))
+
+        return ({"model": model_instance, "model_dir": model_dir, "is_v3": is_v3, "is_v2": is_v2, "available_spks": available_spks},)
+
+class AIIA_CosyVoice_V1_TTS:
+    """Specialized node for 300M (V1) models with Surgical Fix for Male voices."""
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("COSYVOICE_MODEL",),
+                "tts_text": ("STRING", {"multiline": True, "default": "你好，这是V1专号节点的测试。"}),
+                "instruct_text": ("STRING", {"multiline": True, "default": "Theo 'Crimson', is a fiery, passionate rebel leader."}),
+                "spk_id": ("STRING", {"default": "中文男"}),
+                "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
+                "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
+            },
+            "optional": {
+                "reference_audio": ("AUDIO",),
+                "prompt_text": ("STRING", {"multiline": True, "default": ""}),
+            }
+        }
+    RETURN_TYPES = ("AUDIO",)
+    FUNCTION = "generate"
+    CATEGORY = "AIIA/Synthesis"
+
+    def generate(self, model, tts_text, instruct_text, spk_id, speed, seed, reference_audio=None, prompt_text=""):
+        cosyvoice_model = model["model"]
+        if seed >= 0:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed)
+
+        # 1. Surgical Fix Logic for V1
+        # Check if it's actually V1
+        if model.get("is_v2") or model.get("is_v3"):
+            print("[AIIA] Warning: V1 node used with V2/V3 model. Falling back to native wrapper.")
+            output = cosyvoice_model.inference_instruct(tts_text, instruct_text, None, speed=speed)
+        else:
+            # PURE V1 SURGICAL PATH
+            if instruct_text:
+                print(f"[AIIA] V1 Surgical Instruct | Spk: {spk_id}")
+                clean_inst = instruct_text.strip().split("<|")[0].strip() + "<|endofprompt|>"
+                def gen():
+                    chunks = cosyvoice_model.frontend.text_normalize(tts_text, split=True)
+                    for c in chunks:
+                        mi = cosyvoice_model.frontend.frontend_instruct(c, spk_id, clean_inst)
+                        if 'llm_embedding' in mi: del mi['llm_embedding']
+                        for o in cosyvoice_model.model.tts(**mi, stream=False, speed=speed): yield o
+                output = gen()
+            elif reference_audio is not None and prompt_text:
+                print("[AIIA] V1 Zero-shot")
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                    wav = reference_audio["waveform"].squeeze().cpu().numpy()
+                    if wav.ndim == 2: wav = wav.T
+                    sf.write(tmp.name, wav, cosyvoice_model.sample_rate)
+                    output = cosyvoice_model.inference_zero_shot(tts_text, prompt_text, tmp.name, speed=speed)
+                    os.unlink(tmp.name)
+            else:
+                print(f"[AIIA] V1 SFT | Spk: {spk_id}")
+                output = cosyvoice_model.inference_sft(tts_text, spk_id, speed=speed)
+
+        all_speech = [c['tts_speech'] for c in output]
+        final_wav = torch.cat(all_speech, dim=-1)
+        return ({"waveform": final_wav.unsqueeze(0).cpu(), "sample_rate": cosyvoice_model.sample_rate},)
+
+class AIIA_CosyVoice_V2V3_TTS:
+    """Native node for 0.5B (V2/V3) models using official APIs."""
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("COSYVOICE_MODEL",),
+                "tts_text": ("STRING", {"multiline": True, "default": "你好，这是V2/V3专用节点的测试。"}),
+                "instruct_text": ("STRING", {"multiline": True, "default": ""}),
+                "spk_id": ("STRING", {"default": ""}),
+                "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
+                "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
+            },
+            "optional": {
+                "reference_audio": ("AUDIO",),
+            }
+        }
+    RETURN_TYPES = ("AUDIO",)
+    FUNCTION = "generate"
+    CATEGORY = "AIIA/Synthesis"
+
+    def generate(self, model, tts_text, instruct_text, spk_id, speed, seed, reference_audio=None):
+        cosyvoice_model = model["model"]
+        if seed >= 0:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed)
+
+        ref_path = None
+        if reference_audio:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                ref_path = tmp.name
+                wav = reference_audio["waveform"].squeeze().cpu().numpy()
+                if wav.ndim == 2: wav = wav.T
+                sf.write(ref_path, wav, cosyvoice_model.sample_rate)
+
+        try:
+            if model["is_v3"]:
+                print(f"[AIIA] V3 Native | Spk: {spk_id}")
+                output = cosyvoice_model.inference_instruct2(tts_text, instruct_text, ref_path, zero_shot_spk_id=spk_id, speed=speed)
+            else:
+                print(f"[AIIA] V2 Native | Spk: {spk_id}")
+                output = cosyvoice_model.inference_instruct(tts_text, instruct_text, ref_path, zero_shot_spk_id=spk_id, speed=speed)
+            
+            all_speech = [c['tts_speech'] for c in output]
+            final_wav = torch.cat(all_speech, dim=-1)
+        finally:
+            if ref_path and os.path.exists(ref_path): os.unlink(ref_path)
+
+        return ({"waveform": final_wav.unsqueeze(0).cpu(), "sample_rate": cosyvoice_model.sample_rate},)
+
+NODE_CLASS_MAPPINGS = {
+    "AIIA_CosyVoice_ModelLoader": AIIA_CosyVoice_ModelLoader,
+    "AIIA_CosyVoice_V1_TTS": AIIA_CosyVoice_V1_TTS,
+    "AIIA_CosyVoice_V2V3_TTS": AIIA_CosyVoice_V2V3_TTS
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIIA_CosyVoice_ModelLoader": "CosyVoice Model Loader (AIIA)",
+    "AIIA_CosyVoice_V1_TTS": "CosyVoice V1 (300M) TTS",
+    "AIIA_CosyVoice_V2V3_TTS": "CosyVoice V2/V3 (0.5B+) TTS"
+}

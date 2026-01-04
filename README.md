@@ -644,8 +644,6 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/vocab.json -P models/vibevoice/vibevoice/VibeVoice-7B/
   wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/merges.txt -P models/vibevoice/vibevoice/VibeVoice-7B/
   ```
-
-  ```
  
  #### 3.12 VoxCPM 1.5 TTS (Beta)
  
@@ -706,7 +704,84 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 -   **追求“方言/多语言/稳定性”**: 选 **CosyVoice 3.0**。目前依然是生产环境最稳的选择。
 -   **要做“长篇广播剧/播客”**: 选 **VibeVoice**。它的长窗口上下文优势依然不可替代。
 
-### 4. 图像工具 (Image Utilities)
+### 4. 播客与对话生成 (Podcast & Dialogue Generation)
+
+🚀 **V2.1 新增功能**：这是专门为生成双人对话、相声、广播剧设计的完整工作流节点。能够自动解析剧本、调度多角色 TTS，并实现长音频的智能拼接。
+
+#### 4.1 AIIA Podcast Script Parser (脚本解析器)
+
+负责将自然语言剧本转换为机器可读的结构化数据。
+
+- **Script Text**: 剧本输入区域。
+  - **基本格式**: `角色名: 台词` (例如 `A: 大家好`)
+  - **暂停控制**: `(Pause N)` (例如 `(Pause 0.5)` 表示暂停 0.5 秒)
+  - **情感标签** (仅 CosyVoice): `[Emotion] 台词` (例如 `[Happy] 大家好`)
+- **Speaker Mapping**: 角色映射配置 (可选)。
+  - 格式: `原剧本角色名=A`, `原剧本角色名=B`
+  - 示例: `Teacher=A`, `Student=B`
+
+#### 4.2 AIIA Dialogue TTS (对话生成引擎)
+
+核心调度与生成节点，支持自动角色切换和长音频拼接。
+
+- **TTS Engine**: 后端引擎选择。
+  - **CosyVoice**: 精准控制型。
+  - **VibeVoice**: 自然演绎型。
+- **Speaker A/B/C**:
+  - **Ref Audio**: 参考音频 (用于 Zero-Shot 克隆)。
+  - **ID**: 内置音色 ID (如 CosyVoice 的 `Chinese Female`)。
+- **Batch Mode**: 生成模式控制。
+  - `Natural (Hybrid)`: 混合批处理。仅在 `(Pause)` 处断开。语流最自然，但可能发生音色泄漏。
+  - `Strict (Per-Speaker)`: 严格模式。每句话都会强制断开重置。彻底杜绝音色泄漏，但对话流畅度略低。
+  - `Whole (Single Batch)`: 全量模式。无视所有暂停，一次性生成整本剧本。连贯性最强，但无法控制停顿时间。
+
+#### 💡 引擎选型与最佳实践 (Best Practices)
+
+| 特性 | **CosyVoice** | **VibeVoice** |
+| :--- | :--- | :--- |
+| **核心优势** | **精准控制 (Instruction)** | **自然演绎 (Context-Aware)** |
+| **情感控制** | ✅ **支持** (使用 `[Happy]` 等标签) | ❌ 不支持显式标签 (依赖上下文) |
+| **生成逻辑** | **逐句生成** (严格遵循每句话的指令) | **混合批处理** (Hybrid Batching) |
+| **最佳场景** | 需要精确指定某句话语气、方言时 | 长篇对话、广播剧、闲聊 |
+| **使用建议** | 可以在剧本中详细标注情感。 | **尽量减少 `(Pause)`**！<br>让多句对话连在一起，模型能更好地联系上下文产生自然语气。 |
+
+#### 📝 综合测试剧本 (Example Script)
+
+复制以下内容到 Script Parser 进行测试，能够充分体现两种引擎的特性：
+
+```text
+# 这是一个展示 CosyVoice 和 VibeVoice 能力的综合剧本
+# 角色映射建议：A=男声, B=女声
+
+A: 大家好，欢迎来到 AIIA 播客直播间。
+B: [开心] 哇，今天的人气好高啊！看到这么多朋友在线，我太激动了。
+
+(Pause 0.5)
+
+A: 呵呵，淡定一点。即使是 VibeVoice 这种基于 LLM 的模型，也需要你保持从容。
+B: [疑惑] 为什么？难道它不喜欢太吵闹的声音吗？
+A: 不是不喜欢，而是因为它会“读取”上下文。你越自然，它演得越像。
+
+(Pause 0.8)
+
+A: 比如说，如果我们用 CosyVoice，我可以强行指定你现在的状态。
+B: [悲伤] 比如让我突然变得很伤心？
+A: 对，就像这样。CosyVoice 是“指哪打哪”，非常听话。
+
+(Pause 0.5)
+
+B: [机器人的方式] 那如果我变成一个机器人呢？可以吗？
+A: 哈哈，完全没问题。
+
+(Pause 1.0)
+
+A: 但是，如果你想演一场相声，或者很自然的闲聊，VibeVoice 的“混合批处理”就是神技了。
+B: [excited] 也就是它会把我们现在说的这一长串话，一口气生成出来？
+A: 没错！只要我们中间不加 Pause，它就会一口气读完，语气极其连贯，就像真人对话一样。
+B: 太神奇了！那我们快去生成试试吧！
+```
+
+### 5. 图像工具 (Image Utilities)
 
 #### Image Concatenate (AIIA Utils, Disk)
 
