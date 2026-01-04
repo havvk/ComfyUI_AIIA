@@ -13,6 +13,7 @@ class AIIA_VoxCPM_Loader:
             "required": {
                 "model_name": (["VoxCPM-1.5-800M"], {"default": "VoxCPM-1.5-800M"}),
                 "precision": (["fp16", "fp32"], {"default": "fp16"}),
+                "enable_denoiser": ("BOOLEAN", {"default": True, "label_on": "Enable (Downloads ZipEnhancer)", "label_off": "Disable"}),
             }
         }
 
@@ -21,7 +22,7 @@ class AIIA_VoxCPM_Loader:
     FUNCTION = "load_model"
     CATEGORY = "AIIA/VoxCPM"
 
-    def load_model(self, model_name, precision):
+    def load_model(self, model_name, precision, enable_denoiser):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if precision == "fp16" else torch.float32
         
@@ -68,13 +69,9 @@ class AIIA_VoxCPM_Loader:
 
         try:
             # Initialize VoxCPM using its native class wrapper
-            # The signature is: VoxCPM(voxcpm_model_path=..., ...) and it does NOT accept 'device'.
-            # It seems it auto-detects or defaults to CUDA in the config.
-
-            # We pass the local model path. 
-            # Note: The class does 'VoxCPMModel.from_local(voxcpm_model_path, ...)' inside.
+            # The signature is: VoxCPM(voxcpm_model_path=..., enable_denoiser=...)
             
-            model = VoxCPM(voxcpm_model_path=model_path)
+            model = VoxCPM(voxcpm_model_path=model_path, enable_denoiser=enable_denoiser)
             
             # Since the init doesn't take device, we might need to manually move it if it didn't default correctly.
             # But core.py:44 says 'self.tts_model = VoxCPMModel.from_local(...)'.
