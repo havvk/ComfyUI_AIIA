@@ -26,7 +26,7 @@ class AIIA_VoxCPM_Loader:
         dtype = torch.float16 if precision == "fp16" else torch.float32
         
         # Define paths
-        hf_repo_id = "openbmb/VoxCPM-1.5"
+        hf_repo_id = "openbmb/VoxCPM1.5"
         base_path = os.path.dirname(os.path.abspath(__file__))
         models_dir = os.path.join(base_path, "models", "voxcpm")
         model_path = os.path.join(models_dir, "VoxCPM-1.5")
