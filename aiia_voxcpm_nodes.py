@@ -196,12 +196,7 @@ class AIIA_VoxCPM_TTS:
                 
                 # Determine output format
                 out_audio = outputs
-                # out_sr = model.tts_model.sample_rate 
-                # CRITICAL FIX: The config claims 44100Hz but the model generates 16000Hz/24000Hz data.
-                # Playback at 44.1k is chipmunk-fast. We must force the lower rate.
-                # Based on user feedback ("very fast") and codebase defaults, we try 16000Hz first.
-                out_sr = 16000 
-                # If 16000 is too slow (deep voice), we will update to 24000.
+                out_sr = model.tts_model.sample_rate
                 
                 if isinstance(outputs, tuple):
                     # Check if model returns specific SR, otherwise stick to default
