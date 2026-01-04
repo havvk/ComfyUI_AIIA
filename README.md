@@ -652,10 +652,10 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
  - **用途**: 下一代 Tokenizer-free TTS 模型，提供 44.1kHz 原生高保真音质。
  - **状态**: **Beta (骨架已上线，推理逻辑完善中)**
  - **手动下载指南 (Manual Download)**:
-   如果节点无法自动下载模型，请手动下载 `openbmb/VoxCPM-1.5` 并放入以下目录：
+   如果节点无法自动下载模型，请手动下载 `openbmb/VoxCPM1.5` 并放入以下目录：
  
    ```text
-   ComfyUI/models/voxcpm/VoxCPM-1.5/
+   ComfyUI/models/voxcpm/VoxCPM1.5/
    ├── model.safetensors
    ├── config.json
    └── ... (其他相关文件)
@@ -664,8 +664,8 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
    **HuggingFace 下载命令**:
  
    ```bash
-   mkdir -p models/voxcpm/VoxCPM-1.5
-   hf download openbmb/VoxCPM-1.5 --local-dir models/voxcpm/VoxCPM-1.5
+   mkdir -p models/voxcpm/VoxCPM1.5
+   hf download openbmb/VoxCPM1.5 --local-dir models/voxcpm/VoxCPM1.5
    ```
  
  #### 💡 用户实测与选型指南 (Model Comparison & Selection)
