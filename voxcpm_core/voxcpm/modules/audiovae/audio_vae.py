@@ -269,12 +269,12 @@ class CausalDecoder(nn.Module):
 
 class AudioVAEConfig(BaseModel):
     encoder_dim: int = 128
-    encoder_rates: List[int] = [2, 5, 8, 8]
+    encoder_rates: List[int] = [2, 3, 6, 7, 7]
     latent_dim: int = 64
     decoder_dim: int = 1536
-    decoder_rates: List[int] = [8, 8, 5, 2]
+    decoder_rates: List[int] = [7, 7, 6, 3, 2]
     depthwise: bool = True
-    sample_rate: int = 16000
+    sample_rate: int = 44100
     use_noise_block: bool = False
 
 
