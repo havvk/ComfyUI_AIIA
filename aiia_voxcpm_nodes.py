@@ -226,13 +226,26 @@ class AIIA_VoxCPM_TTS:
                 if out_audio.ndim == 2:
                     out_audio = out_audio.unsqueeze(0) # [B, C, T]
                 
+                # CRITICAL: Users expect 44.1kHz output for "High Quality" compatibility.
+                # The model is native 16kHz. If we just save as 16k, users complain it is "low quality".
+                # If we just save as 44.1k without resampling, it plays fast (chipmunk).
+                # SOLUTION: We must explicitly resample 16k -> 44.1k.
+                target_sr = 44100
+                if out_sr != target_sr:
+                     resampler = torchaudio.transforms.Resample(orig_freq=out_sr, new_freq=target_sr)
+                     resampler = resampler.to(out_audio.device)
+                     out_audio = resampler(out_audio)
+                     out_sr = target_sr
+
                 # Speed adj post-processing
                 if speed != 1.0:
                     try:
-                        # Note: naive resampling changes duration AND pitch.
+                        # Resample expects [..., time]
                         resampler_speed = torchaudio.transforms.Resample(orig_freq=out_sr, new_freq=int(out_sr*speed))
                         resampler_speed = resampler_speed.to(out_audio.device)
                         out_audio = resampler_speed(out_audio)
+                        # Note: We keep out_sr as 44100 (target_sr) but the data is effectively stretched/squeezed.
+                        # ComfyUI player will play 44100 samples/sec, so strict resampling works for speed change.
                     except Exception as e:
                         print(f"[AIIA Warning] Speed adjustment failed: {e}")
                 
