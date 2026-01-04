@@ -1,13 +1,13 @@
 [project]
 name = "aiia"
-description = "A comprehensive ComfyUI toolkit featuring Podcast/Dialogue Generation, CosyVoice (V1/V2), VibeVoice (1.5B/7B), and OOM-safe video tools."
-version = "1.6.0"
+description = "Advanced AI Audio/Video toolkit for ComfyUI. Features Multi-Role Podcast/Dialogue Generation, High-Fidelity Voice Cloning (CosyVoice/VibeVoice), TTS, Media Management, and efficient Video tools."
+version = "1.6.1"
 license = {file = "LICENSE"}
 readme = "README.md"
 authors = [
     { name = "Hawk Lee", email = "l.y@live.cn" }
 ]
-keywords = ["ComfyUI", "Audio", "CosyVoice", "VibeVoice", "Podcast", "Dialogue"]
+keywords = ["ComfyUI", "Audio", "TTS", "Voice Cloning", "Podcast", "Dialogue", "CosyVoice", "VibeVoice", "Media Management", "Video"]
 dependencies = [
     "soundfile",
     "numpy",
