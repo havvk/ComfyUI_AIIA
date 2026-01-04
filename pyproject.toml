@@ -1,7 +1,7 @@
 [project]
 name = "aiia"
 description = "Advanced AI Audio/Video toolkit for ComfyUI. Features Multi-Role Podcast/Dialogue Generation, High-Fidelity Voice Cloning (CosyVoice/VibeVoice), TTS, Media Management, and efficient Video tools."
-version = "1.6.1"
+version = "1.6.2"
 license = {file = "LICENSE"}
 readme = "README.md"
 authors = [
