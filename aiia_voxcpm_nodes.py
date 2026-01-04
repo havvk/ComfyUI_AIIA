@@ -52,7 +52,14 @@ class AIIA_VoxCPM_Loader:
         try:
             from voxcpm import VoxCPM
         except ImportError:
-            raise ImportError("VoxCPM package not installed! Please run: pip install voxcpm")
+            print("[AIIA] VoxCPM package not found. Attempting auto-installation...")
+            import subprocess
+            import sys
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "voxcpm"])
+                from voxcpm import VoxCPM
+            except Exception as e:
+                raise RuntimeError(f"Failed to auto-install voxcpm: {e}. Please run 'pip install voxcpm' manually.")
 
         try:
             # Initialize VoxCPM using its native class
