@@ -27,8 +27,11 @@ class AIIA_VoxCPM_Loader:
         
         # Define paths
         hf_repo_id = "openbmb/VoxCPM1.5"
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        models_dir = os.path.join(base_path, "models", "voxcpm")
+        
+        # Use ComfyUI standard models directory
+        # folder_paths.base_path gives the ComfyUI root
+        comfy_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        models_dir = os.path.join(comfy_root, "models", "voxcpm")
         model_path = os.path.join(models_dir, "VoxCPM1.5")
         
         # Download if not exists
