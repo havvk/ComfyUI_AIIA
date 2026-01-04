@@ -93,10 +93,12 @@ class AIIA_VoxCPM_Loader:
             # The signature is: VoxCPM(voxcpm_model_path=..., enable_denoiser=..., zipenhancer_model_path=...)
             
             # Pass zipenhancer_model_path explicitely to avoid default cache path if possible
+            # disable optimization (torch.compile) to avoid cudaMallocAsync errors
             model = VoxCPM(
                 voxcpm_model_path=model_path, 
                 enable_denoiser=enable_denoiser,
-                zipenhancer_model_path=zip_local_path
+                zipenhancer_model_path=zip_local_path,
+                optimize=False
             )
             
             tokenizer = None 
