@@ -709,7 +709,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 ### 4. 播客与对话生成 (Podcast & Dialogue Generation)
 
-[![](image/README/1767586497317.png)](https://github.com/havvk/ComfyUI_AIIA/raw/main/assets/demo.mp4)
+https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 
 > 🎬 **点击图片下载/观看演示视频** (GitHub 限制，可能需要下载观看)
 
