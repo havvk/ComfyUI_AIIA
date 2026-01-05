@@ -709,9 +709,9 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 ### 4. 播客与对话生成 (Podcast & Dialogue Generation)
 
-[![点击观看演示视频](image/README/1767586497317.png)](https://github.com/havvk/ComfyUI_AIIA/blob/main/assets/demo.mp4)
+[![](image/README/1767586497317.png)](https://github.com/havvk/ComfyUI_AIIA/raw/main/assets/demo.mp4)
 
-> 🎬 **点击图片预览生成效果** (跳转至 GitHub 播放页)
+> 🎬 **点击图片下载/观看演示视频** (GitHub 限制，可能需要下载观看)
 
 🚀 **新增功能**：这是专门为生成双人对话、相声、广播剧设计的完整工作流节点。能够自动解析剧本、调度多角色 TTS，并实现长音频的智能拼接。
 
