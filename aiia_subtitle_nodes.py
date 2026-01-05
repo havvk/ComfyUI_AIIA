@@ -62,6 +62,43 @@ class AIIA_Subtitle_Gen:
         return "\n".join(output)
 
     def _generate_ass(self, segments, style_name="Default"):
+        # 1. Collect unique speakers
+        speakers = set()
+        for seg in segments:
+            speakers.add(seg.get("speaker", "Unknown"))
+        
+        # 2. Assign colors to speakers
+        # Simple palette: White, Yellow, Cyan, Green, Orange, Pink, LightBlue
+        palette = [
+            "&H00FFFFFF", # White
+            "&H0000FFFF", # Yellow (BGR)
+            "&H00FFFF00", # Cyan
+            "&H0000FF00", # Green
+            "&H000080FF", # Orange
+            "&H00FF80FF", # Pink
+            "&H00FFC0C0"  # LightBlue
+        ]
+        
+        styles = []
+        speaker_map = {}
+        
+        # Base Style String Template
+        # Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, ...
+        base_style = "Arial,20,{primary_color},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1"
+        
+        sorted_speakers = sorted(list(speakers))
+        for i, spk in enumerate(sorted_speakers):
+            color = palette[i % len(palette)]
+            # Create a style name safely (no spaces ideally, but ASS allows spaces)
+            safe_spk = spk.replace(",", "").strip()
+            # If user provided a custom style base name, maybe prefix it? 
+            # But simpler to just use Speaker Name as Style Name for direct mapping.
+            final_style_name = safe_spk if safe_spk else "Unknown"
+            
+            style_line = f"Style: {final_style_name},{base_style.format(primary_color=color)}"
+            styles.append(style_line)
+            speaker_map[spk] = final_style_name
+
         # Basic ASS Header
         header = [
             "[Script Info]",
@@ -73,7 +110,7 @@ class AIIA_Subtitle_Gen:
             "",
             "[V4+ Styles]",
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-            f"Style: {style_name},Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1",
+        ] + styles + [
             "",
             "[Events]",
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
@@ -85,8 +122,10 @@ class AIIA_Subtitle_Gen:
             end = self._format_ass_time(seg["end"])
             text = seg["text"].replace("\n", "\\N")
             speaker = seg.get("speaker", "Unknown")
+            # Use the mapped style name
+            style_for_event = speaker_map.get(speaker, "Default")
             
-            events.append(f"Dialogue: 0,{start},{end},{style_name},{speaker},0,0,0,,{text}")
+            events.append(f"Dialogue: 0,{start},{end},{style_for_event},{speaker},0,0,0,,{text}")
 
         return "\n".join(header + events)
 
