@@ -337,7 +337,6 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `chunk_size`: 目标切片大小（默认 25 秒）。
   - `overlap_size`: 重叠大小，用于平滑衔接。
 
-
 #### 3.5 CosyVoice 3.0 TTS (AIIA) (全版本集成文本转语音)
 
 - **用途**: 一个节点通连 CosyVoice 全系列模型 (V1, V2, V3)，支持从纯文字描述生成到高保真音色克隆的全场景需求。
@@ -510,6 +509,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - **特点**: 该模型支持包括**韩语、日语**在内的更多语种，速度极快。
 
 #### 🔬 详细观察与进阶技巧
+
 1. **0.5B 实时版**:
 
    - **频谱特征**: 在静音区域（Silence）可能在全部频率范围内观察到较高的能量分布，尤其在中频区域。
@@ -644,69 +644,80 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/vocab.json -P models/vibevoice/vibevoice/VibeVoice-7B/
   wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/merges.txt -P models/vibevoice/vibevoice/VibeVoice-7B/
   ```
- 
- #### 3.12 VoxCPM 1.5 TTS (Beta)
- 
- - **用途**: 下一代 Tokenizer-free TTS 模型，提供 44.1kHz 原生高保真音质。
- - **状态**: **Beta (骨架已上线，推理逻辑完善中)**
- - **手动下载指南 (Manual Download)**:
-   如果节点无法自动下载模型，请手动下载 `openbmb/VoxCPM1.5` 并放入以下目录：
- 
-   ```text
-   ComfyUI/models/voxcpm/VoxCPM1.5/
-   ├── model.safetensors
-   ├── config.json
-   └── ... (其他相关文件)
-   ```
- 
-   **HuggingFace 下载命令**:
- 
-   ```bash
-   mkdir -p models/voxcpm/VoxCPM1.5
-   hf download openbmb/VoxCPM1.5 --local-dir models/voxcpm/VoxCPM1.5
-   ```
 
-   **降噪模型 (Optional Denoiser - ZipEnhancer)**:
-   默认开启 `enable_denoiser` 会自动从 ModelScope 下载 `speech_zipenhancer_ans_multiloss_16k_base` 到以下目录：
-   
-   ```text
-   ComfyUI/models/voxcpm/speech_zipenhancer_ans_multiloss_16k_base/
-   ```
+#### 3.12 VoxCPM 1.5 TTS (Beta)
 
-   如需手动下载（或离线使用）：
-   
-   ```bash
-   pip install modelscope
-   modelscope download --model iic/speech_zipenhancer_ans_multiloss_16k_base --local_dir models/voxcpm/speech_zipenhancer_ans_multiloss_16k_base
-   ```
+- **用途**: 下一代 Tokenizer-free TTS 模型，提供 44.1kHz 原生高保真音质。
+- **状态**: **Beta (骨架已上线，推理逻辑完善中)**
+- **手动下载指南 (Manual Download)**:
+  如果节点无法自动下载模型，请手动下载 `openbmb/VoxCPM1.5` 并放入以下目录：
 
-   > [!NOTE]
-   > **频谱特征说明 (Spectral Analysis Note)**:
-   > 用户实测发现，尽管该模型输出 44.1kHz 格式，但在频谱图上可能观察到以下特征：
-   > 1. **静音区能量较高 (High Noise Floor)**: 并非绝对静默。
-   > 2. **水平条纹 (Horizontal Stripes)**: 特别是在低频区域，这通常是 Neural Upsampling (VAE/GAN) 重构波形的典型痕迹。
-   > 3. **听感**: 这种“升频痕迹”可能会带来轻微的机械感或金属音，这属于模型权重的固有特性。
- 
- #### 💡 用户实测与选型指南 (Model Comparison & Selection)
+  ```text
+  ComfyUI/models/voxcpm/VoxCPM1.5/
+  ├── model.safetensors
+  ├── config.json
+  └── ... (其他相关文件)
+  ```
+
+  **HuggingFace 下载命令**:
+
+  ```bash
+  mkdir -p models/voxcpm/VoxCPM1.5
+  hf download openbmb/VoxCPM1.5 --local-dir models/voxcpm/VoxCPM1.5
+  ```
+
+  **降噪模型 (Optional Denoiser - ZipEnhancer)**:
+  默认开启 `enable_denoiser` 会自动从 ModelScope 下载 `speech_zipenhancer_ans_multiloss_16k_base` 到以下目录：
+
+  ```text
+  ComfyUI/models/voxcpm/speech_zipenhancer_ans_multiloss_16k_base/
+  ```
+
+  如需手动下载（或离线使用）：
+
+  ```bash
+  pip install modelscope
+  modelscope download --model iic/speech_zipenhancer_ans_multiloss_16k_base --local_dir models/voxcpm/speech_zipenhancer_ans_multiloss_16k_base
+  ```
+
+  > [!NOTE]
+  > **频谱特征说明 (Spectral Analysis Note)**:
+  > 用户实测发现，尽管该模型输出 44.1kHz 格式，但在频谱图上可能观察到以下特征：
+  >
+  > 1. **静音区能量较高 (High Noise Floor)**: 并非绝对静默。
+  > 2. **水平条纹 (Horizontal Stripes)**: 特别是在低频区域，这通常是 Neural Upsampling (VAE/GAN) 重构波形的典型痕迹。
+  > 3. **听感**: 这种“升频痕迹”可能会带来轻微的机械感或金属音，这属于模型权重的固有特性。
+  >
+
+#### 💡 用户实测与选型指南 (Model Comparison & Selection)
 
 经过深度测试，我们在三个主流模型中整理了以下对比，助您选择最适合的引擎：
 
-| 维度 | **VoxCPM 1.5** (800M) | **CosyVoice 3.0** (0.5B/1.5B) | **VibeVoice** (1.5B/7B) |
-| :--- | :--- | :--- | :--- |
-| **音质 (Fidelity)** | **44.1kHz 格式**<br>虽然物理格式为 44.1k，但因采用 **Neural Upsampling** (神经升频) 技术，听感上会有**含混 (Muffled)** 或**金属感**，且伴有底噪。 | **优秀**<br>听感最自然，但采样率稍低 (22/24kHz)，有时需 AI 增强。 | **良好**<br>主要强在语气自然度，纯音质略逊。 |
-| **推理速度 (Speed)** | **🚀 冠军 (RTF ~0.17)**<br>得益于 Tokenizer-free，极其高效。 | **极快**<br>流式响应仅 150ms，且支持 TensorRT 加速。 | **一般/较慢**<br>7B 版本较重，更适合离线生成。 |
-| **克隆能力 (Cloning)** | **SOTA** (Zero-Shot)<br>只需 3-10秒，对**音色质感**还原极高。 | **SOTA** (稳定性)<br>对**说话韵律/口音**的捕捉最准。 | **良好**<br>适合克隆特定语气，而非纯粹音色。 |
-| **多语言/方言** | **中/英** (双语优化) | **👑 霸主** (9种语言 + 18种方言) | **中/英** |
-| **语音转换 (VC)** (Audio-to-Audio) | ❌ **不支持**<br>仅支持 TTS (Text-to-Speech)。无法改变已有音频的音色。 | ✅ **支持**<br>可以将任意音频转换为任意音色 (保留语调/停顿)。 | ❌ **不支持**<br>纯 TTS 模型。仅支持 Text-to-Speech。 |
+| 维度                                     | **VoxCPM 1.5** (800M)                                                                                                                                                   | **CosyVoice 3.0** (0.5B/1.5B)                                         | **VibeVoice** (1.5B/7B)                                  |
+| :--------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------- | :------------------------------------------------------------- |
+| **音质 (Fidelity)**                | **44.1kHz 格式**`<br>`虽然物理格式为 44.1k，但因采用 **Neural Upsampling** (神经升频) 技术，听感上会有**含混 (Muffled)** 或**金属感**，且伴有底噪。 | **优秀**`<br>`听感最自然，但采样率稍低 (22/24kHz)，有时需 AI 增强。 | **良好**`<br>`主要强在语气自然度，纯音质略逊。         |
+| **推理速度 (Speed)**               | **🚀 冠军 (RTF ~0.17)**`<br>`得益于 Tokenizer-free，极其高效。                                                                                                        | **极快**`<br>`流式响应仅 150ms，且支持 TensorRT 加速。              | **一般/较慢**`<br>`7B 版本较重，更适合离线生成。       |
+| **克隆能力 (Cloning)**             | **SOTA** (Zero-Shot)`<br>`只需 3-10秒，对**音色质感**还原极高。                                                                                                 | **SOTA** (稳定性)`<br>`对**说话韵律/口音**的捕捉最准。        | **良好**`<br>`适合克隆特定语气，而非纯粹音色。         |
+| **多语言/方言**                    | **中/英** (双语优化)                                                                                                                                                    | **👑 霸主** (9种语言 + 18种方言)                                      | **中/英**                                                |
+| **语音转换 (VC)** (Audio-to-Audio) | ❌**不支持**`<br>`仅支持 TTS (Text-to-Speech)。无法改变已有音频的音色。                                                                                               | ✅**支持**`<br>`可以将任意音频转换为任意音色 (保留语调/停顿)。      | ❌**不支持**`<br>`纯 TTS 模型。仅支持 Text-to-Speech。 |
 
 **选型建议**:
--   **追求“听起来最像真人” (音质+音色)**: 选 **VoxCPM 1.5**。它的 Tokenizer-free 架构带来了质的飞跃。
--   **追求“方言/多语言/稳定性”**: 选 **CosyVoice 3.0**。目前依然是生产环境最稳的选择。
--   **要做“长篇广播剧/播客”**: 选 **VibeVoice**。它的长窗口上下文优势依然不可替代。
+
+- **追求“听起来最像真人” (音质+音色)**: 选 **VoxCPM 1.5**。它的 Tokenizer-free 架构带来了质的飞跃。
+- **追求“方言/多语言/稳定性”**: 选 **CosyVoice 3.0**。目前依然是生产环境最稳的选择。
+- **要做“长篇广播剧/播客”**: 选 **VibeVoice**。它的长窗口上下文优势依然不可替代。
 
 ### 4. 播客与对话生成 (Podcast & Dialogue Generation)
 
-🚀 **V2.1 新增功能**：这是专门为生成双人对话、相声、广播剧设计的完整工作流节点。能够自动解析剧本、调度多角色 TTS，并实现长音频的智能拼接。
+![](image/README/1767586497317.png)
+
+<div align="center">
+  <audio controls src="assets/ComfyUI_temp_tzirw_00001__01.mp3"></audio>
+  <br>
+  <sub>🎧 点击播放生成样例 (VibeVoice Multi-Role)</sub>
+</div>
+
+🚀 **新增功能**：这是专门为生成双人对话、相声、广播剧设计的完整工作流节点。能够自动解析剧本、调度多角色 TTS，并实现长音频的智能拼接。
 
 #### 4.1 AIIA Podcast Script Parser (脚本解析器)
 
@@ -737,13 +748,13 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 #### 💡 引擎选型与最佳实践 (Best Practices)
 
-| 特性 | **CosyVoice** | **VibeVoice** |
-| :--- | :--- | :--- |
-| **核心优势** | **精准控制 (Instruction)** | **自然演绎 (Context-Aware)** |
-| **情感控制** | ✅ **支持** (使用 `[Happy]` 等标签) | ❌ 不支持显式标签 (依赖上下文) |
-| **生成逻辑** | **逐句生成** (严格遵循每句话的指令) | **混合批处理** (Hybrid Batching) |
-| **最佳场景** | 需要精确指定某句话语气、方言时 | 长篇对话、广播剧、闲聊 |
-| **使用建议** | 可以在剧本中详细标注情感。 | **尽量减少 `(Pause)`**！<br>让多句对话连在一起，模型能更好地联系上下文产生自然语气。 |
+| 特性               | **CosyVoice**                        | **VibeVoice**                                                                              |
+| :----------------- | :----------------------------------------- | :----------------------------------------------------------------------------------------------- |
+| **核心优势** | **精准控制 (Instruction)**           | **自然演绎 (Context-Aware)**                                                               |
+| **情感控制** | ✅**支持** (使用 `[Happy]` 等标签) | ❌ 不支持显式标签 (依赖上下文)                                                                   |
+| **生成逻辑** | **逐句生成** (严格遵循每句话的指令)  | **混合批处理** (Hybrid Batching)                                                           |
+| **最佳场景** | 需要精确指定某句话语气、方言时             | 长篇对话、广播剧、闲聊                                                                           |
+| **使用建议** | 可以在剧本中详细标注情感。                 | **尽量减少 `(Pause)`**！`<br>`让多句对话连在一起，模型能更好地联系上下文产生自然语气。 |
 
 #### 📝 综合测试剧本 (Example Script)
 
@@ -825,6 +836,7 @@ B: 太神奇了！那我们快去生成试试吧！
   - **能力矩阵**:
     - ✅ **支持**: 情感控制 (Happy/Sad/Angry)、语速控制 (Fast/Slow)、基础性别 (Male/Female)。
       > **Note**: 为了确保指令生效，**请务必使用英文描述** (如 "Sad tone", "Male speaker")。中文描述虽然不会导致报错，但模型极有可能忽略其语义。
+      >
     - ❌ **不支持**: 方言指令 (Dialect) - 此模型架构原生不支持通过指令更改方言 (无论中文或英文)，请使用 V3 或 V2 模型获取方言能力。
 - **300M-SFT / Base (V1)**: 恢复原生巅峰音质。
 - **稳定性**: 杜绝了 `AudioDecoder`、`KeyError` 以及 `llm_embedding` 缺失导致的各种崩溃。
