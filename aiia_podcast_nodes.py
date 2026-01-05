@@ -44,6 +44,7 @@ class AIIA_Podcast_Script_Parser:
                     mapping[k.strip()] = v.strip()
 
         current_speaker = None
+        current_visual = None
         
         for line in lines:
             line = line.strip()
@@ -62,6 +63,13 @@ class AIIA_Podcast_Script_Parser:
                     "type": "pause",
                     "duration": duration
                 })
+                continue
+
+            # 检测 Visual 标签 (Visual: https://...)
+            # 支持: (Visual: ./img.png) or (Visual: https://example.com)
+            visual_match = re.match(r'^\(Visual:\s*(.+?)\)$', line, re.IGNORECASE)
+            if visual_match:
+                current_visual = visual_match.group(1).strip()
                 continue
             
             # 检测普通台词 Speaker: Text
@@ -83,12 +91,19 @@ class AIIA_Podcast_Script_Parser:
                     emotion = emotion_match.group(1)
                     content = emotion_match.group(2)
                 
-                dialogue.append({
+                item = {
                     "type": "speech",
                     "speaker": speaker_id,
                     "text": content,
                     "emotion": emotion
-                })
+                }
+                
+                # 如果有暂存的 Visual 标签，附加到这句话
+                if current_visual:
+                    item["visual"] = current_visual
+                    current_visual = None
+                
+                dialogue.append(item)
             else:
                 # 可能是延续上一句的内容，或者无法解析
                 # 简单起见，如果延续上一句，我们追加到上一句
@@ -313,7 +328,8 @@ class AIIA_Dialogue_TTS:
                                 "start": round(seg_start, 3),
                                 "end": round(seg_end, 3),
                                 "text": item["text"],
-                                "speaker": item["speaker"]
+                                "speaker": item["speaker"],
+                                "visual": item.get("visual")
                             })
                             accumulated_time += est_duration
                         
@@ -380,7 +396,8 @@ class AIIA_Dialogue_TTS:
                             "start": round(seg_start, 3),
                             "end": round(seg_end, 3),
                             "text": text,
-                            "speaker": spk_name
+                            "speaker": spk_name,
+                            "visual": item.get("visual")
                         })
                         time_ptr[0] += seg_duration
                         
