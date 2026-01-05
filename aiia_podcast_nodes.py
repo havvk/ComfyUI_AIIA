@@ -135,8 +135,8 @@ class AIIA_Dialogue_TTS:
             }
         }
     
-    RETURN_TYPES = ("AUDIO",)
-    RETURN_NAMES = ("full_audio",)
+    RETURN_TYPES = ("AUDIO", "STRING")
+    RETURN_NAMES = ("full_audio", "segments_info")
     FUNCTION = "process_dialogue"
     CATEGORY = "AIIA/Podcast"
 
@@ -227,29 +227,41 @@ class AIIA_Dialogue_TTS:
             print(f"  [Auto-Fallback] Speaker {spk_key} using {fallback_target}")
             return self._load_fallback_audio(fallback_target)
 
+        # --- Segment Tracker ---
+        segments_info = [] # List of {"start": float, "end": float, "text": str, "speaker": str}
+        time_ptr = [0.0] # Mutable time pointer
+
         # --- Batch Flusher ---
         def flush_batch(batch_items, current_full_wav, sr_ptr):
             if not batch_items: return
             
             if tts_engine == "VibeVoice":
                 # VibeVoice Hybrid Batching
-                # 1. 收集唯一角色并分配 ID
-                unique_speakers = {} # key -> internal_id (0, 1...)
+                unique_speakers = {} 
                 ref_audio_list = []
                 final_text_lines = []
                 
+                # Pre-calculate total text length for interpolation
+                total_char_len = 0
+                item_lengths = []
+
                 for item in batch_items:
                     spk_name = item["speaker"]
                     spk_key = get_speaker_key(spk_name)
                     
                     if spk_key not in unique_speakers:
                         unique_speakers[spk_key] = len(unique_speakers)
-                        # Load Ref Audio
                         ref_audio_list.append(get_ref_audio(spk_key))
                     
                     internal_id = unique_speakers[spk_key]
                     text = item["text"]
-                    # AIIA Fix: Ensure clean separation for VibeVoice prompt
+                    
+                    # Clean text for length calc (approx)
+                    clean_text = re.sub(r'\[.*?\]', '', text).strip()
+                    char_len = len(clean_text) if clean_text else 1
+                    total_char_len += char_len
+                    item_lengths.append(char_len)
+
                     final_text_lines.append(f"Speaker {internal_id}: {text}")
                 
                 full_text = "\n".join(final_text_lines)
@@ -259,7 +271,7 @@ class AIIA_Dialogue_TTS:
                     res = vibe_gen.generate(
                         vibevoice_model=vibevoice_model,
                         text=full_text,
-                        reference_audio=ref_audio_list, # Passing List!
+                        reference_audio=ref_audio_list,
                         cfg_scale=cfg_scale,
                         ddpm_steps=20,
                         speed=speed_global,
@@ -274,21 +286,50 @@ class AIIA_Dialogue_TTS:
                         wav = res[0]["waveform"]
                         sr = res[0]["sample_rate"]
                         
-                        # Resample check
                         if sr_ptr[0] != sr:
-                            if current_full_wav: # define master SR from first clip or previous
+                            if current_full_wav:
                                 wav = torchaudio.transforms.Resample(sr, sr_ptr[0])(wav)
                             else:
-                                sr_ptr[0] = sr # First clip sets SR
+                                sr_ptr[0] = sr
                         
                         if wav.ndim == 3: wav = wav.squeeze(0)
                         if wav.ndim == 1: wav = wav.unsqueeze(0)
                         current_full_wav.append(wav)
 
+                        # --- Timestamp Interpolation ---
+                        total_duration = wav.shape[-1] / sr
+                        current_batch_start = time_ptr[0]
+                        
+                        accumulated_time = 0.0
+                        for idx, item in enumerate(batch_items):
+                            item_len = item_lengths[idx]
+                            fraction = item_len / max(total_char_len, 1)
+                            est_duration = fraction * total_duration
+                            
+                            seg_start = current_batch_start + accumulated_time
+                            seg_end = seg_start + est_duration
+                            
+                            segments_info.append({
+                                "start": round(seg_start, 3),
+                                "end": round(seg_end, 3),
+                                "text": item["text"],
+                                "speaker": item["speaker"]
+                            })
+                            accumulated_time += est_duration
+                        
+                        time_ptr[0] += total_duration
+
                 except Exception as e:
                     print(f"[Error] Batch generation failed: {e}")
-                    # Fallback: append silence
                     current_full_wav.append(torch.zeros(1, 24000))
+                    # Fallback timestamps
+                    start_t = time_ptr[0]
+                    end_t = start_t + 1.0
+                    for item in batch_items:
+                        segments_info.append({
+                            "start": start_t, "end": end_t, "text": item["text"] + " (Gen Failed)", "speaker": item["speaker"]
+                        })
+                    time_ptr[0] += 1.0
                     
             else:
                 # CosyVoice (Iterative)
@@ -299,7 +340,7 @@ class AIIA_Dialogue_TTS:
                     emotion = item.get("emotion", "None")
                     
                     spk_id = kwargs.get(f"speaker_{spk_key}_id", "")
-                    ref_audio = get_ref_audio(spk_key) # Cosy also needs fallback ref sometimes
+                    ref_audio = get_ref_audio(spk_key)
                     
                     instruct = f"{emotion}." if emotion and emotion != "None" else ""
                     
@@ -329,26 +370,32 @@ class AIIA_Dialogue_TTS:
                         if wav.ndim == 3: wav = wav.squeeze(0)
                         if wav.ndim == 1: wav = wav.unsqueeze(0)
                         current_full_wav.append(wav)
+
+                        # --- Timestamp Tracking ---
+                        seg_duration = wav.shape[-1] / sr
+                        seg_start = time_ptr[0]
+                        seg_end = seg_start + seg_duration
                         
-                        # CosyVoice separate items might need mini pause? 
-                        # Original logic: pause_duration at end of item IF next is not pause.
-                        # But here we are flushing a batch that was delimited by pauses.
-                        # So inside a batch (continuous dialogue), user might expect flow.
-                        # We append a tiny gap (e.g. 0.1s) for naturalness?
-                        # Or stick to original logic: "pause_duration" was only pushed when "pause" item found (outside batch).
-                        # Actually previous logic appended pause_duration at END of item unless next was Pause.
-                        # Here, we treat the whole batch as one continuous flow.
-                        # VibeVoice handles flow naturally. CosyVoice might need help.
+                        segments_info.append({
+                            "start": round(seg_start, 3),
+                            "end": round(seg_end, 3),
+                            "text": text,
+                            "speaker": spk_name
+                        })
+                        time_ptr[0] += seg_duration
+                        
                         if tts_engine == "CosyVoice" and i < len(batch_items) - 1:
-                            # Small gap between turns in same batch
-                            current_full_wav.append(torch.zeros(1, int(0.2 * sr_ptr[0])))
+                            gap = 0.2
+                            gap_samples = int(gap * sr_ptr[0])
+                            current_full_wav.append(torch.zeros(1, gap_samples))
+                            time_ptr[0] += gap
                             
                     except Exception as e:
                         print(f"[Error] Item generation failed: {e}")
                         current_full_wav.append(torch.zeros(1, 16000))
+                        time_ptr[0] += 1.0
 
-
-        # --- Main Loop ---
+                # --- Main Loop ---
         batch_buffer = []
         sr_wrapper = [22050 if tts_engine == "CosyVoice" else 24000] # Mutable ref
         
@@ -372,6 +419,8 @@ class AIIA_Dialogue_TTS:
                 silence_samples = int(duration * sr_wrapper[0])
                 if silence_samples > 0:
                     full_waveform.append(torch.zeros(1, silence_samples))
+                    time_ptr[0] += duration # Track pause time
+
             
             elif item["type"] == "speech":
                 # Check for strict mode
@@ -398,16 +447,12 @@ class AIIA_Dialogue_TTS:
             final_tensor = torch.zeros(1, 16000)
             sample_rate = 16000
         else:
-            max_chn = max([w.shape[0] for w in full_waveform])
-            unified = []
-            for w in full_waveform:
-                if w.shape[0] < max_chn:
-                    w = w.repeat(max_chn, 1)
-                unified.append(w)
-            final_tensor = torch.cat(unified, dim=-1)
-            final_tensor = final_tensor.unsqueeze(0)
+            final_tensor = torch.cat(full_waveform, dim=1)
         
-        return ({"waveform": final_tensor, "sample_rate": sample_rate},)
+        # Output Segments Info JSON
+        segments_json = json.dumps(segments_info, ensure_ascii=False, indent=2)
+
+        return ({"waveform": final_tensor.unsqueeze(0), "sample_rate": sample_rate}, segments_json)
 
 
 # 节点映射导出

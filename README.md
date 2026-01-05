@@ -742,6 +742,19 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
   - `Strict (Per-Speaker)`: 严格模式。每句话都会强制断开重置。彻底杜绝音色泄漏，但对话流畅度略低。
   - `Whole (Single Batch)`: 全量模式。无视所有暂停，一次性生成整本剧本。连贯性最强，但无法控制停顿时间。
 
+#### 4.3 AIIA Subtitle Gen (字幕生成器)
+
+**[v1.7.0 New]** 无需 STT，直接从生成过程中提取精准时间轴。
+
+- **Input**:
+  - `segments_info`: 来自 `AIIA Dialogue TTS` 的输出。
+- **Output**:
+  - `SRT`: 通用字幕格式。
+  - `ASS`: 高级排版字幕格式 (自动区分角色颜色)。
+- **原理**:
+  - **CosyVoice**: 使用生成时的精确时长。
+  - **VibeVoice**: 使用**智能插值算法 (Smart Interpolation)**，根据字符长度自动计算长音频段内的单句时间轴。
+
 #### 💡 引擎选型与最佳实践 (Best Practices)
 
 | 特性               | **CosyVoice**                        | **VibeVoice**                                                                              |

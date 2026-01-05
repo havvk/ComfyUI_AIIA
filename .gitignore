@@ -1,2 +1,5 @@
 GEMINI.md
 .gemini/
+__pycache__/
+*.pyc
+.DS_Store

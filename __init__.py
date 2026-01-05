@@ -118,6 +118,9 @@ else:
     # 19. 处理 aiia_podcast_nodes.py (新增播客节点)
     _load_nodes_from_module(".aiia_podcast_nodes", "aiia_podcast_nodes")
 
+    # 20. 处理 aiia_subtitle_nodes.py (新增字幕节点)
+    _load_nodes_from_module(".aiia_subtitle_nodes", "aiia_subtitle_nodes")
+
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
 
