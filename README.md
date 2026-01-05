@@ -709,9 +709,9 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 ### 4. 播客与对话生成 (Podcast & Dialogue Generation)
 
-<video controls src="assets/demo.mp4" title="VibeVoice Multi-Role Demo"></video>
+[![点击观看演示视频](image/README/1767586497317.png)](https://github.com/havvk/ComfyUI_AIIA/blob/main/assets/demo.mp4)
 
-> 🎬 **点击播放生成演示视频 (VibeVoice Multi-Role)**
+> 🎬 **点击图片预览生成效果** (跳转至 GitHub 播放页)
 
 🚀 **新增功能**：这是专门为生成双人对话、相声、广播剧设计的完整工作流节点。能够自动解析剧本、调度多角色 TTS，并实现长音频的智能拼接。
 
