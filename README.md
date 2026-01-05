@@ -766,6 +766,24 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
   - **交互式界面**: 提供 Web 播放器，按时间轴滚动显示字幕。
   - **ASS 样式渲染**: 尝试还原 ASS 字幕的字体颜色、大小和描边效果。
 
+#### 4.5 Interactive Teaching (Web Export) (互动式教学导出)
+
+**[v1.8.1 New]** 将播客升级为视听同步的互动网页。支持“读写分离”的缓存优化，修改 Visual 标签无需重跑 TTS。
+
+- **工作流 (Workflow)**:
+    1.  `Script Parser` 输出 `tts_data` (连接到 TTS) 和 `full_script` (连接到 Merge)。
+    2.  `AIIA Dialogue TTS` 生成音频和 `segments_info`。
+    3.  `AIIA Segment Merge` 将 `full_script` 中的 Visual 标签重新贴回到 `segments_info` 时间轴上。
+    4.  `AIIA Web Export` 生成最终 HTML。
+- **Input**:
+    - `audio`: 音频信号。
+    - `segments_info`: 来自 Merge 节点的包含 Visual 信息的 JSON。
+    - `template`: `Split Screen` (适合宽屏) 或 `Presentation` (适合演示)。
+- **Visual Tag 语法**:
+    - 在剧本中插入 `(Visual: url)`。
+    - 支持绝对 URL: `(Visual: https://example.com)`
+    - 支持相对路径: `(Visual: ./slides/01.jpg)` (相对于导出 HTML 的位置)
+
 #### 💡 引擎选型与最佳实践 (Best Practices)
 
 | 特性               | **CosyVoice**                        | **VibeVoice**                                                                              |
@@ -842,6 +860,13 @@ B: 太神奇了！那我们快去生成试试吧！
 ---
 
 ## Changelog
+
+### [1.8.1] - 2026-01-05
+
+- **互动式教学 (Interactive Teaching)**: 新增 `AIIA Web Export` 节点，一键生成包含播放器、字幕和同步 Visual 展示的 HTML 页面。
+- **Visual Tag 支持**: 剧本解析器支持 `(Visual: url)` 标签，并支持相对路径。
+- **缓存优化 (Caching)**: 实现了 Script Parser 的读写分离和 `Segment Merge` 节点，支持修改 Visual 标签而不触发 TTS 重生成。
+- **字幕增强**: 修复了 ASS 字幕的多角色颜色显示问题 (自动分配颜色)。
 
 ### [1.3.1] - 2026-01-03
 
