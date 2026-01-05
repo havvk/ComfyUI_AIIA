@@ -711,11 +711,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 ![](image/README/1767586497317.png)
 
-<div align="center">
-  <audio controls src="assets/ComfyUI_temp_tzirw_00001__01.mp3"></audio>
-  <br>
-  <sub>🎧 点击播放生成样例 (VibeVoice Multi-Role)</sub>
-</div>
+> 🎧 **[点击播放生成样例 (VibeVoice Multi-Role)](assets/ComfyUI_temp_tzirw_00001__01.mp3)**
 
 🚀 **新增功能**：这是专门为生成双人对话、相声、广播剧设计的完整工作流节点。能够自动解析剧本、调度多角色 TTS，并实现长音频的智能拼接。
 
