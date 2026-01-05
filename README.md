@@ -711,7 +711,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 
-> 🎬 **点击图片下载/观看演示视频** (GitHub 限制，可能需要下载观看)
+> 🎬 **点击观看演示视频** (GitHub 限制，需要手工取消静音)
 
 🚀 **新增功能**：这是专门为生成双人对话、相声、广播剧设计的完整工作流节点。能够自动解析剧本、调度多角色 TTS，并实现长音频的智能拼接。
 
