@@ -1,6 +1,9 @@
-
 import json
 import datetime
+import os
+import random
+import torchaudio
+import folder_paths
 
 class AIIA_Subtitle_Gen:
     def __init__(self):
@@ -111,10 +114,56 @@ class AIIA_Subtitle_Gen:
         
         return f"{hours}:{minutes:02}:{secs:02}.{centis:02}"
 
+class AIIA_Subtitle_Preview:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "subtitle_content": ("STRING", {"forceInput": True, "multiline": True}),
+            },
+            "optional": {
+                "audio": ("AUDIO",),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+
+    OUTPUT_NODE = True
+    RETURN_TYPES = ()
+    FUNCTION = "preview_subtitle"
+    CATEGORY = "AIIA/Subtitle"
+
+    def preview_subtitle(self, subtitle_content, unique_id, audio=None):
+        audio_info = None
+        if audio is not None:
+            # Save audio to temp
+            output_dir = folder_paths.get_temp_directory()
+            filename = f"preview_{unique_id}_{random.randint(1000, 9999)}.wav"
+            file_path = os.path.join(output_dir, filename)
+            
+            waveform = audio["waveform"]
+            sample_rate = audio["sample_rate"]
+            
+            # Ensure waveform is correct shape for save
+            # torchaudio.save expects [channels, time]
+            if waveform.ndim == 3: # [batch, channels, time]
+                waveform = waveform.squeeze(0)
+            
+            torchaudio.save(file_path, waveform, sample_rate)
+            
+            audio_info = {
+                "filename": filename,
+                "type": "temp",
+                "subfolder": ""
+            }
+
+        return {"ui": {"text": [subtitle_content], "audio": [audio_info] if audio_info else []}}
+
 NODE_CLASS_MAPPINGS = {
-    "AIIA_Subtitle_Gen": AIIA_Subtitle_Gen
+    "AIIA_Subtitle_Gen": AIIA_Subtitle_Gen,
+    "AIIA_Subtitle_Preview": AIIA_Subtitle_Preview
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_Subtitle_Gen": "📝 AIIA Subtitle Generation"
+    "AIIA_Subtitle_Gen": "📝 AIIA Subtitle Generation",
+    "AIIA_Subtitle_Preview": "🎬 AIIA Subtitle Preview"
 }
