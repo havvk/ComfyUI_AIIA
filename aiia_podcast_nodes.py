@@ -25,8 +25,8 @@ class AIIA_Podcast_Script_Parser:
             }
         }
 
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("dialogue_json", "speaker_list")
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("dialogue_json", "speaker_list", "full_script_json")
     FUNCTION = "parse_script"
     CATEGORY = "AIIA/Podcast"
 
@@ -113,7 +113,62 @@ class AIIA_Podcast_Script_Parser:
 
         speaker_list = sorted(list(speakers))
         
-        return (json.dumps(dialogue, ensure_ascii=False, indent=2), ",".join(speaker_list))
+        # Build clean dialogue for TTS (without Visual tags) to enable caching
+        clean_dialogue = []
+        for item in dialogue:
+            clean_item = item.copy()
+            if "visual" in clean_item:
+                del clean_item["visual"]
+            clean_dialogue.append(clean_item)
+
+        return (json.dumps(clean_dialogue, ensure_ascii=False, indent=2), ",".join(speaker_list), json.dumps(dialogue, ensure_ascii=False, indent=2))
+
+class AIIA_Segment_Merge:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "segments_info": ("STRING", {"forceInput": True}),
+                "full_script": ("STRING", {"forceInput": True}),
+            }
+        }
+    
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("merged_segments",)
+    FUNCTION = "merge_visuals"
+    CATEGORY = "AIIA/Utils"
+
+    def merge_visuals(self, segments_info, full_script):
+        try:
+            segments = json.loads(segments_info)
+            script_items = json.loads(full_script)
+            
+            # Filter script items to only speech to match segments 1:1
+            speech_items = [item for item in script_items if item.get("type") == "speech"]
+            
+            if len(segments) != len(speech_items):
+                print(f"[AIIA Merge] Warning: Segment count ({len(segments)}) does not match script speech count ({len(speech_items)}). Visual tags might be misaligned.")
+                limit = min(len(segments), len(speech_items))
+            else:
+                limit = len(segments)
+            
+            for i in range(limit):
+                seg = segments[i]
+                script = speech_items[i]
+                
+                # Check consistency
+                # if seg["text"] != script["text"]: ... (Optional check)
+
+                # Copy visual tag if present
+                if "visual" in script:
+                    seg["visual"] = script["visual"]
+            
+            return (json.dumps(segments, ensure_ascii=False, indent=2),)
+
+        except Exception as e:
+            print(f"[AIIA Merge] Error: {e}")
+            return (segments_info,) # Fallback to original
+
 
 class AIIA_Dialogue_TTS:
     @classmethod
@@ -475,10 +530,12 @@ class AIIA_Dialogue_TTS:
 # 节点映射导出
 NODE_CLASS_MAPPINGS = {
     "AIIA_Podcast_Script_Parser": AIIA_Podcast_Script_Parser,
-    "AIIA_Dialogue_TTS": AIIA_Dialogue_TTS
+    "AIIA_Dialogue_TTS": AIIA_Dialogue_TTS,
+    "AIIA_Segment_Merge": AIIA_Segment_Merge
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AIIA_Podcast_Script_Parser": "📜 AIIA Podcast Script Parser",
-    "AIIA_Dialogue_TTS": "🎧 AIIA Dialogue TTS (Multi-Role)"
+    "AIIA_Dialogue_TTS": "🎧 AIIA Dialogue TTS (Multi-Role)",
+    "AIIA_Segment_Merge": "🔗 AIIA Segment Merge (Visual)"
 }
