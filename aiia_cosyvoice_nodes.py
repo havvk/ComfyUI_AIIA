@@ -23,10 +23,14 @@ from huggingface_hub import snapshot_download
 
 # Lazy-loaded global variable
 CosyVoice = None
+_cosyvoice_load_error = None # Store the actual exception for better error reporting
 
 def _install_cosyvoice_if_needed():
-    global CosyVoice
+    global CosyVoice, _cosyvoice_load_error
     if CosyVoice is not None:
+        return
+    if _cosyvoice_load_error is not None:
+        # Already failed before, don't retry every time
         return
 
     # Try import first
@@ -100,7 +104,8 @@ def _install_cosyvoice_if_needed():
         CosyVoice = CV
 
     except Exception as e:
-        print(f"[AIIA] Failed to install cosyvoice via cloning: {e}")
+        _cosyvoice_load_error = e
+        print(f"[AIIA] Failed to install/import CosyVoice: {e}")
         print("Please manually clone CosyVoice into 'ComfyUI/custom_nodes/ComfyUI_AIIA/libs/CosyVoice' and install requirements.")
  
 
@@ -140,7 +145,8 @@ class AIIA_CosyVoice_ModelLoader:
             sys.path.append(matcha_dir)
             
         if CosyVoice is None:
-            raise ImportError("CosyVoice package is not installed. Please install it manually.")
+            error_detail = f" Original error: {_cosyvoice_load_error}" if _cosyvoice_load_error else ""
+            raise ImportError(f"CosyVoice package could not be loaded.{error_detail}\n\nPlease check the ComfyUI console for detailed error messages, or manually install CosyVoice into 'ComfyUI/custom_nodes/ComfyUI_AIIA/libs/CosyVoice'.")
 
         # Setup paths
         base_path = folder_paths.models_dir
