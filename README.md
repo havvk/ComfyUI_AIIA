@@ -568,7 +568,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 #### 1. 🗣️ VibeVoice TTS (Standard)
 
 - **适用模型**: `VibeVoice-1.5B`, `VibeVoice-7B`
-- **必选参数**: `reference_audio` (参考音频) - **必须连接**。
+- **参考音频 (Reference Audio)**: 可选 (`optional`)。如果不连接，将自动使用内置的高品质女声种子 (Fallback Seed) 进行生成。
 - **功能**: 支持零样本音色克隆 (Zero-shot Cloning)。输入任何音频，它都会模仿该音色。
 - **不支持**: `voice_preset` (预设)。
 
@@ -860,6 +860,11 @@ B: 太神奇了！那我们快去生成试试吧！
 ---
 
 ## Changelog
+
+### [1.8.3] - 2026-01-07
+
+- **VibeVoice TTS (Standard)**: `reference_audio` 变为可选参数。如果不输入，节点会自动加载内置的高品质女声种子，方便快速测试。
+- **Fix**: 修复 GitHub Actions 发布的子模块错误。
 
 ### [1.8.1] - 2026-01-05
 
