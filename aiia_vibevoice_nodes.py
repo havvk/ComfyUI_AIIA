@@ -202,7 +202,7 @@ class AIIA_VibeVoice_TTS:
             "required": {
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
                 "text": ("STRING", {"multiline": True, "default": "Hello, this is a test of VibeVoice."}),
-                "reference_audio": ("AUDIO",),
+                # "reference_audio": ("AUDIO",),  <-- Moved to optional
                 "cfg_scale": ("FLOAT", {"default": 1.3, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "ddpm_steps": ("INT", {"default": 20, "min": 10, "max": 100, "step": 1}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
@@ -211,6 +211,9 @@ class AIIA_VibeVoice_TTS:
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0}),
+            },
+            "optional": {
+                "reference_audio": ("AUDIO",),
             }
         }
 
@@ -219,8 +222,29 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def generate(self, vibevoice_model, text, reference_audio, cfg_scale, ddpm_steps, speed, normalize_text, 
-                 do_sample, temperature, top_k, top_p):
+    def _load_fallback_audio(self):
+        import torchaudio
+        # 定位 assets 目录 (Shared with Podcast nodes)
+        nodes_path = os.path.dirname(os.path.abspath(__file__))
+        assets_dir = os.path.join(nodes_path, "assets")
+        path = os.path.join(assets_dir, "seed_female_hq.wav") # Default to female HQ
+        
+        if not os.path.exists(path):
+            print(f"[AIIA Warning] Fallback seed not found at {path}")
+            return None
+        
+        try:
+            waveform, sample_rate = torchaudio.load(path)
+            if waveform.shape[0] > 1:
+                waveform = torch.mean(waveform, dim=0, keepdim=True)
+            waveform = waveform * 0.8 # Attenuate
+            return {"waveform": waveform, "sample_rate": sample_rate}
+        except Exception as e:
+            print(f"[AIIA Error] Failed to load fallback audio: {e}")
+            return None
+
+    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, normalize_text, 
+                 do_sample, temperature, top_k, top_p, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -247,6 +271,14 @@ class AIIA_VibeVoice_TTS:
             text = "\n".join([f"Speaker 1: {line.strip()}" for line in lines if line.strip()])
 
         # Process Reference Audio
+        if reference_audio is None:
+            print("[AIIA INFO] No reference audio provided. Loading default fallback audio...")
+            fallback = self._load_fallback_audio()
+            if fallback:
+                reference_audio = fallback
+            else:
+                 raise ValueError("No reference audio provided and fallback audio could not be loaded!")
+
         voice_samples = []
         
         # Determine if input is list or single item
