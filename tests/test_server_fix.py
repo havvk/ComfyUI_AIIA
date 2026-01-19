@@ -96,32 +96,30 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(os.path.join(wan_root, "google/umt5-xxl"))
 
     print("Loading Text Encoder...")
-    # Point explicitly to the Wan Root where config.json/weights usually are for T5
-    # or rely on the subfolder logic if explicit
-    text_encoder_path = os.path.join(wan_root, "google/umt5-xxl")
-    # Actually T5 weights are in Wan2.1-Fun root: models_t5_umt5-xxl-enc-bf16.pth
-    # Let's try passing the wan_root itself, hoping diffusers picks it up.
-    print(f"Loading Text Encoder from: {wan_root}")
-    try:
-        text_encoder = WanT5EncoderModel.from_pretrained(
-            wan_root, 
-            subfolder="google/umt5-xxl", # Try this first
-            additional_kwargs=OmegaConf.to_container(cfg['text_encoder_kwargs']),
-            torch_dtype=DTYPE,
-            low_cpu_mem_usage=True
-        ).to(dtype=DTYPE, device="cpu").eval()
-    except Exception as e:
-        print(f"Failed to load T5 from subfolder, trying root... {e}")
-        text_encoder = WanT5EncoderModel.from_pretrained(
-            wan_root,
-            additional_kwargs=OmegaConf.to_container(cfg['text_encoder_kwargs']),
-            torch_dtype=DTYPE,
-            low_cpu_mem_usage=True
-        ).to(dtype=DTYPE, device="cpu").eval()
+    # WanT5EncoderModel expects a .pth file, not a directory or subfolder arg
+    text_encoder_file = os.path.join(wan_root, "models_t5_umt5-xxl-enc-bf16.pth")
+    print(f"Loading Text Encoder from: {text_encoder_file}")
+    
+    if not os.path.exists(text_encoder_file):
+        raise FileNotFoundError(f"Text Encoder file not found: {text_encoder_file}")
+
+    text_encoder = WanT5EncoderModel.from_pretrained(
+        text_encoder_file,
+        additional_kwargs=OmegaConf.to_container(cfg['text_encoder_kwargs']),
+        torch_dtype=DTYPE,
+        low_cpu_mem_usage=True
+    ).to(dtype=DTYPE, device="cpu").eval()
 
     print("Loading Image Encoder...")
+    # Similarly, CLIPModel likely expects the .pth file
+    image_encoder_file = os.path.join(wan_root, "models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth")
+    print(f"Loading Image Encoder from: {image_encoder_file}")
+    
+    if not os.path.exists(image_encoder_file):
+         raise FileNotFoundError(f"Image Encoder file not found: {image_encoder_file}")
+
     clip_image_encoder = CLIPModel.from_pretrained(
-        wan_root
+        image_encoder_file
     ).to(dtype=DTYPE, device="cpu").eval()
     
     print("Loading Scheduler...")
