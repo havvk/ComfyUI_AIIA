@@ -499,6 +499,19 @@ class AIIA_EchoMimicSampler:
             
         # CLIP Image Encoder is moved to GPU only when needed, inside the loop
             
+        if hasattr(pipeline, "scheduler") and pipeline.scheduler is not None:
+             # Scheduler buffers (sigmas) need to be on device
+             # The scheduler doesn't inherit from nn.Module, so .to() might not work or might be custom.
+             # Diffusers schedulers generally don't have .to(), but some custom ones might.
+             # Our custom FlowDPMSolverMultistepScheduler doesn't inherit from nn.Module but has buffers.
+             # Ideally set_timesteps handles this, but let's try to set it explicitly if possible or rely on set_timesteps.
+             pass 
+
+        # CRITICAL: Re-run set_timesteps with the correct device to ensure sigmas are on GPU
+        # The pipeline.scheduler.set_timesteps might have been called during init on CPU.
+        # We need to refresh it on GPU.
+        pipeline.scheduler.set_timesteps(steps, device=device)
+            
         log_vram(f"[{self.NODE_NAME}] Ready for Generation")
 
         while init_frames < video_length:
