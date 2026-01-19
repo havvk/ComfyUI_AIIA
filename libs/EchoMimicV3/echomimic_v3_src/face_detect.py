@@ -1,5 +1,22 @@
 # pip install retina-face
 # we recommand tensorflow==2.15
+import os
+import logging
+
+# Prevent TensorFlow from grabbing all GPU memory
+# We must do this before importing retinaface/tensorflow
+try:
+    import tensorflow as tf
+    # Hide GPUs from TensorFlow so it uses CPU only
+    tf.config.set_visible_devices([], 'GPU')
+    visible_devices = tf.config.get_visible_devices()
+    for device in visible_devices:
+        assert device.device_type != 'GPU'
+except ImportError:
+    pass
+except Exception as e:
+    logging.warning(f"[FaceDetect] Failed to hide GPU from TensorFlow: {e}")
+
 from retinaface import RetinaFace
 import sys
 from PIL import Image

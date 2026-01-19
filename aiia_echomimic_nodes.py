@@ -207,14 +207,20 @@ class AIIA_EchoMimicLoader:
             clip_image_encoder=clip_image_encoder,
         )
         
-        # Enable generic CPU offload to save VRAM
-        # This moves models to CPU and only loads them to GPU when needed (forward pass)
+        # Enable sequential CPU offload to strictly save VRAM
+        # This moves models to GPU only when needed and aggressively offloads them
         try:
-            pipeline.enable_model_cpu_offload(device=device)
-            print(f"[{self.NODE_NAME}] Enabled model CPU offload.")
+            # enable_sequential_cpu_offload requires 'accelerate'
+            pipeline.enable_sequential_cpu_offload(device=device)
+            print(f"[{self.NODE_NAME}] Enabled sequential CPU offload.")
         except Exception as e:
-            print(f"[{self.NODE_NAME}] Failed to enable CPU offload, falling back to .to(device): {e}")
-            pipeline.to(device)
+            print(f"[{self.NODE_NAME}] Failed to enable sequential CPU offload, trying model_cpu_offload: {e}")
+            try:
+                pipeline.enable_model_cpu_offload(device=device)
+                print(f"[{self.NODE_NAME}] Enabled model CPU offload.")
+            except Exception as e2:
+                print(f"[{self.NODE_NAME}] Failed to enable CPU offload, falling back to .to(device): {e2}")
+                pipeline.to(device)
         
         gc.collect()
         torch.cuda.empty_cache()
