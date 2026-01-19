@@ -557,17 +557,22 @@ class AIIA_EchoMimicSampler:
             torch.cuda.empty_cache()
 
         # Final Post-processing
-        # new_sample is (B, C, F, H, W) -> float -1..1 or 0..1? 
-        # Pipeline output is usually 0..1? 
-        # WanPipelineOutput docs say: "denoised PIL image sequences... or Torch tensor"
-        # `process_inputs` in node converts output.
-        
-        # ComfyUI expects (B, H, W, C)
         output = new_sample.permute(0, 2, 3, 4, 1).cpu().float() # (B, F, H, W, C)
-        # Squeeze batch if B=1? Comfy expects (Frames, H, W, C) for video usually?
-        # Standard Comfy Image batch is (N, H, W, C).
-        # F is frames. So we want (F, H, W, C).
         output = output.squeeze(0)
+
+        # Cleanup: Move models back to CPU to free VRAM for other nodes
+        print(f"[{self.NODE_NAME}] Cleaning up and moving models back to CPU...")
+        if hasattr(pipeline, "transformer") and pipeline.transformer is not None:
+            pipeline.transformer.to("cpu")
+        if hasattr(pipeline, "vae") and pipeline.vae is not None:
+            pipeline.vae.to("cpu")
+        if hasattr(pipeline, "clip_image_encoder") and pipeline.clip_image_encoder is not None:
+            pipeline.clip_image_encoder.to("cpu")
+            
+        del new_sample, audio_embeds
+        gc.collect()
+        torch.cuda.empty_cache()
+        log_vram(f"[{self.NODE_NAME}] Finished")
         
         return (output,)
 
