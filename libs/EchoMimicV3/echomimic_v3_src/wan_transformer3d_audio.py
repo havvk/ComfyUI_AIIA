@@ -796,7 +796,7 @@ class WanI2VCrossAttentionAudio(WanSelfAttention):
         audio_mask = get_audio_mask(ip_mask, latent_t)
         # print(audio_mask.shape, audio_x.shape, 'check')
         if audio_mask.size(0) != audio_x.size(0):
-            print(audio_mask.shape, audio_x.shape, 'check')
+            pass
         else:
             audio_x = audio_x * audio_mask # bt, s, n, d
 
@@ -1268,7 +1268,7 @@ class WanTransformerAudioMask3DModel(ModelMixin, ConfigMixin, FromOriginalModelM
             torch.cat([u, u.new_zeros(1, seq_len - u.size(1), u.size(2))],
                       dim=1) for u in x
         ])
-        # print(x.shape, 'x.patahflatcatttttttt')
+
 
         # time embeddings
         with amp.autocast('cuda', dtype=torch.float32):
