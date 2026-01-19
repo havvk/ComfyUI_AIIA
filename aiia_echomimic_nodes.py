@@ -2,6 +2,7 @@ import os
 import sys
 import torch
 import folder_paths
+import comfy.model_management as mm
 import logging
 import numpy as np
 import math
