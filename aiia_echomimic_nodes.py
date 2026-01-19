@@ -434,6 +434,19 @@ class AIIA_EchoMimicSampler:
         log_vram("Before Loop")
         log_model_devices(pipeline)
 
+        # Pre-encode text prompts (Fix for speed)
+        print(f"[{self.NODE_NAME}] Encoding text prompts...")
+        do_classifier_free_guidance = cfg > 1.0
+        prompt_embeds, negative_prompt_embeds = pipeline.encode_prompt(
+            prompt,
+            negative_prompt,
+            do_classifier_free_guidance,
+            num_videos_per_prompt=1,
+            max_sequence_length=512,
+            device=device,
+        )
+        print(f"[{self.NODE_NAME}] Text prompts encoded.")
+
         while init_frames < video_length:
             current_partial_video_length = partial_video_length
             if last_frames >= video_length:
