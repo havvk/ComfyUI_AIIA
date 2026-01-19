@@ -124,12 +124,32 @@ class AIIA_EchoMimicLoader:
         
         cfg = OmegaConf.load(config_path)
 
-        # Transformer
+        # Define fallback base directory (Wan2.1-Fun)
+        wan_base_dir = os.path.join(folder_paths.models_dir, ECHOMIMIC_MODELS_DIR, "Wan2.1-Fun-V1.1-1.3B-InP")
+        
+        def get_component_path(subpath, required=True, allow_fallback=True):
+            # 1. Check current model_root (EchoMimicV3 directory)
+            p = os.path.join(model_root, subpath)
+            if os.path.exists(p):
+                return p
+            
+            # 2. Check Wan2.1 Base directory
+            if allow_fallback and os.path.exists(wan_base_dir):
+                p_base = os.path.join(wan_base_dir, subpath)
+                if os.path.exists(p_base):
+                    print(f"[{self.NODE_NAME}] Found {subpath} in Wan2.1 Base: {p_base}")
+                    return p_base
+
+            if required:
+                raise FileNotFoundError(f"Component '{subpath}' not found in {model_root} or {wan_base_dir}")
+            return None
+
+        # Transformer (Must be from EchoMimicV3, strict check preferred, but let's allow fallback if user put it elsewhere)
+        # Actually, for Transformer, we want the EchoMimic one. If user is using Base Wan2.1, they get bad results.
+        # But we rely on config.yaml 'transformer_subpath' which is 'transformer'.
         print(f"[{self.NODE_NAME}] Loading Transformer...")
         transformer_subpath = cfg['transformer_additional_kwargs'].get('transformer_subpath', 'transformer')
-        # If subpath is ./, join with empty string or just use model_root. 
-        # os.path.join(root, "./") is root/.
-        transformer_path = os.path.join(model_root, transformer_subpath)
+        transformer_path = get_component_path(transformer_subpath, required=True)
         
         transformer = WanTransformerAudioMask3DModel.from_pretrained(
             transformer_path,
@@ -140,22 +160,26 @@ class AIIA_EchoMimicLoader:
 
         # VAE
         print(f"[{self.NODE_NAME}] Loading VAE...")
-        vae_subpath = cfg['vae_kwargs'].get('vae_subpath', 'vae')
+        vae_subpath = cfg['vae_kwargs'].get('vae_subpath', 'Wan2.1_VAE.pth')
+        vae_path = get_component_path(vae_subpath, required=True)
         vae = AutoencoderKLWan.from_pretrained(
-            os.path.join(model_root, vae_subpath),
+            vae_path,
             additional_kwargs=OmegaConf.to_container(cfg['vae_kwargs']),
         ).to(dtype=weight_dtype, device="cpu")
 
         # Tokenizer
         print(f"[{self.NODE_NAME}] Loading Tokenizer...")
         tokenizer_subpath = cfg['text_encoder_kwargs'].get('tokenizer_subpath', 'tokenizer')
-        tokenizer = AutoTokenizer.from_pretrained(os.path.join(model_root, tokenizer_subpath))
+        # Tokenizer is a directory usually
+        tokenizer_path = get_component_path(tokenizer_subpath, required=True)
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         
         # Text Encoder
         print(f"[{self.NODE_NAME}] Loading Text Encoder...")
         text_encoder_subpath = cfg['text_encoder_kwargs'].get('text_encoder_subpath', 'text_encoder')
+        text_encoder_path = get_component_path(text_encoder_subpath, required=True)
         text_encoder = WanT5EncoderModel.from_pretrained(
-            os.path.join(model_root, text_encoder_subpath),
+            text_encoder_path,
             additional_kwargs=OmegaConf.to_container(cfg['text_encoder_kwargs']),
             torch_dtype=weight_dtype,
             low_cpu_mem_usage=True
@@ -164,8 +188,9 @@ class AIIA_EchoMimicLoader:
         # Image Encoder
         print(f"[{self.NODE_NAME}] Loading Image Encoder...")
         image_encoder_subpath = cfg['image_encoder_kwargs'].get('image_encoder_subpath', 'image_encoder')
+        image_encoder_path = get_component_path(image_encoder_subpath, required=True)
         clip_image_encoder = CLIPModel.from_pretrained(
-            os.path.join(model_root, image_encoder_subpath)
+            image_encoder_path
         ).to(dtype=weight_dtype, device="cpu").eval()
 
         # Scheduler

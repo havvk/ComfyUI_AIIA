@@ -7,13 +7,13 @@ transformer_additional_kwargs:
     dim: hidden_size
 
 vae_kwargs:
-  vae_subpath: vae
+  vae_subpath: Wan2.1_VAE.pth
   temporal_compression_ratio: 4
   spatial_compression_ratio: 8
 
 text_encoder_kwargs:
-  text_encoder_subpath: text_encoder
-  tokenizer_subpath: tokenizer
+  text_encoder_subpath: models_t5_umt5-xxl-enc-bf16.pth
+  tokenizer_subpath: google/umt5-xxl
   text_length: 512
   vocab: 256384
   dim: 4096
@@ -36,4 +36,4 @@ scheduler_kwargs:
   max_image_seq_len: 4096
 
 image_encoder_kwargs:
-  image_encoder_subpath: image_encoder
+  image_encoder_subpath: models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth
