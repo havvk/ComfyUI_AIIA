@@ -462,9 +462,11 @@ class AIIA_EchoMimicSampler:
 
             with torch.no_grad():
                 sample = pipeline(
-                    prompt,
+                    prompt=None, # Changed from prompt
                     num_frames=current_partial_video_length,
-                    negative_prompt=negative_prompt,
+                    negative_prompt=None, # Changed from negative_prompt
+                    prompt_embeds=prompt_embeds, # Added
+                    negative_prompt_embeds=negative_prompt_embeds, # Added
                     audio_embeds=partial_audio_embeds,
                     audio_scale=1.0,
                     ip_mask=ip_mask,
@@ -518,10 +520,6 @@ class AIIA_EchoMimicSampler:
                     (sample[0, :, i].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                 ) for i in range(current_partial_video_length - overlap_video_length, current_partial_video_length)
             ]
-            
-            # Update loop vars
-            init_frames += current_partial_video_length - overlap_video_length
-            last_frames = init_frames + partial_video_length
             
             # Clean up
             del input_video, input_video_mask, partial_audio_embeds, sample
