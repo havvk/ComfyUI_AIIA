@@ -272,7 +272,7 @@ class FlowDPMSolverMultistepScheduler(SchedulerMixin, ConfigMixin):
         sigmas = np.concatenate([sigmas, [sigma_last]
                                 ]).astype(np.float32)  # pyright: ignore
 
-        self.sigmas = torch.from_numpy(sigmas)
+        self.sigmas = torch.from_numpy(sigmas).to(device=device, dtype=torch.float32)
         self.timesteps = torch.from_numpy(timesteps).to(
             device=device, dtype=torch.int64)
 
