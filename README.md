@@ -110,10 +110,10 @@ cd ComfyUI/models
 mkdir -p nemo_models
 
 # 下载基础模型
-huggingface-cli download nvidia/nemo-models diar_sortformer_4spk-v1.nemo --local-dir nemo_models
+hf download nvidia/nemo-models diar_sortformer_4spk-v1.nemo --local-dir nemo_models
 
 # 下载流式模型
-huggingface-cli download nvidia/nemo-models diar_streaming_sortformer_4spk-v2.1.nemo --local-dir nemo_models
+hf download nvidia/nemo-models diar_streaming_sortformer_4spk-v2.1.nemo --local-dir nemo_models
 ```
 
 ### 3. 安装本节点套件
@@ -251,13 +251,16 @@ ComfyUI/models/EchoMimicV3/
    - HuggingFace: [alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP](https://huggingface.co/alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP)
    - **下载命令 (推荐)**:
      ```bash
-     huggingface-cli download alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP --local-dir models/EchoMimicV3/Wan2.1-Fun-V1.1-1.3B-InP
+     hf download alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP --local-dir models/EchoMimicV3/Wan2.1-Fun-V1.1-1.3B-InP
      ```
    - *注意：目前代码默认寻找 `Wan2.1-Fun-V1.1-1.3B-InP` 文件夹。*
 
 2. **音频编码器 (wav2vec2-base-960h)**:
    - HuggingFace: [facebook/wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h)
-   - 下载命令: `git clone https://huggingface.co/facebook/wav2vec2-base-960h models/EchoMimicV3/wav2vec2-base-960h`
+   - **下载命令**:
+     ```bash
+     hf download facebook/wav2vec2-base-960h --local-dir models/EchoMimicV3/wav2vec2-base-960h
+     ```
 
 **环境依赖**:
 - 请确保安装了 `requirements.txt` 中的依赖，如 `diffusers>=0.30.1`。节点加载时会尝试自动引用，但如果报错缺包，请手动安装。
@@ -517,10 +520,10 @@ ComfyUI/models/EchoMimicV3/
   cd ComfyUI/models/voicefixer
 
   # 下载 vf.ckpt (注意路径)
-  huggingface-cli download Diogodiogod/VoiceFixer-vf.ckpt vf.ckpt --local-dir analysis_module/checkpoints
+  hf download Diogodiogod/VoiceFixer-vf.ckpt vf.ckpt --local-dir analysis_module/checkpoints
 
   # 下载 model.ckpt (注意路径)
-  huggingface-cli download Diogodiogod/VoiceFixer-model.ckpt-1490000_trimed.pt model.ckpt-1490000_trimed.pt --local-dir synthesis_module/44100
+  hf download Diogodiogod/VoiceFixer-model.ckpt-1490000_trimed.pt model.ckpt-1490000_trimed.pt --local-dir synthesis_module/44100
   ```
 
 #### 3.8 Audio Post-Process (Resample/Fade/Norm)
@@ -673,7 +676,7 @@ ComfyUI/models/EchoMimicV3/
   ```bash
   # ===== 0.5B 实时多语言模型 (Realtime) =====
   mkdir -p models/vibevoice/microsoft/VibeVoice-Realtime-0.5B
-  huggingface-cli download microsoft/VibeVoice-Realtime-0.5B --local-dir models/vibevoice/microsoft/VibeVoice-Realtime-0.5B
+  hf download microsoft/VibeVoice-Realtime-0.5B --local-dir models/vibevoice/microsoft/VibeVoice-Realtime-0.5B
   # 补全 Tokenizer (使用 Qwen2.5-0.5B)
   wget https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/tokenizer.json -P models/vibevoice/microsoft/VibeVoice-Realtime-0.5B/
   wget https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/tokenizer_config.json -P models/vibevoice/microsoft/VibeVoice-Realtime-0.5B/
@@ -702,7 +705,7 @@ ComfyUI/models/EchoMimicV3/
 
   # ===== 1.5B 基础模型 =====
   mkdir -p models/vibevoice/microsoft/VibeVoice-1.5B
-  huggingface-cli download microsoft/VibeVoice-1.5B --local-dir models/vibevoice/microsoft/VibeVoice-1.5B
+  hf download microsoft/VibeVoice-1.5B --local-dir models/vibevoice/microsoft/VibeVoice-1.5B
   # 补全 Tokenizer
   wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/tokenizer.json -P models/vibevoice/microsoft/VibeVoice-1.5B/
   wget https://huggingface.co/Qwen/Qwen2.5-1.5B/resolve/main/tokenizer_config.json -P models/vibevoice/microsoft/VibeVoice-1.5B/
@@ -711,7 +714,7 @@ ComfyUI/models/EchoMimicV3/
 
   # ===== 7B 模型 =====
   mkdir -p models/vibevoice/vibevoice/VibeVoice-7B
-  huggingface-cli download vibevoice/VibeVoice-7B --local-dir models/vibevoice/vibevoice/VibeVoice-7B
+  hf download vibevoice/VibeVoice-7B --local-dir models/vibevoice/vibevoice/VibeVoice-7B
   # 补全 Tokenizer (如果没有)
   wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/tokenizer.json -P models/vibevoice/vibevoice/VibeVoice-7B/
   wget https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/tokenizer_config.json -P models/vibevoice/vibevoice/VibeVoice-7B/
@@ -737,7 +740,7 @@ ComfyUI/models/EchoMimicV3/
 
   ```bash
   mkdir -p models/voxcpm/VoxCPM1.5
-  huggingface-cli download openbmb/VoxCPM1.5 --local-dir models/voxcpm/VoxCPM1.5
+  hf download openbmb/VoxCPM1.5 --local-dir models/voxcpm/VoxCPM1.5
   ```
 
   **降噪模型 (Optional Denoiser - ZipEnhancer)**:
