@@ -249,10 +249,11 @@ class AIIA_EchoMimicSampler:
             "optional": {
                 "width": ("INT", {"default": 768}),
                 "height": ("INT", {"default": 768}),
+                "context_length": ("INT", {"default": 49, "min": 16, "max": 200, "step": 1}),
             }
         }
 
-    def process(self, pipe, ref_image, ref_audio, prompt, negative_prompt, seed, steps, cfg, audio_cfg, fps, width=768, height=768):
+    def process(self, pipe, ref_image, ref_audio, prompt, negative_prompt, seed, steps, cfg, audio_cfg, fps, width=768, height=768, context_length=49):
         if not ECHOMIMIC_AVAILABLE: return (torch.zeros((1, 64, 64, 3)),)
 
         pipeline = pipe["pipeline"]
@@ -307,7 +308,7 @@ class AIIA_EchoMimicSampler:
         # infer.py: vae.config.temporal_compression_ratio
         temporal_compression_ratio = pipeline.vae.config.temporal_compression_ratio
         
-        # Adjust length
+        # Adjust video_length for 4x compression alignment
         video_length = (int((video_length - 1) // temporal_compression_ratio * temporal_compression_ratio) + 1 if video_length != 1 else 1)
         
         # 4. Face Mask (IP Mask)
@@ -344,11 +345,12 @@ class AIIA_EchoMimicSampler:
         generator = torch.Generator(device=device).manual_seed(seed)
         
         # Chunking Configuration
-        partial_video_length = 113
+        partial_video_length = context_length
         overlap_video_length = 8
         
-        # Adjust video_length for 4x compression alignment
-        video_length = (int((video_length - 1) // temporal_compression_ratio * temporal_compression_ratio) + 1 if video_length != 1 else 1)
+        if partial_video_length <= overlap_video_length:
+             # failsafe
+             partial_video_length = overlap_video_length + 16
         
         # Generate video in chunks
         init_frames = 0
