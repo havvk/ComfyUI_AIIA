@@ -562,8 +562,13 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
             if isinstance(prompt_embeds, list):
                  # Fix: Batch size is the list length (number of videos), NOT the first tensor's length (sequence length!)
                  batch_size = len(prompt_embeds)
+                 print(f"DEBUG: prompt_embeds is List. Len: {len(prompt_embeds)}. Batch Size set to {batch_size}")
             else:
                  batch_size = prompt_embeds.shape[0]
+                 print(f"DEBUG: prompt_embeds is Tensor. Shape: {prompt_embeds.shape}. Batch Size set to {batch_size}")
+
+        print(f"DEBUG: Calculated batch_size: {batch_size}")
+
 
         device = self._execution_device
         weight_dtype = self.text_encoder.dtype
