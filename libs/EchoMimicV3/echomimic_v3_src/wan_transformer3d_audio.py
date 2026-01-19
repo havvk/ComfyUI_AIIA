@@ -1211,7 +1211,7 @@ class WanTransformerAudioMask3DModel(ModelMixin, ConfigMixin, FromOriginalModelM
 
         # embeddings
         # print(x[0].shape, 'x.shape')
-        x = [self.patch_embedding(u.unsqueeze(0)) for u in x]
+        x = [self.patch_embedding(u.unsqueeze(0).contiguous()) for u in x]
         # print(x[0].shape, 'x.patah')
         """
         torch.Size([3, 16, 19, 122, 75]) latents.shape 19 torch.Size([3, 9150])
