@@ -1213,23 +1213,27 @@ class WanTransformerAudioMask3DModel(ModelMixin, ConfigMixin, FromOriginalModelM
         # print(x[0].shape, 'x.shape')
         # embeddings
         # print(x[0].shape, 'x.shape')
-        # Run in explicit float32 using functional API to avoid autocast/global-dtype interference
-        # This solves "Input type (float) and bias type (c10::BFloat16) should be the same"
+        # Run in explicit float32 within a NO-AUTOCAST context.
+        # This is the nuclear option for "Input type (float) and bias type (c10::BFloat16) should be the same"
         patch_weight = self.patch_embedding.weight.float()
         patch_bias = self.patch_embedding.bias.float() if self.patch_embedding.bias is not None else None
         
-        x = [
-            F.conv3d(
-                u.unsqueeze(0).contiguous().float(), 
-                patch_weight, 
-                patch_bias, 
-                stride=self.patch_embedding.stride, 
-                padding=self.patch_embedding.padding, 
-                dilation=self.patch_embedding.dilation, 
-                groups=self.patch_embedding.groups
-            ).to(dtype) 
-            for u in x
-        ]
+        # print("DEBUG: Patch Embed Dtypes | Input: Float | Weight:", patch_weight.dtype, "| Bias:", patch_bias.dtype if patch_bias is not None else "None")
+        
+        # Disable autocast to prevent implicit downcasting of the fp32 inputs/weights
+        with torch.autocast(device_type="cuda", enabled=False):
+            x = [
+                F.conv3d(
+                    u.unsqueeze(0).contiguous().float(), 
+                    patch_weight, 
+                    patch_bias, 
+                    stride=self.patch_embedding.stride, 
+                    padding=self.patch_embedding.padding, 
+                    dilation=self.patch_embedding.dilation, 
+                    groups=self.patch_embedding.groups
+                ).to(dtype) 
+                for u in x
+            ]
         # print(x[0].shape, 'x.patah')
         """
         torch.Size([3, 16, 19, 122, 75]) latents.shape 19 torch.Size([3, 9150])
