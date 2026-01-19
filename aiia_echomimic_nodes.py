@@ -461,6 +461,7 @@ class AIIA_EchoMimicSampler:
         
         def progress_callback(pipe, step_index, timestep, callback_kwargs):
             pbar.update(1)
+            return {}
 
         # Pre-encode text prompts (Fix for speed)
         print(f"[{self.NODE_NAME}] Encoding text prompts...")
