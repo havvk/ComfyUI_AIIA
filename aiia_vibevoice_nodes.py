@@ -378,6 +378,12 @@ class AIIA_VibeVoice_TTS:
                         # soundfile writes [T, C]
                         audio_cpu_t = audio_cpu.T 
 
+                        # Normalize to -1dB (approx 0.9) to prevent clipping during sox processing
+                        # Sox 'tempo' effect can increase peak amplitude
+                        max_val = np.abs(audio_cpu_t).max()
+                        if max_val > 0.9:
+                             audio_cpu_t = audio_cpu_t * (0.9 / max_val)
+
                         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as in_f, \
                              tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as out_f:
                             in_path = in_f.name
