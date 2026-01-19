@@ -167,7 +167,7 @@ class AIIA_EchoMimicLoader:
         vae = AutoencoderKLWan.from_pretrained(
             vae_path,
             additional_kwargs=OmegaConf.to_container(cfg['vae_kwargs']),
-        ).to(dtype=weight_dtype, device="cpu")
+        ).to(dtype=torch.float32, device="cpu")
 
         # Tokenizer
         print(f"[{self.NODE_NAME}] Loading Tokenizer...")
