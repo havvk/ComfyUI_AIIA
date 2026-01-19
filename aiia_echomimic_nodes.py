@@ -343,56 +343,132 @@ class AIIA_EchoMimicSampler:
         
         generator = torch.Generator(device=device).manual_seed(seed)
         
-        # Get Latents from image
-        # pipeline.vae should be used
-        input_video, input_video_mask, clip_image = get_image_to_video_latent3(ref_img_pil, None, video_length=video_length, sample_size=[sample_height, sample_width])
+        # Chunking Configuration
+        partial_video_length = 113
+        overlap_video_length = 8
         
-        # Run Pipeline
-        # Note: infer.py handles chunking (overlap_video_length). For MVP we might try simple full gen or simple chunking.
-        # infer.py's `partial_video_length` defaults to 113. If video is longer, we need loop.
-        # For In-Memory MVP, let's just stick to the main call, or copy the loop logic if necessary.
-        # Let's assume shorter videos (< 4-5 sec) for now to minimize complexity, OR just use the pipeline's basic capability if it supports long.
-        # infer.py LOOP logic is good to have.
+        # Adjust video_length for 4x compression alignment
+        video_length = (int((video_length - 1) // temporal_compression_ratio * temporal_compression_ratio) + 1 if video_length != 1 else 1)
         
-        print(f"[{self.NODE_NAME}] Generating {video_length} frames...")
+        # Generate video in chunks
+        init_frames = 0
+        last_frames = init_frames + partial_video_length
+        new_sample = None
         
-        # Using the logic from infer.py ("if not use_longvideo_cfg")
-        # We'll just call the pipeline directly for simplicity in V1, unless length is huge.
+        # Precompute mix_ratio
+        mix_ratio = torch.linspace(0, 1, steps=overlap_video_length).view(1, 1, -1, 1, 1).to(device, dtype=dtype)
+
+        print(f"[{self.NODE_NAME}] Generating {video_length} frames in chunks...")
         
-        output_videos = pipeline(
-            prompt,
-            num_frames=video_length,
-            negative_prompt=negative_prompt,
-            audio_embeds=audio_embeds,
-            audio_scale=1.0,
-            ip_mask=ip_mask,
-            use_un_ip_mask=False, # config default
-            height=sample_height,
-            width=sample_width,
-            generator=generator,
-            neg_scale=1.5,
-            neg_steps=2,
-            use_dynamic_cfg=True,
-            use_dynamic_acfg=True,
-            guidance_scale=cfg,
-            audio_guidance_scale=audio_cfg,
-            num_inference_steps=steps,
-            video=input_video,
-            mask_video=input_video_mask,
-            clip_image=clip_image,
-            cfg_skip_ratio=0, # default
-        ).videos # (1, C, F, H, W)
+        # Keep track of the current reference image(s) for get_image_to_video_latent3
+        current_ref_images = ref_img_pil # Initially a single PIL image
+
+        while init_frames < video_length:
+            current_partial_video_length = partial_video_length
+            if last_frames >= video_length:
+                current_partial_video_length = video_length - init_frames
+                current_partial_video_length = (
+                    int((current_partial_video_length - 1) // temporal_compression_ratio * temporal_compression_ratio) + 1
+                    if current_partial_video_length != 1 else 1
+                )
+                
+                if current_partial_video_length <= 0:
+                    break
+            
+            # Prepare inputs for this chunk
+            input_video, input_video_mask, clip_image = get_image_to_video_latent3(
+                current_ref_images, 
+                None, 
+                video_length=current_partial_video_length, 
+                sample_size=[sample_height, sample_width]
+            )
+            
+            # Slice audio embeds
+            # audio_embeds shape: (1, T, D). T corresponds to frames * 2 (roughly)
+            # Logic from app.py: partial_audio_embeds = audio_embeds[:, init_frames * 2 : (init_frames + partial_video_length) * 2]
+            partial_audio_embeds = audio_embeds[:, init_frames * 2 : (init_frames + current_partial_video_length) * 2]
+
+            print(f"[{self.NODE_NAME}] Processing chunk: frames {init_frames} to {init_frames + current_partial_video_length}")
+
+            with torch.no_grad():
+                sample = pipeline(
+                    prompt,
+                    num_frames=current_partial_video_length,
+                    negative_prompt=negative_prompt,
+                    audio_embeds=partial_audio_embeds,
+                    audio_scale=1.0,
+                    ip_mask=ip_mask,
+                    use_un_ip_mask=False,
+                    height=sample_height,
+                    width=sample_width,
+                    generator=generator,
+                    neg_scale=1.5,
+                    neg_steps=2,
+                    use_dynamic_cfg=True,
+                    use_dynamic_acfg=True,
+                    guidance_scale=cfg,
+                    audio_guidance_scale=audio_cfg,
+                    num_inference_steps=steps,
+                    video=input_video,
+                    mask_video=input_video_mask,
+                    clip_image=clip_image,
+                    cfg_skip_ratio=0, # default from config
+                    shift=5.0, # default from config
+                    use_longvideo_cfg=False, # default
+                ).videos
+            
+            # Blending Logic
+            if init_frames != 0:
+                new_sample[:, :, -overlap_video_length:] = (
+                    new_sample[:, :, -overlap_video_length:] * (1 - mix_ratio) +
+                    sample[:, :, :overlap_video_length] * mix_ratio
+                )
+                new_sample = torch.cat([new_sample, sample[:, :, overlap_video_length:]], dim=2)
+            else:
+                new_sample = sample
+            
+            if last_frames >= video_length:
+                break
+                
+            # Update Ref Image for next chunk (from last frames of current sample)
+            # app.py: ref_img = [ Image.fromarray(...) ] for i in range(-overlap, 0)
+            # But get_image_to_video_latent3 takes ref_img_pil (single).
+            # If I pass a list now, will it work? I need to verify utils.py.
+            # But assuming I should copy app.py:
+            # ref_img updates to this list.
+            # Next iteration calls get_image_to_video_latent3 with this list.
+            
+            # Important: `get_image_to_video_latent3` needs to support list.
+            # Assuming it does because app.py does it.
+            
+            current_ref_images = [
+                Image.fromarray(
+                    (sample[0, :, i].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                ) for i in range(current_partial_video_length - overlap_video_length, current_partial_video_length)
+            ]
+            
+            # Update loop vars
+            init_frames += current_partial_video_length - overlap_video_length
+            last_frames = init_frames + partial_video_length
+            
+            # Clean up
+            del input_video, input_video_mask, partial_audio_embeds, sample
+            torch.cuda.empty_cache()
+
+        # Final Post-processing
+        # new_sample is (B, C, F, H, W) -> float -1..1 or 0..1? 
+        # Pipeline output is usually 0..1? 
+        # WanPipelineOutput docs say: "denoised PIL image sequences... or Torch tensor"
+        # `process_inputs` in node converts output.
         
-        # Post-process back to ComfyUI format (F, H, W, C)
-        # sample is usually [0, 1] float
         # ComfyUI expects (B, H, W, C)
+        output = new_sample.permute(0, 2, 3, 4, 1).cpu().float() # (B, F, H, W, C)
+        # Squeeze batch if B=1? Comfy expects (Frames, H, W, C) for video usually?
+        # Standard Comfy Image batch is (N, H, W, C).
+        # F is frames. So we want (F, H, W, C).
+        output = output.squeeze(0)
         
-        video_tensor = output_videos.squeeze(0).permute(1, 2, 3, 0) # (F, H, W, C)
-        
-        # Ensure it's on CPU and float32
-        video_tensor = video_tensor.cpu().float()
-        
-        return (video_tensor,)
+        return (output,)
 
 NODE_CLASS_MAPPINGS = {
     "AIIA_EchoMimicLoader": AIIA_EchoMimicLoader,
