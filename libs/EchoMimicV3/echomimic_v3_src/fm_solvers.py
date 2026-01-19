@@ -379,9 +379,9 @@ class FlowDPMSolverMultistepScheduler(SchedulerMixin, ConfigMixin):
         # DPM-Solver++ needs to solve an integral of the data prediction model.
         if self.config.algorithm_type in ["dpmsolver++", "sde-dpmsolver++"]:
             if self.config.prediction_type == "flow_prediction":
-                print(f"[DEBUG SOLVER] step_index={self.step_index}, sample={sample.device}/{sample.dtype}, model_output={model_output.device}/{model_output.dtype}")
+                # print(f"[DEBUG SOLVER] step_index={self.step_index}, sample={sample.device}/{sample.dtype}, model_output={model_output.device}/{model_output.dtype}")
                 sigma_t = self.sigmas[self.step_index].to(sample.device)
-                print(f"[DEBUG SOLVER] sigma_t={sigma_t.device}/{sigma_t.dtype}")
+                # print(f"[DEBUG SOLVER] sigma_t={sigma_t.device}/{sigma_t.dtype}")
                 x0_pred = sample - sigma_t * model_output
             else:
                 raise ValueError(
