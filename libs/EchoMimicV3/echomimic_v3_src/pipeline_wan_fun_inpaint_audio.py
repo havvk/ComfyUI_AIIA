@@ -579,10 +579,12 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
             weight_dtype = self.text_encoder.dtype
         elif hasattr(self, "transformer") and self.transformer is not None:
              weight_dtype = self.transformer.dtype
-             # If transformer is present, trust its device over _execution_device (which might follow cpu text_encoder)
-             device = self.transformer.device
         else:
              weight_dtype = torch.float16
+        
+        # Always prioritize transformer device for execution if available
+        if hasattr(self, "transformer") and self.transformer is not None:
+             device = self.transformer.device
 
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
         # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
