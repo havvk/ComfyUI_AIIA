@@ -560,18 +560,20 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
             batch_size = len(prompt)
         else:
             if isinstance(prompt_embeds, list):
-                 # Fix: Batch size is the list length (number of videos), NOT the first tensor's length (sequence length!)
+                 # Fix: Batch size is the list length (number of videos)
                  batch_size = len(prompt_embeds)
-                 print(f"DEBUG: prompt_embeds is List. Len: {len(prompt_embeds)}. Batch Size set to {batch_size}")
             else:
                  batch_size = prompt_embeds.shape[0]
-                 print(f"DEBUG: prompt_embeds is Tensor. Shape: {prompt_embeds.shape}. Batch Size set to {batch_size}")
-
-        print(f"DEBUG: Calculated batch_size: {batch_size}")
-
 
         device = self._execution_device
-        weight_dtype = self.text_encoder.dtype
+        
+        # Handle case where text_encoder is deleted to save memory
+        if hasattr(self, "text_encoder") and self.text_encoder is not None:
+            weight_dtype = self.text_encoder.dtype
+        elif hasattr(self, "transformer") and self.transformer is not None:
+             weight_dtype = self.transformer.dtype
+        else:
+             weight_dtype = torch.float16
 
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
         # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
