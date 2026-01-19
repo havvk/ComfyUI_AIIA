@@ -51,14 +51,12 @@ def _patched_decode_for_in_memory_stack(
             img_t_gpu_raw, _ = self_float_model.motion_autoencoder.dec(s_r_plus_motion, alpha=None, feats=s_r_feats)
             img_t_gpu_clamped = torch.clamp(img_t_gpu_raw, -1, 1) # 值域 [-1, 1]
 
-            # --- AIIA FIX: Top Edge Masking ---
+            # --- AIIA FIX: Top Edge Cropping ---
             mask_top_edge = getattr(self_float_model, '_aiia_mask_top_edge', 0)
             if mask_top_edge > 0:
-                # img_t_gpu_clamped shape is (B, C, H, W), usually B=1
-                # Copy the first valid row (index = mask_top_edge) to the top area
-                # safe check to avoid index error if image is too small
+                # Crop the top N rows to remove artifacts
                 if img_t_gpu_clamped.shape[-2] > mask_top_edge:
-                    img_t_gpu_clamped[..., :mask_top_edge, :] = img_t_gpu_clamped[..., mask_top_edge:mask_top_edge+1, :]
+                    img_t_gpu_clamped = img_t_gpu_clamped[..., mask_top_edge:, :]
             # ----------------------------------
 
             gpu_frame_buffer.append(img_t_gpu_clamped.squeeze(0) if B == 1 else img_t_gpu_clamped[0])
@@ -116,11 +114,11 @@ def _patched_decode_and_save_to_disk(
             img_t_gpu_raw, _ = self_float_model.motion_autoencoder.dec(s_r_plus_motion, alpha=None, feats=s_r_feats)
             img_t_gpu_clamped = torch.clamp(img_t_gpu_raw, -1, 1)
 
-            # --- AIIA FIX: Top Edge Masking ---
+            # --- AIIA FIX: Top Edge Cropping ---
             mask_top_edge = getattr(self_float_model, '_aiia_mask_top_edge', 0)
             if mask_top_edge > 0:
                  if img_t_gpu_clamped.shape[-2] > mask_top_edge:
-                    img_t_gpu_clamped[..., :mask_top_edge, :] = img_t_gpu_clamped[..., mask_top_edge:mask_top_edge+1, :]
+                    img_t_gpu_clamped = img_t_gpu_clamped[..., mask_top_edge:, :]
             # ----------------------------------
 
             gpu_frame_buffer.append(img_t_gpu_clamped.squeeze(0) if B == 1 else img_t_gpu_clamped[0])
@@ -169,7 +167,7 @@ class AIIA_FloatProcess_InMemory:
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"float_pipe": ("FLOAT_PIPE",),"ref_image": ("IMAGE",),"ref_audio": ("AUDIO",),"a_cfg_scale": ("FLOAT", {"default": 2.0,"min": 0.0, "max": 10.0, "step": 0.1}),"r_cfg_scale": ("FLOAT", {"default": 1.0,"min": 0.0, "max": 10.0, "step": 0.1}),"e_cfg_scale": ("FLOAT", {"default": 1.0,"min": 0.0, "max": 10.0, "step": 0.1}),"fps": ("FLOAT", {"default": 25.0, "min":1.0, "max": 60.0, "step": 0.5}),"emotion": (['none', 'angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'], {"default": "none"}),"crop_input_image": ("BOOLEAN",{"default":False},),"seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),"nfe": ("INT", {"default": 10, "min": 1, "max": 100, "step": 1}), },"optional": {"device_override": (["default", "cuda", "cpu"], {"default": "default"}), "decode_gpu_chunk_size": ("INT", {"default": 32, "min":1, "max":128, "step":1, "tooltip":"(In-Memory) GPU解码后一次转移多少帧到CPU。影响显存和速度。"}), "mask_top_edge_pixels": ("INT", {"default": 0, "min": 0, "max": 64, "step": 1, "tooltip": "Top edge fix: replicate pixel row to cover artifacts."})}}
+        return {"required": {"float_pipe": ("FLOAT_PIPE",),"ref_image": ("IMAGE",),"ref_audio": ("AUDIO",),"a_cfg_scale": ("FLOAT", {"default": 2.0,"min": 0.0, "max": 10.0, "step": 0.1}),"r_cfg_scale": ("FLOAT", {"default": 1.0,"min": 0.0, "max": 10.0, "step": 0.1}),"e_cfg_scale": ("FLOAT", {"default": 1.0,"min": 0.0, "max": 10.0, "step": 0.1}),"fps": ("FLOAT", {"default": 25.0, "min":1.0, "max": 60.0, "step": 0.5}),"emotion": (['none', 'angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'], {"default": "none"}),"crop_input_image": ("BOOLEAN",{"default":False},),"seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),"nfe": ("INT", {"default": 10, "min": 1, "max": 100, "step": 1}), },"optional": {"device_override": (["default", "cuda", "cpu"], {"default": "default"}), "decode_gpu_chunk_size": ("INT", {"default": 32, "min":1, "max":128, "step":1, "tooltip":"(In-Memory) GPU解码后一次转移多少帧到CPU。影响显存和速度。"}), "mask_top_edge_pixels": ("INT", {"default": 0, "min": 0, "max": 64, "step": 1, "tooltip": "CROPS the top N rows of pixels to remove artifacts. Output height will be smaller."})}}
 
     def _create_error_image(self, error_message_text: str, log_message: bool = True) -> tuple:
         if log_message:
