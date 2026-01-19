@@ -705,7 +705,8 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
                             neg_scale_ = 1.
                         negative_prompt_embeds = [negative_prompt_embed * neg_scale_ for negative_prompt_embed in negative_prompt_embeds]
                         # in_prompt_embeds = negative_prompt_embeds + negative_prompt_embeds + prompt_embeds
-                        in_prompt_embeds = negative_prompt_embeds + prompt_embeds + prompt_embeds
+                        # Fix: Concatenate tensors layer-wise for T5 list output, do not append lists!
+                        in_prompt_embeds = [torch.cat([n, p, p], dim=0) for n, p in zip(negative_prompt_embeds, prompt_embeds)]
                     else:
                         in_prompt_embeds = prompt_embeds
                         
