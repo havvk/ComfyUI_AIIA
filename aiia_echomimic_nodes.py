@@ -134,8 +134,9 @@ class AIIA_EchoMimicLoader:
         transformer = WanTransformerAudioMask3DModel.from_pretrained(
             transformer_path,
             transformer_additional_kwargs=OmegaConf.to_container(cfg['transformer_additional_kwargs']),
-            torch_dtype=weight_dtype
-        )
+            torch_dtype=weight_dtype,
+            low_cpu_mem_usage=True
+        ).to("cpu")
 
         # VAE
         print(f"[{self.NODE_NAME}] Loading VAE...")
@@ -143,7 +144,7 @@ class AIIA_EchoMimicLoader:
         vae = AutoencoderKLWan.from_pretrained(
             os.path.join(model_root, vae_subpath),
             additional_kwargs=OmegaConf.to_container(cfg['vae_kwargs']),
-        ).to(dtype=weight_dtype)
+        ).to(dtype=weight_dtype, device="cpu")
 
         # Tokenizer
         print(f"[{self.NODE_NAME}] Loading Tokenizer...")
@@ -156,15 +157,16 @@ class AIIA_EchoMimicLoader:
         text_encoder = WanT5EncoderModel.from_pretrained(
             os.path.join(model_root, text_encoder_subpath),
             additional_kwargs=OmegaConf.to_container(cfg['text_encoder_kwargs']),
-            torch_dtype=weight_dtype
-        ).eval()
+            torch_dtype=weight_dtype,
+            low_cpu_mem_usage=True
+        ).to(dtype=weight_dtype, device="cpu").eval()
 
         # Image Encoder
         print(f"[{self.NODE_NAME}] Loading Image Encoder...")
         image_encoder_subpath = cfg['image_encoder_kwargs'].get('image_encoder_subpath', 'image_encoder')
         clip_image_encoder = CLIPModel.from_pretrained(
             os.path.join(model_root, image_encoder_subpath)
-        ).to(dtype=weight_dtype).eval()
+        ).to(dtype=weight_dtype, device="cpu").eval()
 
         # Scheduler
         print(f"[{self.NODE_NAME}] Loading Scheduler...")
@@ -176,7 +178,7 @@ class AIIA_EchoMimicLoader:
         # We'll default to FlowMatchEulerDiscreteScheduler or allow selection TODO.
         # For now, let's use FlowMatchEulerDiscreteScheduler as base or check config/defaults.
         # infer.py defaults to "Flow" in Config class, but app.py uses "Flow_DPM++".
-        # Let's use FlowMatchEulerDiscreteScheduler (Flow) as safe default, or DPM++ if preferred.
+        # Let's use FlowMatchEulerDiscreteScheduler as safe default, or DPM++ if preferred.
         # Let's try to infer or just use FlowDPMSolverMultistepScheduler as it seems better.
         # Actually, let's look at `libs/EchoMimicV3/echomimic_v3_src/fm_solvers.py` availablity.
         # For now, we stick to FlowMatchEulerDiscreteScheduler as commonly imported, or better:
@@ -193,7 +195,7 @@ class AIIA_EchoMimicLoader:
         
         print(f"[{self.NODE_NAME}] Loading Audio Encoder from {wav2vec_path}...")
         wav2vec_processor = Wav2Vec2Processor.from_pretrained(wav2vec_path)
-        wav2vec_model = Wav2Vec2Model.from_pretrained(wav2vec_path).to(dtype=weight_dtype).eval()
+        wav2vec_model = Wav2Vec2Model.from_pretrained(wav2vec_path).to(dtype=weight_dtype, device="cpu").eval()
 
         # Pipeline Construction
         pipeline = WanFunInpaintAudioPipeline(
@@ -213,6 +215,9 @@ class AIIA_EchoMimicLoader:
         except Exception as e:
             print(f"[{self.NODE_NAME}] Failed to enable CPU offload, falling back to .to(device): {e}")
             pipeline.to(device)
+        
+        gc.collect()
+        torch.cuda.empty_cache()
 
         pipe_data = {
             "pipeline": pipeline,
