@@ -12,7 +12,8 @@ dependencies = [
     "soundfile",
     "numpy",
     "matplotlib",
-    "torchaudio"
+    "torchaudio",
+    "sox"
 ]
 
 [project.urls]

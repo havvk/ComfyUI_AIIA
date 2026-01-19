@@ -358,7 +358,28 @@ class AIIA_VibeVoice_TTS:
                 
                 # Speed adj
                 if speed != 1.0:
-                    audio_out = torchaudio.transforms.Resample(orig_freq=int(24000*speed), new_freq=24000)(audio_out)
+                    original_device = audio_out.device
+                    # Ensure float32
+                    audio_out = audio_out.float()
+                    
+                    # Try SoX 'tempo' for time stretching (pitch preservation)
+                    try:
+                        # sox_effects requires CPU tensor
+                        audio_cpu = audio_out.cpu()
+                        # Ensure [C, T] format for sox
+                        if audio_cpu.ndim == 1: audio_cpu = audio_cpu.unsqueeze(0)
+                        elif audio_cpu.ndim == 3: audio_cpu = audio_cpu.squeeze(0)
+                        
+                        effects = [['tempo', str(speed)]]
+                        # apply_effects_tensor returns (waveform, sample_rate)
+                        out_wav, _ = torchaudio.sox_effects.apply_effects_tensor(audio_cpu, 24000, effects)
+                        audio_out = out_wav.to(original_device)
+                        
+                    except Exception as e:
+                        # Fallback to Resample (Pitch Shift)
+                        print(f"[AIIA WARNING] SoX tempo failed ({e}), using Resample (Pitch Shift).")
+                        resampler = torchaudio.transforms.Resample(orig_freq=int(24000*speed), new_freq=24000).to(original_device)
+                        audio_out = resampler(audio_out)
                 
                 if audio_out.ndim == 2: audio_out = audio_out.unsqueeze(0)
 
