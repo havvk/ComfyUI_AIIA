@@ -1220,11 +1220,10 @@ class WanTransformerAudioMask3DModel(ModelMixin, ConfigMixin, FromOriginalModelM
         
         # print("DEBUG: Patch Embed Dtypes | Input: Float | Weight:", patch_weight.dtype, "| Bias:", patch_bias.dtype if patch_bias is not None else "None")
         
-        # Disable autocast to prevent implicit downcasting of the fp32 inputs/weights
         with torch.autocast(device_type="cuda", enabled=False):
             x = [
                 F.conv3d(
-                    u.unsqueeze(0).contiguous().float(), 
+                    u.unsqueeze(0).contiguous().to(patch_weight.device).float(), 
                     patch_weight, 
                     patch_bias, 
                     stride=self.patch_embedding.stride, 
