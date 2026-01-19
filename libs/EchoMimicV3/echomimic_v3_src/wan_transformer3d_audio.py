@@ -1211,23 +1211,13 @@ class WanTransformerAudioMask3DModel(ModelMixin, ConfigMixin, FromOriginalModelM
 
         # embeddings
         # print(x[0].shape, 'x.shape')
-        # FORCE FLOAT32 for 3D Conv to avoid CUDA bf16 errors (aten::slow_conv3d_forward fallback)
-        def run_patch_embed_fp32(inp, layer):
-             # Explicitly disable autocast to prevent re-casting back to bf16 inside the block
-             with torch.autocast(device_type=inp.device.type, enabled=False):
-                 weight = layer.weight.float()
-                 bias = layer.bias.float() if layer.bias is not None else None
-                 return F.conv3d(
-                     inp.float(), 
-                     weight, 
-                     bias, 
-                     stride=layer.stride,
-                     padding=layer.padding,
-                     dilation=layer.dilation,
-                     groups=layer.groups
-                 ).to(inp.dtype)
-
-        x = [run_patch_embed_fp32(u.unsqueeze(0).contiguous(), self.patch_embedding) for u in x]
+        # embeddings
+        # print(x[0].shape, 'x.shape')
+        # FORCE FLOAT32: Convert the layer itself to float32 to bypass any bf16/autocast issues
+        self.patch_embedding = self.patch_embedding.float()
+        
+        # Run in float32, then cast back to original dtype
+        x = [self.patch_embedding(u.unsqueeze(0).contiguous().float()).to(dtype) for u in x]
         # print(x[0].shape, 'x.patah')
         """
         torch.Size([3, 16, 19, 122, 75]) latents.shape 19 torch.Size([3, 9150])
