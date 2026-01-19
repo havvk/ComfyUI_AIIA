@@ -27,6 +27,8 @@ else:
     ECHOMIMIC_AVAILABLE = True
 
 # --- Wrapper for Lazy Import ---
+# --- Wrapper for Lazy Import ---
+IMPORT_ERROR_MSG = ""
 if ECHOMIMIC_AVAILABLE:
     try:
         from omegaconf import OmegaConf
@@ -43,7 +45,12 @@ if ECHOMIMIC_AVAILABLE:
         from src.face_detect import get_mask_coord
         from src.cache_utils import get_teacache_coefficients
     except ImportError as e:
+        IMPORT_ERROR_MSG = str(e)
         logger.error(f"Failed to import EchoMimicV3 modules: {e}")
+        ECHOMIMIC_AVAILABLE = False
+    except Exception as e:
+        IMPORT_ERROR_MSG = f"Unexpected error during import: {e}"
+        logger.error(f"Unexpected error importing EchoMimicV3 modules: {e}")
         ECHOMIMIC_AVAILABLE = False
 
 # --- Constants & Config ---
@@ -91,7 +98,7 @@ class AIIA_EchoMimicLoader:
 
     def load_model(self, model_subfolder, precision, device):
         if not ECHOMIMIC_AVAILABLE:
-            raise ImportError("EchoMimicV3 modules not loaded. Please check dependencies and libs/EchoMimicV3.")
+            raise ImportError(f"EchoMimicV3 modules not loaded. Error: {IMPORT_ERROR_MSG}. Please check dependencies and libs/EchoMimicV3.")
 
         model_root = os.path.join(folder_paths.models_dir, ECHOMIMIC_MODELS_DIR, model_subfolder)
         if not os.path.exists(model_root):
