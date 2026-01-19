@@ -5,6 +5,7 @@ import folder_paths
 import logging
 import numpy as np
 import math
+import gc
 from PIL import Image
 import torchaudio
 
@@ -352,6 +353,22 @@ class AIIA_EchoMimicSampler:
              # failsafe
              partial_video_length = overlap_video_length + 16
         
+        # Memory Debug Helper
+        def log_vram(tag):
+            if torch.cuda.is_available():
+                allocated = torch.cuda.memory_allocated(device) / 1024**3
+                reserved = torch.cuda.memory_reserved(device) / 1024**3
+                print(f"[{self.NODE_NAME}] [Memory {tag}] Aloc: {allocated:.2f} GB, Res: {reserved:.2f} GB")
+        
+        def log_model_devices(pipeline):
+            print(f"[{self.NODE_NAME}] --- Model Devices ---")
+            for name, module in pipeline.components.items():
+                if hasattr(module, 'device'):
+                     print(f"  {name}: {module.device}")
+                elif hasattr(module, 'execution_device'):
+                     print(f"  {name}: {module.execution_device}")
+            print("-------------------------")
+
         # Generate video in chunks
         init_frames = 0
         last_frames = init_frames + partial_video_length
@@ -364,6 +381,12 @@ class AIIA_EchoMimicSampler:
         
         # Keep track of the current reference image(s) for get_image_to_video_latent3
         current_ref_images = ref_img_pil # Initially a single PIL image
+
+        # Initial GC to clear anything loose
+        gc.collect()
+        torch.cuda.empty_cache()
+        log_vram("Before Loop")
+        log_model_devices(pipeline)
 
         while init_frames < video_length:
             current_partial_video_length = partial_video_length
@@ -386,11 +409,10 @@ class AIIA_EchoMimicSampler:
             )
             
             # Slice audio embeds
-            # audio_embeds shape: (1, T, D). T corresponds to frames * 2 (roughly)
-            # Logic from app.py: partial_audio_embeds = audio_embeds[:, init_frames * 2 : (init_frames + partial_video_length) * 2]
             partial_audio_embeds = audio_embeds[:, init_frames * 2 : (init_frames + current_partial_video_length) * 2]
 
             print(f"[{self.NODE_NAME}] Processing chunk: frames {init_frames} to {init_frames + current_partial_video_length}")
+            log_vram(f"Start Chunk {init_frames}")
 
             with torch.no_grad():
                 sample = pipeline(
