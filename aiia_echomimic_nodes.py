@@ -380,10 +380,12 @@ class AIIA_EchoMimicSampler:
             x1 * downratio // 16, x2 * downratio // 16,
             sample_height // 16, sample_width // 16,
         )
-        ip_mask = get_ip_mask(coords).unsqueeze(0)
         ip_mask = torch.cat([ip_mask]*3).to(device=device, dtype=dtype)
         
-        generator = torch.Generator(device=device).manual_seed(seed)
+        # Generator on CPU to avoid device mismatch. 
+        # Pipeline._execution_device is likely CPU because Text Encoder is on CPU (optimized).
+        # Passing a CUDA generator to a pipeline that thinks it's on CPU causes crash.
+        generator = torch.Generator(device="cpu").manual_seed(seed)
         
         # Chunking Configuration
         partial_video_length = context_length
