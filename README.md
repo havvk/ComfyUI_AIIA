@@ -195,7 +195,70 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **输出**: `STRING` (包含生成帧的目录路径) 和 `INT` (帧数)。
 - **最佳实践**: 将此节点的输出目录直接连接到 **AIIA Video Combine** 节点，即可实现从生成到合成的全流程 OOM-Safe。
 
----
+
+### 2.3 EchoMimic V3 (AIIA Integrated)
+
+这组节点集成了最新的 **EchoMimic V3** (1.3B Parameters) 模型，它是目前开源界效果最惊艳的 Talking Head 解决方案之一。
+
+**特点**:
+- **多模态驱动**: 支持 **Audio Only** (仅音频驱动) 和 **Audio + Reference Pose** (音频+参考姿态) 驱动。
+- **自然度极高**: 相比 float 等早期模型，V3 在头部运动、表情微表情的自然度上有巨大提升。
+- **ComfyUI 原生**: 我们将其封装为标准的 Loader 和 Sampler 节点，支持流式生成和内存优化。
+
+**1. EchoMimic V3 Loader**
+- **用途**: 加载模型权重 (Transformer, VAE, Wav2Vec, etc.)。
+- **参数**: 
+  - `model_subfolder`: 模型子目录名 (默认 `Wan2.1-Fun-V1.1-1.3B-InP`)。
+  - `device`: 指定运行设备 (CUDA)。
+
+**2. EchoMimic V3 Sampler**
+- **用途**: 执行推理生成。
+- **输入**:
+  - `ref_image`: 参考人物图片 (建议 1:1 比例，如 768x768)。
+  - `ref_audio`: 驱动音频。
+- **参数**:
+  - `cfg`: 视觉引导系数 (默认 4.0)。
+  - `audio_cfg`: 音频引导系数 (默认 2.9)。数值越高，口型越准，但运动可能变僵硬。
+
+**🛠️ 模型下载指南 (Manual Download Guide)**
+
+由于 EchoMimic V3 模型较大且组件较多，目前**不支持自动下载**，请按以下步骤手动准备模型。
+
+目标目录: `ComfyUI/models/EchoMimicV3/`
+
+**目录结构**:
+```text
+ComfyUI/models/EchoMimicV3/
+├── Wan2.1-Fun-V1.1-1.3B-InP/     <-- 主模型目录
+│   ├── transformer/
+│   │   ├── config.json
+│   │   └── diffusion_pytorch_model.safetensors
+│   ├── vae/
+│   │   ├── config.json
+│   │   └── diffusion_pytorch_model.safetensors
+│   ├── text_encoder/
+│   ├── tokenizer/
+│   ├── image_encoder/
+│   └── scheduler/
+└── wav2vec2-base-960h/           <-- 音频编码器 (必需)
+    ├── config.json
+    ├── pytorch_model.bin
+    └── ...
+```
+
+**下载地址**:
+1. **主模型 (Wan2.1-Fun-V1.1-1.3B-InP)**:
+   - HuggingFace: [EchoMimic/EchoMimicV3](https://huggingface.co/EchoMimic/EchoMimicV3) (注意: 虽然仓库名叫 EchoMimicV3，但其内部往往包含 Wan2.1 相关文件，或者你需要找官方指引的 Wan2.1 基础模型链接。**建议直接克隆官方提供的 Wan2.1-Fun-V1.1-1.3B-InP 模型卡**)
+   - 如果官方尚未发布单独权重，请关注 [EchoMimic GitHub](https://github.com/antgroup/echomimic_v3) 获取最新权重链接。
+   - *注意：目前代码默认寻找 `Wan2.1-Fun-V1.1-1.3B-InP` 文件夹。*
+
+2. **音频编码器 (wav2vec2-base-960h)**:
+   - HuggingFace: [facebook/wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h)
+   - 下载命令: `git clone https://huggingface.co/facebook/wav2vec2-base-960h models/EchoMimicV3/wav2vec2-base-960h`
+
+**环境依赖**:
+- 请确保安装了 `requirements.txt` 中的依赖，如 `diffusers>=0.30.1`。节点加载时会尝试自动引用，但如果报错缺包，请手动安装。
+
 
 ### 3. 音频智能处理 (Intelligent Audio Processing)
 
