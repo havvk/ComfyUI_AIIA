@@ -365,12 +365,13 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
             mask = torch.cat(new_mask, dim = 0)
             # mask = mask * self.vae.config.scaling_factor
 
-        if masked_image is not None:
             # Move inputs to VAE device (likely CPU)
             masked_image = masked_image.to(device=self.vae.device, dtype=self.vae.dtype)
             bs = 1
             new_mask_pixel_values = []
+            print(f"DEBUG: Starting VAE Encoding (frames={masked_image.shape[0]}, device={self.vae.device})")
             for i in range(0, masked_image.shape[0], bs):
+                if i % 10 == 0: print(f"DEBUG: VAE Encoding frame {i}/{masked_image.shape[0]}")
                 mask_pixel_values_bs = masked_image[i : i + bs]
                 mask_pixel_values_bs = self.vae.encode(mask_pixel_values_bs)[0]
                 mask_pixel_values_bs = mask_pixel_values_bs.mode()
