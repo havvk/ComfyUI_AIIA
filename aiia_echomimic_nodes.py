@@ -291,13 +291,33 @@ class AIIA_EchoMimicSampler:
                 "width": ("INT", {"default": 768}),
                 "height": ("INT", {"default": 768}),
                 "context_length": ("INT", {"default": 49, "min": 16, "max": 200, "step": 1}),
+                "enable_teacache": ("BOOLEAN", {"default": False}),
+                "teacache_threshold": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
             }
         }
 
-    def process(self, pipe, ref_image, ref_audio, prompt, negative_prompt, seed, steps, cfg, audio_cfg, fps, width=768, height=768, context_length=49):
+    def process(self, pipe, ref_image, ref_audio, prompt, negative_prompt, seed, steps, cfg, audio_cfg, fps, width=768, height=768, context_length=49, enable_teacache=False, teacache_threshold=0.1):
         if not ECHOMIMIC_AVAILABLE: return (torch.zeros((1, 64, 64, 3)),)
 
         pipeline = pipe["pipeline"]
+        
+        # ... (Previous code)
+
+        # TeaCache Configuration
+        if hasattr(pipeline, "transformer") and pipeline.transformer is not None:
+            if enable_teacache:
+                print(f"[{self.NODE_NAME}] Enabling TeaCache (threshold={teacache_threshold})...")
+                # Using 1.3B model string to fetch coefficients
+                teacache_coeffs = get_teacache_coefficients("wan2.1-fun-v1.1-1.3b")
+                pipeline.transformer.enable_teacache(
+                    coefficients=teacache_coeffs,
+                    num_steps=steps,
+                    rel_l1_thresh=teacache_threshold
+                )
+            else:
+                if hasattr(pipeline.transformer, "teacache") and pipeline.transformer.teacache is not None:
+                     print(f"[{self.NODE_NAME}] Disabling TeaCache...")
+                     pipeline.transformer.disable_teacache()
         device = pipe["device"]
         dtype = pipe["weight_dtype"]
         wav2vec_processor = pipe["wav2vec_processor"]
