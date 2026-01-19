@@ -253,9 +253,17 @@ ComfyUI/models/EchoMimicV3/
      ```bash
      hf download BadToBest/EchoMimicV3 --local-dir models/EchoMimicV3/EchoMimicV3
      ```
-   - *注意：请务必下载此 EchoMimic V3 专用模型，而非 Wan2.1 原版模型（原版缺少音频层权重）。*
+   - *注意：此模型包含 EchoMimic 特有的 Transformer 权重，是生成嘴型的核心。*
 
-2. **音频编码器 (wav2vec2-base-960h)**:
+2. **底模 (Wan2.1-Fun-V1.1-1.3B-InP)**:
+   - HuggingFace: [alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP](https://huggingface.co/alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP)
+   - **下载命令**:
+     ```bash
+     hf download alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP --local-dir models/EchoMimicV3/Wan2.1-Fun-V1.1-1.3B-InP
+     ```
+   - *注意：作为 fallback 来源，提供 VAE、Text Encoder 和 Image Encoder权重。*
+
+3. **音频编码器 (wav2vec2-base-960h)**:
    - HuggingFace: [facebook/wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h)
    - **下载命令**:
      ```bash
