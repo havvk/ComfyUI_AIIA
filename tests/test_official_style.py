@@ -145,8 +145,10 @@ def run_official_style_inference():
     mask_latents = mask_latents.to(device, dtype=dtype) if mask_latents is not None else None
     
     # Explicitly handle clip image context
+    # WanImageEncoder expects [C, T, H, W]. For image, T=1.
+    # TF.to_tensor gives [C, H, W]. unsqueeze(1) gives [C, 1, H, W].
     clip_image_pixel_values = TF.to_tensor(clip_image_pixel_values).sub_(0.5).div_(0.5).to(device, dtype=dtype)
-    clip_context = clip_image_encoder([clip_image_pixel_values.unsqueeze(0)])
+    clip_context = clip_image_encoder([clip_image_pixel_values.unsqueeze(1)])
     
     print("Starting generation loop...")
     video = pipeline(
