@@ -555,7 +555,10 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
         elif prompt is not None and isinstance(prompt, list):
             batch_size = len(prompt)
         else:
-            batch_size = prompt_embeds.shape[0]
+            if isinstance(prompt_embeds, list):
+                 batch_size = prompt_embeds[0].shape[0]
+            else:
+                 batch_size = prompt_embeds.shape[0]
 
         device = self._execution_device
         weight_dtype = self.text_encoder.dtype

@@ -447,6 +447,18 @@ class AIIA_EchoMimicSampler:
         )
         print(f"[{self.NODE_NAME}] Text prompts encoded.")
 
+        # Aggressive memory cleanup
+        print(f"[{self.NODE_NAME}] Cleaning up VRAM before generation...")
+        try:
+            mm.unload_all_models()
+            print(f"[{self.NODE_NAME}] Triggered mm.unload_all_models().")
+        except:
+            pass
+        mm.soft_empty_cache()
+        gc.collect()
+        torch.cuda.empty_cache()
+        log_vram(f"[{self.NODE_NAME}] Process Start (After Cleanup)")
+
         while init_frames < video_length:
             current_partial_video_length = partial_video_length
             if last_frames >= video_length:
