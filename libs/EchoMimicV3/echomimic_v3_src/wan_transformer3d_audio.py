@@ -19,12 +19,12 @@ from diffusers.models.modeling_utils import ModelMixin
 from diffusers.utils import is_torch_version, logging
 from torch import nn
 
-from src.dist import (get_sequence_parallel_rank,
+from echomimic_v3_src.dist import (get_sequence_parallel_rank,
                     get_sequence_parallel_world_size, get_sp_group,
                     xFuserLongContextAttention)
-from src.dist.wan_xfuser import usp_attn_forward
-from src.cache_utils import TeaCache
-from src.wan_camera_adapter import SimpleAdapter
+from echomimic_v3_src.dist.wan_xfuser import usp_attn_forward
+from echomimic_v3_src.cache_utils import TeaCache
+from echomimic_v3_src.wan_camera_adapter import SimpleAdapter
 
 from einops import rearrange
 import torch.nn.functional as F

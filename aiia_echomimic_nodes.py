@@ -21,7 +21,7 @@ if not os.path.exists(echomimic_v3_root):
     logger.error(f"EchoMimicV3 root directory not found at: {echomimic_v3_root}")
     ECHOMIMIC_AVAILABLE = False
 else:
-    # Add to sys.path to allow 'from src import ...' to work as expected by the repo code
+    # Add to sys.path to allow 'from echomimic_v3_src import ...' to work as expected by the repo code
     if echomimic_v3_root not in sys.path:
         sys.path.insert(0, echomimic_v3_root)
     ECHOMIMIC_AVAILABLE = True
@@ -36,14 +36,14 @@ if ECHOMIMIC_AVAILABLE:
         from diffusers import FlowMatchEulerDiscreteScheduler
         
         # EchoMimic Internal Modules
-        from src.wan_vae import AutoencoderKLWan
-        from src.wan_image_encoder import CLIPModel
-        from src.wan_text_encoder import WanT5EncoderModel
-        from src.wan_transformer3d_audio import WanTransformerAudioMask3DModel
-        from src.pipeline_wan_fun_inpaint_audio import WanFunInpaintAudioPipeline
-        from src.utils import get_image_to_video_latent3, filter_kwargs
-        from src.face_detect import get_mask_coord
-        from src.cache_utils import get_teacache_coefficients
+        from echomimic_v3_src.wan_vae import AutoencoderKLWan
+        from echomimic_v3_src.wan_image_encoder import CLIPModel
+        from echomimic_v3_src.wan_text_encoder import WanT5EncoderModel
+        from echomimic_v3_src.wan_transformer3d_audio import WanTransformerAudioMask3DModel
+        from echomimic_v3_src.pipeline_wan_fun_inpaint_audio import WanFunInpaintAudioPipeline
+        from echomimic_v3_src.utils import get_image_to_video_latent3, filter_kwargs
+        from echomimic_v3_src.face_detect import get_mask_coord
+        from echomimic_v3_src.cache_utils import get_teacache_coefficients
     except ImportError as e:
         IMPORT_ERROR_MSG = str(e)
         logger.error(f"Failed to import EchoMimicV3 modules: {e}")

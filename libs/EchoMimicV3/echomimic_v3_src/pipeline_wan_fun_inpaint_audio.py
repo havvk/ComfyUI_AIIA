@@ -20,15 +20,15 @@ from PIL import Image
 from transformers import T5Tokenizer,AutoTokenizer
 
 
-from src.wan_text_encoder import WanT5EncoderModel
-from src.wan_vae import AutoencoderKLWan
-from src.wan_image_encoder import CLIPModel
+from echomimic_v3_src.wan_text_encoder import WanT5EncoderModel
+from echomimic_v3_src.wan_vae import AutoencoderKLWan
+from echomimic_v3_src.wan_image_encoder import CLIPModel
                               
-from src.wan_transformer3d_audio import WanTransformerAudioMask3DModel
+from echomimic_v3_src.wan_transformer3d_audio import WanTransformerAudioMask3DModel
 
-from src.fm_solvers import (FlowDPMSolverMultistepScheduler,
+from echomimic_v3_src.fm_solvers import (FlowDPMSolverMultistepScheduler,
                                 get_sampling_sigmas)
-from src.fm_solvers_unipc import FlowUniPCMultistepScheduler
+from echomimic_v3_src.fm_solvers_unipc import FlowUniPCMultistepScheduler
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 

@@ -7,8 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 
-from src.wan_transformer3d_audio import attention
-from src.wan_xlm_roberta import XLMRoberta
+from echomimic_v3_src.wan_transformer3d_audio import attention
+from echomimic_v3_src.wan_xlm_roberta import XLMRoberta
 from diffusers.configuration_utils import ConfigMixin
 from diffusers.loaders.single_file_model import FromOriginalModelMixin
 from diffusers.models.modeling_utils import ModelMixin

@@ -14,7 +14,7 @@ from diffusers.models.modeling_utils import ModelMixin
 from diffusers.utils.accelerate_utils import apply_forward_hook
 from einops import rearrange
 
-from src.dist import parallel_magvit_vae
+from echomimic_v3_src.dist import parallel_magvit_vae
 
 
 CACHE_T = 2

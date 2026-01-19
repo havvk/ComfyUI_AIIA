@@ -21,23 +21,23 @@ import librosa
 # Custom modules
 from diffusers import FlowMatchEulerDiscreteScheduler
 
-from src.dist import set_multi_gpus_devices
-from src.wan_vae import AutoencoderKLWan
-from src.wan_image_encoder import  CLIPModel
-from src.wan_text_encoder import  WanT5EncoderModel
-from src.wan_transformer3d_audio import WanTransformerAudioMask3DModel
-from src.pipeline_wan_fun_inpaint_audio import WanFunInpaintAudioPipeline
+from echomimic_v3_src.dist import set_multi_gpus_devices
+from echomimic_v3_src.wan_vae import AutoencoderKLWan
+from echomimic_v3_src.wan_image_encoder import  CLIPModel
+from echomimic_v3_src.wan_text_encoder import  WanT5EncoderModel
+from echomimic_v3_src.wan_transformer3d_audio import WanTransformerAudioMask3DModel
+from echomimic_v3_src.pipeline_wan_fun_inpaint_audio import WanFunInpaintAudioPipeline
 
-from src.utils import (
+from echomimic_v3_src.utils import (
     filter_kwargs,
     get_image_to_video_latent3,
     save_videos_grid,
 )
-from src.fm_solvers import FlowDPMSolverMultistepScheduler
-from src.fm_solvers_unipc import FlowUniPCMultistepScheduler
-from src.cache_utils import get_teacache_coefficients
+from echomimic_v3_src.fm_solvers import FlowDPMSolverMultistepScheduler
+from echomimic_v3_src.fm_solvers_unipc import FlowUniPCMultistepScheduler
+from echomimic_v3_src.cache_utils import get_teacache_coefficients
 
-from src.face_detect import get_mask_coord
+from echomimic_v3_src.face_detect import get_mask_coord
 
 from mmgp import offload, profile_type
 import argparse
