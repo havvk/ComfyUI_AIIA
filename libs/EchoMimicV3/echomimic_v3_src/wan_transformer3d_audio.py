@@ -1328,6 +1328,7 @@ class WanTransformerAudioMask3DModel(ModelMixin, ConfigMixin, FromOriginalModelM
         if self.teacache is not None:
             if cond_flag:
                 modulated_inp = e0
+                skip_flag = self.teacache.cnt < self.teacache.num_skip_start_steps
                 if skip_flag:
                     should_calc = True
                     self.teacache.accumulated_rel_l1_distance = 0
