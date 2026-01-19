@@ -249,9 +249,9 @@ ComfyUI/models/EchoMimicV3/
 **下载地址**:
 1. **主模型 (Wan2.1-Fun-V1.1-1.3B-InP)**:
    - HuggingFace: [alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP](https://huggingface.co/alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP)
-   - **下载命令**:
+   - **下载命令 (推荐)**:
      ```bash
-     git clone https://huggingface.co/alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP models/EchoMimicV3/Wan2.1-Fun-V1.1-1.3B-InP
+     huggingface-cli download alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP --local-dir models/EchoMimicV3/Wan2.1-Fun-V1.1-1.3B-InP
      ```
    - *注意：目前代码默认寻找 `Wan2.1-Fun-V1.1-1.3B-InP` 文件夹。*
 
