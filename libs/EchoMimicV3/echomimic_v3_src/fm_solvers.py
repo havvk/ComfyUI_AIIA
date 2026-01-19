@@ -379,7 +379,7 @@ class FlowDPMSolverMultistepScheduler(SchedulerMixin, ConfigMixin):
         # DPM-Solver++ needs to solve an integral of the data prediction model.
         if self.config.algorithm_type in ["dpmsolver++", "sde-dpmsolver++"]:
             if self.config.prediction_type == "flow_prediction":
-                sigma_t = self.sigmas[self.step_index]
+                sigma_t = self.sigmas[self.step_index].to(sample.device)
                 x0_pred = sample - sigma_t * model_output
             else:
                 raise ValueError(
@@ -395,7 +395,7 @@ class FlowDPMSolverMultistepScheduler(SchedulerMixin, ConfigMixin):
         # DPM-Solver needs to solve an integral of the noise prediction model.
         elif self.config.algorithm_type in ["dpmsolver", "sde-dpmsolver"]:
             if self.config.prediction_type == "flow_prediction":
-                sigma_t = self.sigmas[self.step_index]
+                sigma_t = self.sigmas[self.step_index].to(sample.device)
                 epsilon = sample - (1 - sigma_t) * model_output
             else:
                 raise ValueError(
@@ -404,7 +404,7 @@ class FlowDPMSolverMultistepScheduler(SchedulerMixin, ConfigMixin):
                 )
 
             if self.config.thresholding:
-                sigma_t = self.sigmas[self.step_index]
+                sigma_t = self.sigmas[self.step_index].to(sample.device)
                 x0_pred = sample - sigma_t * model_output
                 x0_pred = self._threshold_sample(x0_pred)
                 epsilon = model_output + x0_pred
