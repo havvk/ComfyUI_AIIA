@@ -1296,15 +1296,17 @@ class WanTransformerAudioMask3DModel(ModelMixin, ConfigMixin, FromOriginalModelM
         if clip_fea is not None:
             context_clip = self.img_emb(clip_fea)  # bs x 257 x dim
             # print(context_clip.shape, context.shape, 'contextshape'*3)
-            # Fix: Handle 4D context (Layers, Batch, Seq, Dim) from Stacked T5
+            # Fix: Handle 4D context (Layers, Seq, Batch, Dim) from Stacked T5 [L, S, B, D]
             if context.dim() == 4:
-                # context: [L, B, S, D]
-                # context_clip: [B, Sc, D] -> Expand to [L, B, Sc, D]
+                # context: [L, S, B, D]
+                # context_clip: [B, Sc, D] -> Transpose to [Sc, B, D] -> Expand to [L, Sc, B, D]
                 L = context.shape[0]
-                context_clip_expanded = context_clip.unsqueeze(0).expand(L, -1, -1, -1)
-                context = torch.cat([context_clip_expanded, context], dim=2)
+                context_clip_t = context_clip.transpose(0, 1) # [Sc, B, D]
+                context_clip_expanded = context_clip_t.unsqueeze(0).expand(L, -1, -1, -1) # [L, Sc, B, D]
+                # Concat along Sequence dimension (dim 1)
+                context = torch.cat([context_clip_expanded, context], dim=1)
             else:
-                # Fallback for 3D context [B, S, D]
+                # Fallback for 3D context [B, S, D] (Original Logic, likely unreachable now)
                 context = torch.concat([context_clip, context], dim=1)
 
         # Context Parallel

@@ -705,10 +705,11 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
                             neg_scale_ = 1.
                         negative_prompt_embeds = [negative_prompt_embed * neg_scale_ for negative_prompt_embed in negative_prompt_embeds]
                         # in_prompt_embeds = negative_prompt_embeds + negative_prompt_embeds + prompt_embeds
-                        # Fix: Concatenate tensors layer-wise for T5 list output, do not append lists!
-                        in_prompt_embeds = [torch.cat([n, p, p], dim=0) for n, p in zip(negative_prompt_embeds, prompt_embeds)]
+                        # Fix: Transpose to Time-Major [S, B, D] and Concat Batch (dim 1)
+                        in_prompt_embeds = [torch.cat([n.transpose(0, 1), p.transpose(0, 1), p.transpose(0, 1)], dim=1) for n, p in zip(negative_prompt_embeds, prompt_embeds)]
                     else:
-                        in_prompt_embeds = prompt_embeds
+                        # Fix: Transpose to Time-Major [S, B, D]
+                        in_prompt_embeds = [p.transpose(0, 1) for p in prompt_embeds]
                         
                     if cfg_skip_ratio is not None and i >= num_inference_steps * (1 - cfg_skip_ratio):
                         do_classifier_free_guidance = False
