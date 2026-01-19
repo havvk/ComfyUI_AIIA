@@ -143,7 +143,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 ### 2. 视频生成与合成 (Video Generation & Compositing)
 
-#### 视频合并 (AIIA, 图像或目录)
+#### 2.1 视频合并 (AIIA, 图像或目录)
 
 这是一个功能强大且高度可定制的视频合并节点，是您工作流中处理视频生成的终极解决方案。
 
@@ -156,7 +156,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **全面的音频控制**: 支持 `AUDIO` 张量和外部文件，并提供对编解码器和码率的精细控制。
 - **智能自动配置**: `auto` 模式能自动应用格式预设中的音频参数，并能自动检测源文件的码率。
 
-#### FLOAT 影片生成 (内存与磁盘模式)
+#### 2.2 FLOAT 影片生成 (内存与磁盘模式)
 
 这组节点封装了先进的 **FLOAT** 模型，能够根据参考图像和音频生成高质量的口型同步影片。我们提供了两种模式，以应对不同长度的生成需求。
 
@@ -174,7 +174,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **优势**: 在解码过程中，节点以小批量方式处理帧并**逐帧保存到磁盘**，内存占用极低，可以处理任意长度的音频。
 - **工作流**: 此节点的输出目录可以直接作为 **视频合并节点** 的 `frames_directory` 输入，构建一个完整的、内存高效的 talking head 视频生成管线。
 
-#### PersonaLive 视频驱动 (AIIA Integrated)
+#### 2.3 PersonaLive 视频驱动 (AIIA Integrated)
 
 这组节点基于强大的 [PersonaLive](https://github.com/GVCLab/PersonaLive) 模型，专为生成高质量的 Talking Head 视频而设计。我们将原版代码完全重构并集成到 ComfyUI 中，通过特有的分块处理和磁盘流式技术，**彻底解决了长视频生成时的显存和内存溢出 (OOM) 问题**。
 
@@ -196,7 +196,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **最佳实践**: 将此节点的输出目录直接连接到 **AIIA Video Combine** 节点，即可实现从生成到合成的全流程 OOM-Safe。
 
 
-### 2.3 EchoMimic V3 (AIIA Integrated)
+#### 2.4 EchoMimic V3 (AIIA Integrated)
 
 这组节点集成了最新的 **EchoMimic V3** (1.3B Parameters) 模型，它是目前开源界效果最惊艳的 Talking Head 解决方案之一。
 
