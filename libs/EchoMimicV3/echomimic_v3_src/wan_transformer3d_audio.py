@@ -1211,7 +1211,19 @@ class WanTransformerAudioMask3DModel(ModelMixin, ConfigMixin, FromOriginalModelM
 
         # embeddings
         # print(x[0].shape, 'x.shape')
-        x = [self.patch_embedding(u.unsqueeze(0).contiguous()) for u in x]
+        # FORCE FLOAT32 for 3D Conv to avoid CUDA bf16 errors (aten::slow_conv3d_forward fallback)
+        def run_patch_embed_fp32(inp, layer):
+             return F.conv3d(
+                 inp.float(), 
+                 layer.weight.float(), 
+                 layer.bias.float() if layer.bias is not None else None, 
+                 stride=layer.stride,
+                 padding=layer.padding,
+                 dilation=layer.dilation,
+                 groups=layer.groups
+             ).to(inp.dtype)
+
+        x = [run_patch_embed_fp32(u.unsqueeze(0).contiguous(), self.patch_embedding) for u in x]
         # print(x[0].shape, 'x.patah')
         """
         torch.Size([3, 16, 19, 122, 75]) latents.shape 19 torch.Size([3, 9150])
