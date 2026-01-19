@@ -648,6 +648,11 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
         if comfyui_progressbar:
             pbar.update(1)
 
+        # CRITICAL FIX: Force latents to transformer device (GPU) immediately
+        # randn_tensor in prepare_latents can sometimes default to CPU if generator is CPU
+        if hasattr(self, "transformer") and self.transformer is not None:
+             latents = latents.to(self.transformer.device)
+
         # Prepare mask latent variables
         if init_video is not None:
             if (mask_video == 255).all():
