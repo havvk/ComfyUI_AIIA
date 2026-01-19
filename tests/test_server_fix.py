@@ -7,6 +7,7 @@ import math
 import gc
 import logging
 from PIL import Image
+import torchaudio
 from omegaconf import OmegaConf
 
 # Mock ComfyUI environment
