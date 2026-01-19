@@ -218,6 +218,15 @@ class AIIA_EchoMimicLoader:
         if not os.path.exists(wav2vec_path):
              wav2vec_path = "facebook/wav2vec2-base-960h" # fallback to HF hub
         
+        # Debug: Check where models are actually located
+        print(f"[{self.NODE_NAME}] --- Model Devices Info ---")
+        print(f"  Transformer: {transformer.device}")
+        print(f"  VAE: {vae.device}")
+        print(f"  Text Encoder: {text_encoder.device}")
+        print(f"  Image Encoder: {clip_image_encoder.device}")
+        print(f"  Wav2Vec Model: {wav2vec_model.device}") # Add this line for wav2vec_model
+        print(f"------------------------------------------")
+        
         print(f"[{self.NODE_NAME}] Loading Audio Encoder from {wav2vec_path}...")
         wav2vec_processor = Wav2Vec2Processor.from_pretrained(wav2vec_path)
         wav2vec_model = Wav2Vec2Model.from_pretrained(wav2vec_path).to(dtype=weight_dtype, device="cpu").eval()
@@ -479,9 +488,11 @@ class AIIA_EchoMimicSampler:
             
             # Blending Logic
             if init_frames != 0:
+                # Ensure mix_ratio is on the same device as the video tensors
+                curr_mix_ratio = mix_ratio.to(new_sample.device)
                 new_sample[:, :, -overlap_video_length:] = (
-                    new_sample[:, :, -overlap_video_length:] * (1 - mix_ratio) +
-                    sample[:, :, :overlap_video_length] * mix_ratio
+                    new_sample[:, :, -overlap_video_length:] * (1 - curr_mix_ratio) +
+                    sample[:, :, :overlap_video_length] * curr_mix_ratio
                 )
                 new_sample = torch.cat([new_sample, sample[:, :, overlap_video_length:]], dim=2)
             else:
