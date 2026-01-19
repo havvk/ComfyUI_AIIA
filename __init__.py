@@ -124,6 +124,9 @@ else:
     # 21. 处理 aiia_web_export_nodes.py (新增网页导出)
     _load_nodes_from_module(".aiia_web_export_nodes", "aiia_web_export_nodes")
 
+    # 22. 处理 aiia_echomimic_nodes.py (新增 EchoMimic V3)
+    _load_nodes_from_module(".aiia_echomimic_nodes", "aiia_echomimic_nodes")
+
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
 

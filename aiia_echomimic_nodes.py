@@ -1,0 +1,351 @@
+import os
+import sys
+import torch
+import folder_paths
+import logging
+import numpy as np
+import math
+from PIL import Image
+import torchaudio
+
+# Configure Logging
+logger = logging.getLogger("ComfyUI_AIIA_EchoMimic")
+
+# --- Path Setup ---
+current_file_path = os.path.abspath(__file__)
+current_dir = os.path.dirname(current_file_path)
+echomimic_v3_root = os.path.join(current_dir, "libs", "EchoMimicV3")
+
+# Check if EchoMimicV3 exists
+if not os.path.exists(echomimic_v3_root):
+    logger.error(f"EchoMimicV3 root directory not found at: {echomimic_v3_root}")
+    ECHOMIMIC_AVAILABLE = False
+else:
+    # Add to sys.path to allow 'from src import ...' to work as expected by the repo code
+    if echomimic_v3_root not in sys.path:
+        sys.path.insert(0, echomimic_v3_root)
+    ECHOMIMIC_AVAILABLE = True
+
+# --- Wrapper for Lazy Import ---
+if ECHOMIMIC_AVAILABLE:
+    try:
+        from omegaconf import OmegaConf
+        from transformers import AutoTokenizer, Wav2Vec2Model, Wav2Vec2Processor
+        from diffusers import FlowMatchEulerDiscreteScheduler
+        
+        # EchoMimic Internal Modules
+        from src.wan_vae import AutoencoderKLWan
+        from src.wan_image_encoder import CLIPModel
+        from src.wan_text_encoder import WanT5EncoderModel
+        from src.wan_transformer3d_audio import WanTransformerAudioMask3DModel
+        from src.pipeline_wan_fun_inpaint_audio import WanFunInpaintAudioPipeline
+        from src.utils import get_image_to_video_latent3, filter_kwargs
+        from src.face_detect import get_mask_coord
+        from src.cache_utils import get_teacache_coefficients
+    except ImportError as e:
+        logger.error(f"Failed to import EchoMimicV3 modules: {e}")
+        ECHOMIMIC_AVAILABLE = False
+
+# --- Constants & Config ---
+ECHOMIMIC_MODELS_DIR = "EchoMimicV3" # Expects models under ComfyUI/models/EchoMimicV3
+
+# --- Helper Functions (Adapted from infer.py) ---
+def get_sample_size(image, default_size):
+    width, height = image.size
+    original_area = width * height
+    default_area = default_size[0] * default_size[1]
+    if default_area < original_area:
+        ratio = math.sqrt(original_area / default_area)
+        width = width / ratio // 16 * 16
+        height = height / ratio // 16 * 16
+    else:
+        width = width // 16 * 16
+        height = height // 16 * 16
+    return int(height), int(width)
+
+def get_ip_mask(coords):
+    y1, y2, x1, x2, h, w = coords
+    Y, X = torch.meshgrid(torch.arange(h), torch.arange(w), indexing='ij')
+    mask = (Y.unsqueeze(-1) >= y1) & (Y.unsqueeze(-1) < y2) & (X.unsqueeze(-1) >= x1) & (X.unsqueeze(-1) < x2)
+    mask = mask.reshape(-1)
+    return mask.float()
+
+# --- Nodes ---
+
+class AIIA_EchoMimicLoader:
+    NODE_NAME = "EchoMimic V3 Loader"
+    CATEGORY = "AIIA/EchoMimic"
+    FUNCTION = "load_model"
+    RETURN_TYPES = ("ECHOMIMIC_PIPE",)
+    RETURN_NAMES = ("pipe",)
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model_subfolder": ("STRING", {"default": "Wan2.1-Fun-V1.1-1.3B-InP", "tooltip": "Subfolder in models/EchoMimicV3 containing the main models"}),
+                "precision": (["fp16", "bf16", "fp32"], {"default": "bf16"}),
+                "device": (["cuda", "cpu", "mps"], {"default": "cuda"}),
+            }
+        }
+
+    def load_model(self, model_subfolder, precision, device):
+        if not ECHOMIMIC_AVAILABLE:
+            raise ImportError("EchoMimicV3 modules not loaded. Please check dependencies and libs/EchoMimicV3.")
+
+        model_root = os.path.join(folder_paths.models_dir, ECHOMIMIC_MODELS_DIR, model_subfolder)
+        if not os.path.exists(model_root):
+            # Fallback check standard diffusers path
+            model_root_alt = os.path.join(folder_paths.models_dir, "diffusers", model_subfolder)
+            if os.path.exists(model_root_alt):
+                model_root = model_root_alt
+            else:
+                raise FileNotFoundError(f"Model directory not found at {model_root} or {model_root_alt}")
+
+        weight_dtype = torch.float32
+        if precision == "fp16": weight_dtype = torch.float16
+        elif precision == "bf16": weight_dtype = torch.bfloat16
+
+        print(f"[{self.NODE_NAME}] Loading EchoMimicV3 models from {model_root} ({precision})...")
+        
+        # Load Config (Assume logic similar to infer.py but dynamic)
+        # We assume standard structure inside model_root
+        
+        # Transformer
+        print(f"[{self.NODE_NAME}] Loading Transformer...")
+        transformer = WanTransformerAudioMask3DModel.from_pretrained(
+            os.path.join(model_root, "transformer"),
+            torch_dtype=weight_dtype
+        )
+
+        # VAE
+        print(f"[{self.NODE_NAME}] Loading VAE...")
+        vae = AutoencoderKLWan.from_pretrained(
+            os.path.join(model_root, "vae")
+        ).to(dtype=weight_dtype)
+
+        # Tokenizer & Text Encoder
+        print(f"[{self.NODE_NAME}] Loading Text Encoder...")
+        tokenizer = AutoTokenizer.from_pretrained(os.path.join(model_root, "tokenizer"))
+        text_encoder = WanT5EncoderModel.from_pretrained(
+            os.path.join(model_root, "text_encoder"),
+            torch_dtype=weight_dtype
+        ).eval()
+
+        # Image Encoder
+        print(f"[{self.NODE_NAME}] Loading Image Encoder...")
+        clip_image_encoder = CLIPModel.from_pretrained(
+            os.path.join(model_root, "image_encoder")
+        ).to(dtype=weight_dtype).eval()
+
+        # Scheduler
+        print(f"[{self.NODE_NAME}] Loading Scheduler...")
+        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+            model_root, subfolder="scheduler"
+        )
+
+        # Wav2Vec (Assume it's in a separate standard folder or specified)
+        # For now, we expect it to be in 'models/EchoMimicV3/wav2vec2-base-960h' or similar
+        # But commonly these are downloaded from HF. Let's try to find it.
+        wav2vec_path = os.path.join(folder_paths.models_dir, ECHOMIMIC_MODELS_DIR, "wav2vec2-base-960h")
+        if not os.path.exists(wav2vec_path):
+             wav2vec_path = "facebook/wav2vec2-base-960h" # fallback to HF hub
+        
+        print(f"[{self.NODE_NAME}] Loading Audio Encoder from {wav2vec_path}...")
+        wav2vec_processor = Wav2Vec2Processor.from_pretrained(wav2vec_path)
+        wav2vec_model = Wav2Vec2Model.from_pretrained(wav2vec_path).eval()
+
+        # Pipeline Construction
+        pipeline = WanFunInpaintAudioPipeline(
+            transformer=transformer,
+            vae=vae,
+            tokenizer=tokenizer,
+            text_encoder=text_encoder,
+            scheduler=scheduler,
+            clip_image_encoder=clip_image_encoder,
+        )
+        
+        pipeline.to(device)
+
+        pipe_data = {
+            "pipeline": pipeline,
+            "device": device,
+            "weight_dtype": weight_dtype,
+            "wav2vec_processor": wav2vec_processor,
+            "wav2vec_model": wav2vec_model,
+        }
+        
+        print(f"[{self.NODE_NAME}] Models loaded successfully.")
+        return (pipe_data,)
+
+class AIIA_EchoMimicSampler:
+    NODE_NAME = "EchoMimic V3 Sampler"
+    CATEGORY = "AIIA/EchoMimic"
+    FUNCTION = "process"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("images",)
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "pipe": ("ECHOMIMIC_PIPE",),
+                "ref_image": ("IMAGE",), # (1, H, W, 3)
+                "ref_audio": ("AUDIO",),
+                "prompt": ("STRING", {"multiline": True, "default": "best quality, high quality, 8k, realistic, photorealistic, details, sharp focus"}),
+                "negative_prompt": ("STRING", {"multiline": True, "default": "Gesture is bad. Gesture is unclear. Strange and twisted hands. Bad hands. Bad fingers. Unclear and blurry hands. 手部快速摆动, 手指频繁抽搐, 夸张手势, 重复机械性动作."}),
+                "seed": ("INT", {"default": 42, "min": 0, "max": 0xffffffffffffffff}),
+                "steps": ("INT", {"default": 25, "min": 1, "max": 100}),
+                "cfg": ("FLOAT", {"default": 4.0, "min": 1.0, "max": 20.0}),
+                "audio_cfg": ("FLOAT", {"default": 2.9, "min": 1.0, "max": 20.0}),
+                "fps": ("INT", {"default": 25, "min": 1, "max": 60}),
+            },
+            "optional": {
+                "width": ("INT", {"default": 768}),
+                "height": ("INT", {"default": 768}),
+            }
+        }
+
+    def process(self, pipe, ref_image, ref_audio, prompt, negative_prompt, seed, steps, cfg, audio_cfg, fps, width=768, height=768):
+        if not ECHOMIMIC_AVAILABLE: return (torch.zeros((1, 64, 64, 3)),)
+
+        pipeline = pipe["pipeline"]
+        device = pipe["device"]
+        dtype = pipe["weight_dtype"]
+        wav2vec_processor = pipe["wav2vec_processor"]
+        wav2vec_model = pipe["wav2vec_model"].to(device, dtype=dtype)
+
+        # 1. Process Image
+        # ComfyUI Image is (B, H, W, C) float32 [0,1]. Take first.
+        ref_image_np = (ref_image[0].cpu().numpy() * 255).astype(np.uint8)
+        ref_img_pil = Image.fromarray(ref_image_np).convert("RGB")
+
+        # 2. Process Audio
+        # ComfyUI Audio is {'waveform': (1, C, N), 'sample_rate': sr}
+        audio_waveform = ref_audio['waveform']
+        sample_rate = ref_audio['sample_rate']
+        
+        # Resample to 16000 for Wav2Vec if needed
+        if sample_rate != 16000:
+            resampler = torchaudio.transforms.Resample(sample_rate, 16000)
+            audio_waveform_16k = resampler(audio_waveform)
+        else:
+            audio_waveform_16k = audio_waveform
+
+        # Mix down to mono if needed
+        if audio_waveform_16k.shape[0] > 1: # (Channels, Time)
+            audio_waveform_16k = torch.mean(audio_waveform_16k, dim=0, keepdim=True)
+            
+        audio_input = audio_waveform_16k.squeeze().cpu().numpy()
+        
+        # Wav2Vec Extraction
+        input_values = wav2vec_processor(audio_input, sampling_rate=16000, return_tensors="pt").input_values
+        with torch.no_grad():
+            audio_features = wav2vec_model(input_values.to(device)).last_hidden_state
+        audio_embeds = audio_features # (1, T_audio, D)
+
+        # 3. Setup Video Params
+        duration_sec = len(audio_input) / 16000
+        video_length = int(duration_sec * fps)
+        
+        # VAE Compression Ratio alignment (from infer.py)
+        # Using 4 by default for Wan usually, or read from config if available.
+        # infer.py: vae.config.temporal_compression_ratio
+        temporal_compression_ratio = pipeline.vae.config.temporal_compression_ratio
+        
+        # Adjust length
+        video_length = (int((video_length - 1) // temporal_compression_ratio * temporal_compression_ratio) + 1 if video_length != 1 else 1)
+        
+        # 4. Face Mask (IP Mask)
+        # Here we need face detection. `get_mask_coord` uses 'src.face_detect' which uses retinaface or similar.
+        # We need to save the PIL image temporarily if `get_mask_coord` expects a path, or modify it to accept PIL/cv2.
+        # Looking at `src.face_detect`: usually expects path or numpy.
+        # Let's save temp for compatibility with existing `get_mask_coord` if it takes path.
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
+            ref_img_pil.save(tmp_img.name)
+            tmp_img_path = tmp_img.name
+        
+        try:
+            y1, y2, x1, x2, h_, w_ = get_mask_coord(tmp_img_path)
+        except Exception as e:
+            print(f"[{self.NODE_NAME}] Face detection failed: {e}. Using full image as mask fallback.")
+            w, h = ref_img_pil.size
+            y1, y2, x1, x2, h_, w_ = 0, h, 0, w, h, w
+        finally:
+            if os.path.exists(tmp_img_path): os.remove(tmp_img_path)
+
+        # 5. Latent Prep and Inputs
+        sample_height, sample_width = get_sample_size(ref_img_pil, [height, width])
+        # Downscale ratio calc
+        downratio = math.sqrt(sample_height * sample_width / h_ / w_)
+        coords = (
+            y1 * downratio // 16, y2 * downratio // 16,
+            x1 * downratio // 16, x2 * downratio // 16,
+            sample_height // 16, sample_width // 16,
+        )
+        ip_mask = get_ip_mask(coords).unsqueeze(0)
+        ip_mask = torch.cat([ip_mask]*3).to(device=device, dtype=dtype)
+        
+        generator = torch.Generator(device=device).manual_seed(seed)
+        
+        # Get Latents from image
+        # pipeline.vae should be used
+        input_video, input_video_mask, clip_image = get_image_to_video_latent3(ref_img_pil, None, video_length=video_length, sample_size=[sample_height, sample_width])
+        
+        # Run Pipeline
+        # Note: infer.py handles chunking (overlap_video_length). For MVP we might try simple full gen or simple chunking.
+        # infer.py's `partial_video_length` defaults to 113. If video is longer, we need loop.
+        # For In-Memory MVP, let's just stick to the main call, or copy the loop logic if necessary.
+        # Let's assume shorter videos (< 4-5 sec) for now to minimize complexity, OR just use the pipeline's basic capability if it supports long.
+        # infer.py LOOP logic is good to have.
+        
+        print(f"[{self.NODE_NAME}] Generating {video_length} frames...")
+        
+        # Using the logic from infer.py ("if not use_longvideo_cfg")
+        # We'll just call the pipeline directly for simplicity in V1, unless length is huge.
+        
+        output_videos = pipeline(
+            prompt,
+            num_frames=video_length,
+            negative_prompt=negative_prompt,
+            audio_embeds=audio_embeds,
+            audio_scale=1.0,
+            ip_mask=ip_mask,
+            use_un_ip_mask=False, # config default
+            height=sample_height,
+            width=sample_width,
+            generator=generator,
+            neg_scale=1.5,
+            neg_steps=2,
+            use_dynamic_cfg=True,
+            use_dynamic_acfg=True,
+            guidance_scale=cfg,
+            audio_guidance_scale=audio_cfg,
+            num_inference_steps=steps,
+            video=input_video,
+            mask_video=input_video_mask,
+            clip_image=clip_image,
+            cfg_skip_ratio=0, # default
+        ).videos # (1, C, F, H, W)
+        
+        # Post-process back to ComfyUI format (F, H, W, C)
+        # sample is usually [0, 1] float
+        # ComfyUI expects (B, H, W, C)
+        
+        video_tensor = output_videos.squeeze(0).permute(1, 2, 3, 0) # (F, H, W, C)
+        
+        # Ensure it's on CPU and float32
+        video_tensor = video_tensor.cpu().float()
+        
+        return (video_tensor,)
+
+NODE_CLASS_MAPPINGS = {
+    "AIIA_EchoMimicLoader": AIIA_EchoMimicLoader,
+    "AIIA_EchoMimicSampler": AIIA_EchoMimicSampler,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIIA_EchoMimicLoader": "EchoMimic V3 Loader",
+    "AIIA_EchoMimicSampler": "EchoMimic V3 Sampler",
+}
