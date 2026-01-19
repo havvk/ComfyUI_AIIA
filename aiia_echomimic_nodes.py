@@ -12,6 +12,7 @@ import torchaudio
 
 # Configure Logging
 logger = logging.getLogger("ComfyUI_AIIA_EchoMimic")
+import torchvision.transforms.functional as TF
 
 # --- Path Setup ---
 current_file_path = os.path.abspath(__file__)
