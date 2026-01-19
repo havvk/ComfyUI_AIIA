@@ -431,6 +431,31 @@ class AIIA_EchoMimicSampler:
         log_vram("Before Loop")
         log_model_devices(pipeline)
 
+        # Progress Bar Setup
+        from comfy.utils import ProgressBar
+        
+        # Calculate total chunks to initialize progress bar correctly
+        total_chunks = 0
+        temp_init_frames = 0
+        while temp_init_frames < video_length:
+            chunk_len = partial_video_length
+            if temp_init_frames + chunk_len >= video_length:
+                chunk_len = video_length - temp_init_frames
+                chunk_len = (int((chunk_len - 1) // temporal_compression_ratio * temporal_compression_ratio) + 1 if chunk_len != 1 else 1)
+                if chunk_len <= 0: break
+            
+            total_chunks += 1
+            if temp_init_frames == 0:
+                temp_init_frames += chunk_len
+            else:
+                temp_init_frames += (chunk_len - overlap_video_length)
+                
+        total_steps = total_chunks * steps
+        pbar = ProgressBar(total_steps)
+        
+        def progress_callback(pipe, step_index, timestep, callback_kwargs):
+            pbar.update(1)
+
         # Pre-encode text prompts (Fix for speed)
         print(f"[{self.NODE_NAME}] Encoding text prompts...")
         
@@ -545,6 +570,7 @@ class AIIA_EchoMimicSampler:
                     cfg_skip_ratio=0, # default from config
                     shift=5.0, # default from config
                     use_longvideo_cfg=False, # default
+                    callback_on_step_end=progress_callback,
                 ).videos
             
             # Blending Logic
