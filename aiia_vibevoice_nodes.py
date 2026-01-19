@@ -396,7 +396,8 @@ class AIIA_VibeVoice_TTS:
                             # Call sox
                             # tempo command: changes speed without pitch
                             # -q: quiet
-                            cmd = ["sox", "-q", in_path, out_path, "tempo", str(speed)]
+                            # -s: use sequence search (better quality for speech)
+                            cmd = ["sox", "-q", in_path, out_path, "tempo", "-s", str(speed)]
                             subprocess.run(cmd, check=True)
                             print(f"[AIIA] Applied time stretch: speed={speed}x (pitch preserved)")
                             
