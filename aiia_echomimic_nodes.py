@@ -204,14 +204,21 @@ class AIIA_EchoMimicLoader:
             clip_image_encoder=clip_image_encoder,
         )
         
-        pipeline.to(device)
+        # Enable generic CPU offload to save VRAM
+        # This moves models to CPU and only loads them to GPU when needed (forward pass)
+        try:
+            pipeline.enable_model_cpu_offload(device=device)
+            print(f"[{self.NODE_NAME}] Enabled model CPU offload.")
+        except Exception as e:
+            print(f"[{self.NODE_NAME}] Failed to enable CPU offload, falling back to .to(device): {e}")
+            pipeline.to(device)
 
         pipe_data = {
             "pipeline": pipeline,
             "device": device,
             "weight_dtype": weight_dtype,
             "wav2vec_processor": wav2vec_processor,
-            "wav2vec_model": wav2vec_model,
+            "wav2vec_model": wav2vec_model, # Keep on CPU, move to device only when needed
         }
         
         print(f"[{self.NODE_NAME}] Models loaded successfully.")
@@ -278,10 +285,16 @@ class AIIA_EchoMimicSampler:
         audio_input = audio_waveform_16k.squeeze().cpu().numpy()
         
         # Wav2Vec Extraction
-        input_values = wav2vec_processor(audio_input, sampling_rate=16000, return_tensors="pt").input_values
-        with torch.no_grad():
-            audio_features = wav2vec_model(input_values.to(device)).last_hidden_state
-        audio_embeds = audio_features # (1, T_audio, D)
+        # Move wav2vec to device for inference then back to CPU
+        wav2vec_model.to(device)
+        try:
+            input_values = wav2vec_processor(audio_input, sampling_rate=16000, return_tensors="pt").input_values
+            with torch.no_grad():
+                audio_features = wav2vec_model(input_values.to(device)).last_hidden_state
+            audio_embeds = audio_features # (1, T_audio, D)
+        finally:
+            wav2vec_model.to("cpu")
+            torch.cuda.empty_cache()
 
         # 3. Setup Video Params
         duration_sec = len(audio_input) / 16000
