@@ -60,41 +60,104 @@ def main():
     cfg = OmegaConf.load(config_path)
     
     # 2. Paths
-    model_root = os.path.join(folder_paths.models_dir, ECHOMIMIC_MODELS_DIR, "Wan2.1-Fun-V1.1-1.3B-InP")
-    if not os.path.exists(model_root):
-        model_root = os.path.join(folder_paths.models_dir, ECHOMIMIC_MODELS_DIR, "EchoMimicV3")
-        
-    print(f"Model Root: {model_root}")
+    models_base = os.path.join(folder_paths.models_dir, ECHOMIMIC_MODELS_DIR)
+    
+    # Specific paths based on 'ls -R' output from server
+    echomimic_root = os.path.join(models_base, "EchoMimicV3")
+    wan_root = os.path.join(models_base, "Wan2.1-Fun-V1.1-1.3B-InP")
+    
+    print(f"EchoMimic Root: {echomimic_root}")
+    print(f"Wan Root: {wan_root}")
 
     # 3. Load Models
     print("Loading Transformer...")
+    # Transformer is explicitly in EchoMimicV3/transformer
+    transformer_path = os.path.join(echomimic_root, "transformer")
+    if not os.path.exists(transformer_path):
+        # Fallback to wan_root if EchoMimic specific transformer is missing, 
+        # but usually we want the finetuned one.
+        transformer_path = wan_root
+        print(f"Warning: Using Wan root for transformer: {transformer_path}")
+    
     transformer = WanTransformerAudioMask3DModel.from_pretrained(
-        os.path.join(model_root, "transformer"),
+        transformer_path,
         transformer_additional_kwargs=OmegaConf.to_container(cfg['transformer_additional_kwargs']),
         torch_dtype=torch.float32, # Load as float32 then move/cast
         low_cpu_mem_usage=True
     ).to("cpu").to(DTYPE) # Keep on CPU first
     
     print("Loading VAE...")
+    # VAE is in Wan2.1 folder
     vae = AutoencoderKLWan.from_pretrained(
-        os.path.join(model_root, "Wan2.1_VAE.pth"),
+        os.path.join(wan_root, "Wan2.1_VAE.pth"),
         additional_kwargs=OmegaConf.to_container(cfg['vae_kwargs']),
     ).to(dtype=torch.float32, device="cpu") # VAE on CPU initially
 
     print("Loading Tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(os.path.join(model_root, "google/umt5-xxl"))
+    tokenizer = AutoTokenizer.from_pretrained(os.path.join(wan_root, "google/umt5-xxl"))
 
     print("Loading Text Encoder...")
+    # Matches node logic: searches 'text_encoder' subpath, or fallback to root if explicit?
+    # cfg default is 'text_encoder'. In Wan root, do we have 'text_encoder'?
+    # ls says: models_t5_umt5-xxl-enc-bf16.pth exists. 
+    # Wait, the node uses 'text_encoder' subpath. 
+    # Let's check if 'text_encoder' folder exists in Wan root.
+    # ls output: /app/ComfyUI/models/EchoMimicV3/Wan2.1-Fun-V1.1-1.3B-InP/google/umt5-xxl exists.
+    # But usually T5 is a folder.
+    # The config might point to 'google/umt5-xxl' or similar?
+    # Actually, let's look at the config.yaml defaults in node code or infer.py if we can.
+    # But simpler: The node seemed to load it. 
+    # Let's try loading from 'google/umt5-xxl' inside Wan root for the model too?
+    # Or maybe 'models_t5_umt5-xxl-enc-bf16.pth' is the weights?
+    # WanT5EncoderModel.from_pretrained usually takes a directory.
+    # Let's guess it's 'google/umt5-xxl' for both tokenizer and model if not specified otherwise.
+    # OR, the 'text_encoder' might be mapped in the code.
+    # Let's try pointing to Wan Root + 'google/umt5-xxl' effectively?
+    # Actually the node code checks `text_encoder_subpath` from config.
+    # If standard config, it might be just `text_encoder`.
+    # Does `Wan.../text_encoder` exist? NO.
+    # Does `EchoMimicV3/text_encoder` exist? NO.
+    # Wait, where is the text encoder?
+    # ls: `models_t5_umt5-xxl-enc-bf16.pth` in Wan root.
+    # Maybe WanT5EncoderModel handles a single file?
+    # Let's assume the node successfully loaded it, so `get_component_path` found *something*.
+    # If the standard node worked before, it found it.
+    # Let's assume it might be falling back to `google/umt5-xxl`?
+    # Let's use `wan_root` as base and hope `WanT5EncoderModel` finds the weights there or in subfolder.
+    # Actually, let's try to load from `wan_root` directly if standard names are there?
+    # NOTE: The manual test script failed on Transformer, so we haven't reached Text Encoder yet.
+    # Let's try `wan_root` for text encoder path or `os.path.join(wan_root, "google/umt5-xxl")`
+    
+    # Safe bet based on file listing:
+    text_encoder_path = os.path.join(wan_root, "google/umt5-xxl") 
+    # But that folder only has tokenizer files?
+    # `models_t5_umt5-xxl-enc-bf16.pth` is at root.
+    # Maybe `WanT5EncoderModel` loads that specific pth file?
+    # Providing the Wan root might be best.
+    
+    # Correction: The node does: `text_encoder_subpath = cfg...get(..., 'text_encoder')`.
+    # If `text_encoder` folder doesn't exist, `get_component_path` would fail IF it was required.
+    # But it WAS required. So the node must have found it.
+    # Maybe I missed a folder in `ls`?
+    # `ls` showed: `Wan2.1.../models_t5_umt5-xxl-enc-bf16.pth`.
+    # Maybe `text_encoder_subpath` in the deployed config is something else?
+    # Or I should just try loading from `wan_root` and see.
+    
     text_encoder = WanT5EncoderModel.from_pretrained(
-        os.path.join(model_root, "text_encoder"),
+        wan_root, # Try root
+        subfolder="google/umt5-xxl", # Try this? No from_pretrained usually takes path.
         additional_kwargs=OmegaConf.to_container(cfg['text_encoder_kwargs']),
         torch_dtype=DTYPE,
         low_cpu_mem_usage=True
     ).to(dtype=DTYPE, device="cpu").eval()
 
     print("Loading Image Encoder...")
+    # Listing showed `xlm-roberta-large` folder in Wan root
+    # and `models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth`.
     clip_image_encoder = CLIPModel.from_pretrained(
-        os.path.join(model_root, "image_encoder")
+        wan_root, # Base path?
+        # subfolder="xlm-roberta-large"? 
+        # The Custom CLIPModel probably handles the specifics.
     ).to(dtype=DTYPE, device="cpu").eval()
     
     print("Loading Scheduler...")
