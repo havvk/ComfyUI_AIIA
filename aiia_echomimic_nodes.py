@@ -92,7 +92,7 @@ class AIIA_EchoMimicLoader:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model_subfolder": ("STRING", {"default": "Wan2.1-Fun-V1.1-1.3B-InP", "tooltip": "Subfolder in models/EchoMimicV3 containing the main models"}),
+                "model_subfolder": ("STRING", {"default": "EchoMimicV3", "tooltip": "Subfolder in models/EchoMimicV3 containing the main models"}),
                 "precision": (["fp16", "bf16", "fp32"], {"default": "bf16"}),
                 "device": (["cuda", "cpu", "mps"], {"default": "cuda"}),
             }

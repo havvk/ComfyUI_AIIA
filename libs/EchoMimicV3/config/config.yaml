@@ -1,7 +1,7 @@
 format: civitai
 pipeline: Wan
 transformer_additional_kwargs:
-  transformer_subpath: ./
+  transformer_subpath: transformer
   dict_mapping:
     in_dim: in_channels
     dim: hidden_size

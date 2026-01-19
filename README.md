@@ -247,13 +247,13 @@ ComfyUI/models/EchoMimicV3/
 ```
 
 **下载地址**:
-1. **主模型 (Wan2.1-Fun-V1.1-1.3B-InP)**:
-   - HuggingFace: [alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP](https://huggingface.co/alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP)
+1. **主模型 (EchoMimicV3)**:
+   - HuggingFace: [BadToBest/EchoMimicV3](https://huggingface.co/BadToBest/EchoMimicV3)
    - **下载命令 (推荐)**:
      ```bash
-     hf download alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP --local-dir models/EchoMimicV3/Wan2.1-Fun-V1.1-1.3B-InP
+     hf download BadToBest/EchoMimicV3 --local-dir models/EchoMimicV3/EchoMimicV3
      ```
-   - *注意：目前代码默认寻找 `Wan2.1-Fun-V1.1-1.3B-InP` 文件夹。*
+   - *注意：请务必下载此 EchoMimic V3 专用模型，而非 Wan2.1 原版模型（原版缺少音频层权重）。*
 
 2. **音频编码器 (wav2vec2-base-960h)**:
    - HuggingFace: [facebook/wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h)
