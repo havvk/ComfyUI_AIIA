@@ -460,8 +460,7 @@ class AIIA_EchoMimicSampler:
             pipeline.transformer.to(device)
         if hasattr(pipeline, "vae") and pipeline.vae is not None:
             pipeline.vae.to(device)
-        if hasattr(pipeline, "clip_image_encoder") and pipeline.clip_image_encoder is not None:
-            pipeline.clip_image_encoder.to(device)
+        # CLIP Image Encoder is moved to GPU only when needed, inside the loop
             
         log_vram(f"[{self.NODE_NAME}] Ready for Generation")
 
@@ -485,6 +484,27 @@ class AIIA_EchoMimicSampler:
                 sample_size=[sample_height, sample_width]
             )
             
+            # Pre-compute CLIP Context (Optimized Device Management)
+            clip_context = None
+            if hasattr(pipeline, "clip_image_encoder") and pipeline.clip_image_encoder is not None:
+                print(f"[{self.NODE_NAME}] Computing CLIP Context (Moving Encoder to GPU)...")
+                pipeline.clip_image_encoder.to(device)
+                
+                # Logic copied from pipeline
+                if clip_image is not None:
+                     # clip_image from get_image_to_video_latent3 is PIL or Tensor?
+                     # get_image_to_video_latent3 returns PIL Image usually for clip_image
+                     # pipeline expects PIL Image
+                     clip_image_t = TF.to_tensor(clip_image).sub_(0.5).div_(0.5).to(device, dtype=dtype)
+                     clip_context = pipeline.clip_image_encoder([clip_image_t[:, None, :, :]])
+                else:
+                     clip_image_t = TF.to_tensor(Image.new("RGB", (512, 512))).sub_(0.5).div_(0.5).to(device, dtype=dtype)
+                     clip_context = pipeline.clip_image_encoder([clip_image_t[:, None, :, :]])
+                     clip_context = torch.zeros_like(clip_context)
+
+                pipeline.clip_image_encoder.to("cpu")
+                torch.cuda.empty_cache()
+            
             # Slice audio embeds
             partial_audio_embeds = audio_embeds[:, init_frames * 2 : (init_frames + current_partial_video_length) * 2]
 
@@ -505,6 +525,7 @@ class AIIA_EchoMimicSampler:
                     height=sample_height,
                     width=sample_width,
                     generator=generator,
+                    clip_context=clip_context, # Pass pre-computed context
                     neg_scale=1.5,
                     neg_steps=2,
                     use_dynamic_cfg=True,
