@@ -83,7 +83,15 @@
 - **强烈建议**将 FFmpeg 的 `bin` 目录添加到您系统的 `PATH` 环境变量中。
 - 在终端中运行 `ffmpeg -version` 和 `ffprobe -version` 来验证安装。
 
-### 2. 安装 NeMo 模型 (音频AI节点必须)
+### 2. 安装 SoX (VibeVoice 变速不变调必须)
+
+VibeVoice 节点的 `speed` 参数依赖系统级 `sox` 命令。
+
+- **Ubuntu/Debian**: `sudo apt-get update && sudo apt-get install -y libsox-dev sox`
+- **macOS**: `brew install sox`
+- **Windows**: 下载 [SoX 编译版](https://sourceforge.net/projects/sox/files/sox/) 并将目录添加到 `PATH`。
+
+### 3. 安装 NeMo 模型 (音频AI节点必须)
 
 音频处理节点（如说话人日志）依赖 NeMo 模型。
 
@@ -860,6 +868,14 @@ B: 太神奇了！那我们快去生成试试吧！
 ---
 
 ## Changelog
+
+### [1.8.4] - 2026-01-19
+
+- **VibeVoice Speed Control**: 实现了基于系统 `sox` 命令的**变速不变调**（Time Stretching）。
+- **稳定性修复**: 
+    - 修复了 VibeVoice 在调整速度时由于张量类型不匹配（Half vs Float）导致的崩溃。
+    - 强制所有音频输出为 `float32`，解决了在 `speed=1.0` 且有参考音频时，下游节点（如 Resemble Enhance）报错的问题。
+- **依赖更新**: 新增 `sox` 依赖。Linux 服务器用户请确保安装系统库：`sudo apt-get install libsox-dev sox`。
 
 ### [1.8.3] - 2026-01-07
 
