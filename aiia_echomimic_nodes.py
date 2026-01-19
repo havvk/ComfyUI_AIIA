@@ -224,12 +224,13 @@ class AIIA_EchoMimicLoader:
         print(f"  VAE: {vae.device}")
         print(f"  Text Encoder: {text_encoder.device}")
         print(f"  Image Encoder: {clip_image_encoder.device}")
-        print(f"  Wav2Vec Model: {wav2vec_model.device}") # Add this line for wav2vec_model
         print(f"------------------------------------------")
         
         print(f"[{self.NODE_NAME}] Loading Audio Encoder from {wav2vec_path}...")
         wav2vec_processor = Wav2Vec2Processor.from_pretrained(wav2vec_path)
         wav2vec_model = Wav2Vec2Model.from_pretrained(wav2vec_path).to(dtype=weight_dtype, device="cpu").eval()
+        
+        print(f"[{self.NODE_NAME}]   Wav2Vec Model: {wav2vec_model.device}")
 
         # Pipeline Construction
         pipeline = WanFunInpaintAudioPipeline(
