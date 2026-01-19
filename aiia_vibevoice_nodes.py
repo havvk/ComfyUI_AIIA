@@ -359,11 +359,12 @@ class AIIA_VibeVoice_TTS:
                 if audio_out.ndim == 1: audio_out = audio_out.unsqueeze(0)
                 if audio_out.ndim == 3: audio_out = audio_out.squeeze(0)
                 
+                # Ensure float32 (Vital for downstream nodes like Resemble Enhance which fail on fp16)
+                audio_out = audio_out.float()
+
                 # Speed adj
                 if speed != 1.0:
                     original_device = audio_out.device
-                    # Ensure float32
-                    audio_out = audio_out.float()
                     
                     # Try System 'sox' command for time stretching (pitch preservation)
                     # This is more robust than torchaudio.sox_effects which may be missing in some builds
