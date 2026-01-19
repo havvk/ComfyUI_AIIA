@@ -311,6 +311,19 @@ class AIIA_GenerateSpeakerSegments:
                      print(f"警告: [{self.NODE_NAME}] 最终未能获取任何说话人分段。")
                 
                 output_data_structure = {"text": "", "chunks": speaker_segments_for_json_chunks, "language": ""}
+                
+                # Cleanup: Move model to CPU and delete
+                try:
+                    if 'diar_model' in locals() and diar_model is not None:
+                        print(f"{node_name_log} Cleaning up NeMo model (Moving to CPU)...")
+                        diar_model.to("cpu")
+                        if hasattr(diar_model, 'encoder'): diar_model.encoder.to("cpu")
+                        if hasattr(diar_model, 'decoder'): diar_model.decoder.to("cpu")
+                        del diar_model
+                    torch.cuda.empty_cache()
+                except Exception as cleanup_err:
+                    print(f"Warning: Cleanup failed: {cleanup_err}")
+
                 print(f"{node_name_log} 流程结束。")
                 return (output_data_structure,)
 
