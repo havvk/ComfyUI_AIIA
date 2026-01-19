@@ -1328,15 +1328,15 @@ class WanTransformerAudioMask3DModel(ModelMixin, ConfigMixin, FromOriginalModelM
         if self.teacache is not None:
             if cond_flag:
                 modulated_inp = e0
-                skip_flag = self.teacache.cnt < self.teacache.num_skip_start_steps
                 if skip_flag:
                     should_calc = True
                     self.teacache.accumulated_rel_l1_distance = 0
                 else:
-                    if cond_flag:
+                    if cond_flag and self.teacache.previous_modulated_input is not None:
                         rel_l1_distance = self.teacache.compute_rel_l1_distance(self.teacache.previous_modulated_input, modulated_inp)
                         self.teacache.accumulated_rel_l1_distance += self.teacache.rescale_func(rel_l1_distance)
-                    if self.teacache.accumulated_rel_l1_distance < self.teacache.rel_l1_thresh:
+                    
+                    if self.teacache.previous_modulated_input is not None and self.teacache.accumulated_rel_l1_distance < self.teacache.rel_l1_thresh:
                         should_calc = False
                     else:
                         should_calc = True
