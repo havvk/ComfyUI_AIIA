@@ -448,6 +448,19 @@ class AIIA_EchoMimicSampler:
         )
         print(f"[{self.NODE_NAME}] Text prompts encoded.")
 
+        # Aggressive memory cleanup: DELETE Text Encoder (10GB) as it is no longer needed
+        # This fixes the "Too Slow" issue caused by VRAM swapping
+        if hasattr(pipeline, "text_encoder"):
+             del pipeline.text_encoder
+             pipeline.text_encoder = None
+        if hasattr(pipeline, "tokenizer"):
+             del pipeline.tokenizer
+             pipeline.tokenizer = None
+        
+        gc.collect()
+        torch.cuda.empty_cache()
+        log_vram(f"[{self.NODE_NAME}] After Deleting T5 Encoder")
+
         # Aggressive memory cleanup
         print(f"[{self.NODE_NAME}] Cleaning up VRAM before generation...")
         try:
