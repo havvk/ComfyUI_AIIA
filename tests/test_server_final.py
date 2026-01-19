@@ -200,7 +200,12 @@ def main():
     print("Encoding Prompt...")
     pipeline.text_encoder.to(DEVICE)
     prompt_embeds, negative_prompt_embeds = pipeline.encode_prompt(
-        "a talking head video", "bad quality", True, 1, 512, device=DEVICE
+        prompt="a talking head video", 
+        negative_prompt="bad quality", 
+        do_classifier_free_guidance=True, 
+        num_videos_per_prompt=1, 
+        max_sequence_length=512, 
+        device=DEVICE
     )
     pipeline.text_encoder.to("cpu")
     torch.cuda.empty_cache()
