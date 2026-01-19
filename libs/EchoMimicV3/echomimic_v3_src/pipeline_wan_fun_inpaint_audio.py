@@ -366,7 +366,8 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
             # mask = mask * self.vae.config.scaling_factor
 
         if masked_image is not None:
-            masked_image = masked_image.to(device=device, dtype=self.vae.dtype)
+            # Move inputs to VAE device (likely CPU)
+            masked_image = masked_image.to(device=self.vae.device, dtype=self.vae.dtype)
             bs = 1
             new_mask_pixel_values = []
             for i in range(0, masked_image.shape[0], bs):
@@ -376,6 +377,9 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
                 new_mask_pixel_values.append(mask_pixel_values_bs)
             masked_image_latents = torch.cat(new_mask_pixel_values, dim = 0)
             # masked_image_latents = masked_image_latents * self.vae.config.scaling_factor
+            
+            # Move latents back to execution device (GPU) if VAE was on CPU
+            masked_image_latents = masked_image_latents.to(device)
         else:
             masked_image_latents = None
 
