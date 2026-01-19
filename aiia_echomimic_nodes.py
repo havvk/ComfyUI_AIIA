@@ -463,10 +463,8 @@ class AIIA_EchoMimicSampler:
         if hasattr(pipeline, "transformer") and pipeline.transformer is not None:
             pipeline.transformer.to(device)
             
-        # VAE stays on CPU to avoid 'slow_conv3d' issues on CUDA and save VRAM.
-        # Ensure it is explicitly on CPU.
         if hasattr(pipeline, "vae") and pipeline.vae is not None:
-            pipeline.vae.to("cpu")
+            pipeline.vae.to(device)
             
         # CLIP Image Encoder is moved to GPU only when needed, inside the loop
             
