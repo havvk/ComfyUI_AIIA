@@ -679,14 +679,15 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
 
 
         # Prepare clip latent variables
-        if clip_image is not None:
-            clip_image = TF.to_tensor(clip_image).sub_(0.5).div_(0.5).to(device, weight_dtype) 
-            clip_context = self.clip_image_encoder([clip_image[:, None, :, :]])
-        else:
-            clip_image = Image.new("RGB", (512, 512), color=(0, 0, 0))  
-            clip_image = TF.to_tensor(clip_image).sub_(0.5).div_(0.5).to(device, weight_dtype) 
-            clip_context = self.clip_image_encoder([clip_image[:, None, :, :]])
-            clip_context = torch.zeros_like(clip_context)
+        if clip_context is None and self.clip_image_encoder is not None:
+             if clip_image is not None:
+                 clip_image = TF.to_tensor(clip_image).sub_(0.5).div_(0.5).to(device, weight_dtype) 
+                 clip_context = self.clip_image_encoder([clip_image[:, None, :, :]])
+             else:
+                 clip_image = Image.new("RGB", (512, 512), color=(0, 0, 0))  
+                 clip_image = TF.to_tensor(clip_image).sub_(0.5).div_(0.5).to(device, weight_dtype) 
+                 clip_context = self.clip_image_encoder([clip_image[:, None, :, :]])
+                 clip_context = torch.zeros_like(clip_context)
         if comfyui_progressbar:
             pbar.update(1)
 
