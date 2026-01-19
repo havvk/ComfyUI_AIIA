@@ -34,6 +34,7 @@ if ECHOMIMIC_AVAILABLE:
         from omegaconf import OmegaConf
         from transformers import AutoTokenizer, Wav2Vec2Model, Wav2Vec2Processor
         from diffusers import FlowMatchEulerDiscreteScheduler
+        from echomimic_v3_src.fm_solvers import FlowDPMSolverMultistepScheduler
         
         # EchoMimic Internal Modules
         from echomimic_v3_src.wan_vae import AutoencoderKLWan
@@ -115,41 +116,72 @@ class AIIA_EchoMimicLoader:
 
         print(f"[{self.NODE_NAME}] Loading EchoMimicV3 models from {model_root} ({precision})...")
         
-        # Load Config (Assume logic similar to infer.py but dynamic)
-        # We assume standard structure inside model_root
+        # Load Config
+        config_path = os.path.join(echomimic_v3_root, "config", "config.yaml")
+        if not os.path.exists(config_path):
+             raise FileNotFoundError(f"Config file not found at {config_path}")
         
+        cfg = OmegaConf.load(config_path)
+
         # Transformer
         print(f"[{self.NODE_NAME}] Loading Transformer...")
+        transformer_subpath = cfg['transformer_additional_kwargs'].get('transformer_subpath', 'transformer')
+        # If subpath is ./, join with empty string or just use model_root. 
+        # os.path.join(root, "./") is root/.
+        transformer_path = os.path.join(model_root, transformer_subpath)
+        
         transformer = WanTransformerAudioMask3DModel.from_pretrained(
-            os.path.join(model_root, "transformer"),
+            transformer_path,
+            transformer_additional_kwargs=OmegaConf.to_container(cfg['transformer_additional_kwargs']),
             torch_dtype=weight_dtype
         )
 
         # VAE
         print(f"[{self.NODE_NAME}] Loading VAE...")
+        vae_subpath = cfg['vae_kwargs'].get('vae_subpath', 'vae')
         vae = AutoencoderKLWan.from_pretrained(
-            os.path.join(model_root, "vae")
+            os.path.join(model_root, vae_subpath),
+            additional_kwargs=OmegaConf.to_container(cfg['vae_kwargs']),
         ).to(dtype=weight_dtype)
 
-        # Tokenizer & Text Encoder
+        # Tokenizer
+        print(f"[{self.NODE_NAME}] Loading Tokenizer...")
+        tokenizer_subpath = cfg['text_encoder_kwargs'].get('tokenizer_subpath', 'tokenizer')
+        tokenizer = AutoTokenizer.from_pretrained(os.path.join(model_root, tokenizer_subpath))
+        
+        # Text Encoder
         print(f"[{self.NODE_NAME}] Loading Text Encoder...")
-        tokenizer = AutoTokenizer.from_pretrained(os.path.join(model_root, "tokenizer"))
+        text_encoder_subpath = cfg['text_encoder_kwargs'].get('text_encoder_subpath', 'text_encoder')
         text_encoder = WanT5EncoderModel.from_pretrained(
-            os.path.join(model_root, "text_encoder"),
+            os.path.join(model_root, text_encoder_subpath),
+            additional_kwargs=OmegaConf.to_container(cfg['text_encoder_kwargs']),
             torch_dtype=weight_dtype
         ).eval()
 
         # Image Encoder
         print(f"[{self.NODE_NAME}] Loading Image Encoder...")
+        image_encoder_subpath = cfg['image_encoder_kwargs'].get('image_encoder_subpath', 'image_encoder')
         clip_image_encoder = CLIPModel.from_pretrained(
-            os.path.join(model_root, "image_encoder")
+            os.path.join(model_root, image_encoder_subpath)
         ).to(dtype=weight_dtype).eval()
 
         # Scheduler
         print(f"[{self.NODE_NAME}] Loading Scheduler...")
-        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
-            model_root, subfolder="scheduler"
-        )
+        scheduler_kwargs = OmegaConf.to_container(cfg['scheduler_kwargs'])
+        # infer.py uses a dict mapping for scheduler class selection.
+        # "Flow" -> FlowMatchEulerDiscreteScheduler
+        # "Flow_Unipc" -> FlowUniPCMultistepScheduler
+        # "Flow_DPM++" -> FlowDPMSolverMultistepScheduler
+        # We'll default to FlowMatchEulerDiscreteScheduler or allow selection TODO.
+        # For now, let's use FlowMatchEulerDiscreteScheduler as base or check config/defaults.
+        # infer.py defaults to "Flow" in Config class, but app.py uses "Flow_DPM++".
+        # Let's use FlowMatchEulerDiscreteScheduler (Flow) as safe default, or DPM++ if preferred.
+        # Let's try to infer or just use FlowDPMSolverMultistepScheduler as it seems better.
+        # Actually, let's look at `libs/EchoMimicV3/echomimic_v3_src/fm_solvers.py` availablity.
+        # For now, we stick to FlowMatchEulerDiscreteScheduler as commonly imported, or better:
+        from echomimic_v3_src.fm_solvers import FlowDPMSolverMultistepScheduler
+        scheduler = FlowDPMSolverMultistepScheduler(**filter_kwargs(FlowDPMSolverMultistepScheduler, scheduler_kwargs))
+
 
         # Wav2Vec (Assume it's in a separate standard folder or specified)
         # For now, we expect it to be in 'models/EchoMimicV3/wav2vec2-base-960h' or similar
