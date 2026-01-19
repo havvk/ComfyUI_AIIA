@@ -279,7 +279,8 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
             batch_size = len(prompt)
         else:
             if isinstance(prompt_embeds, list):
-                 batch_size = prompt_embeds[0].shape[0]
+                 # Fix: Batch size is the list length (number of videos), NOT the first tensor's length (sequence length!)
+                 batch_size = len(prompt_embeds)
             else:
                  batch_size = prompt_embeds.shape[0]
 
