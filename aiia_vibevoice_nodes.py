@@ -459,6 +459,14 @@ class AIIA_VibeVoice_TTS:
                 except Exception as e:
                     print(f"[AIIA WARNING] Failed to trim audio: {e}")
 
+                # Cleanup: Move model back to CPU to release VRAM
+                try:
+                    model.to("cpu")
+                    if hasattr(model, "model") and hasattr(model.model, "to"): 
+                         model.model.to("cpu") 
+                    torch.cuda.empty_cache()
+                except: pass
+
                 return ({"waveform": audio_out.cpu(), "sample_rate": 24000},)
 
         except Exception as e:
