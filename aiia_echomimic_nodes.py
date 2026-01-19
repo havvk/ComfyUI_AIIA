@@ -243,20 +243,12 @@ class AIIA_EchoMimicLoader:
             clip_image_encoder=clip_image_encoder,
         )
         
-        # Enable sequential CPU offload to strictly save VRAM
-        # This moves models to GPU only when needed and aggressively offloads them
-        try:
-            # enable_sequential_cpu_offload requires 'accelerate'
-            pipeline.enable_sequential_cpu_offload(device=device)
-            print(f"[{self.NODE_NAME}] Enabled sequential CPU offload.")
-        except Exception as e:
-            print(f"[{self.NODE_NAME}] Failed to enable sequential CPU offload, trying model_cpu_offload: {e}")
-            try:
-                pipeline.enable_model_cpu_offload(device=device)
-                print(f"[{self.NODE_NAME}] Enabled model CPU offload.")
-            except Exception as e2:
-                print(f"[{self.NODE_NAME}] Failed to enable CPU offload, falling back to .to(device): {e2}")
-                pipeline.to(device)
+        # Manual Device Management: Load everything on CPU.
+        # We will manually move models to GPU in the Sampler node to optimize VRAM usage.
+        pipeline.to("cpu")
+        
+        gc.collect()
+        torch.cuda.empty_cache()
         
         gc.collect()
         torch.cuda.empty_cache()
@@ -437,6 +429,11 @@ class AIIA_EchoMimicSampler:
 
         # Pre-encode text prompts (Fix for speed)
         print(f"[{self.NODE_NAME}] Encoding text prompts...")
+        
+        # Manual Device Management: Move Text Encoder to GPU for encoding
+        if hasattr(pipeline, "text_encoder") and pipeline.text_encoder is not None:
+             pipeline.text_encoder.to(device)
+        
         do_classifier_free_guidance = cfg > 1.0
         prompt_embeds, negative_prompt_embeds = pipeline.encode_prompt(
             prompt,
@@ -448,30 +445,25 @@ class AIIA_EchoMimicSampler:
         )
         print(f"[{self.NODE_NAME}] Text prompts encoded.")
 
-        # Aggressive memory cleanup: DELETE Text Encoder (10GB) as it is no longer needed
-        # This fixes the "Too Slow" issue caused by VRAM swapping
-        if hasattr(pipeline, "text_encoder"):
-             del pipeline.text_encoder
-             pipeline.text_encoder = None
-        if hasattr(pipeline, "tokenizer"):
-             del pipeline.tokenizer
-             pipeline.tokenizer = None
+        # Aggressive memory cleanup: Move Text Encoder BACK TO CPU
+        # This frees VRAM but keeps the model available for next run (unlike deleting it)
+        if hasattr(pipeline, "text_encoder") and pipeline.text_encoder is not None:
+             pipeline.text_encoder.to("cpu")
         
         gc.collect()
         torch.cuda.empty_cache()
-        log_vram(f"[{self.NODE_NAME}] After Deleting T5 Encoder")
+        log_vram(f"[{self.NODE_NAME}] After Moving T5 to CPU")
 
-        # Aggressive memory cleanup
-        print(f"[{self.NODE_NAME}] Cleaning up VRAM before generation...")
-        try:
-            mm.unload_all_models()
-            print(f"[{self.NODE_NAME}] Triggered mm.unload_all_models().")
-        except:
-            pass
-        mm.soft_empty_cache()
-        gc.collect()
-        torch.cuda.empty_cache()
-        log_vram(f"[{self.NODE_NAME}] Process Start (After Cleanup)")
+        # Move Generation Models to GPU
+        print(f"[{self.NODE_NAME}] Moving models to GPU for generation...")
+        if hasattr(pipeline, "transformer") and pipeline.transformer is not None:
+            pipeline.transformer.to(device)
+        if hasattr(pipeline, "vae") and pipeline.vae is not None:
+            pipeline.vae.to(device)
+        if hasattr(pipeline, "clip_image_encoder") and pipeline.clip_image_encoder is not None:
+            pipeline.clip_image_encoder.to(device)
+            
+        log_vram(f"[{self.NODE_NAME}] Ready for Generation")
 
         while init_frames < video_length:
             current_partial_video_length = partial_video_length
