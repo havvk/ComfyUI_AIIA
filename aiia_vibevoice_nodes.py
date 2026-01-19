@@ -391,6 +391,7 @@ class AIIA_VibeVoice_TTS:
                             # -q: quiet
                             cmd = ["sox", "-q", in_path, out_path, "tempo", str(speed)]
                             subprocess.run(cmd, check=True)
+                            print(f"[AIIA] Applied time stretch: speed={speed}x (pitch preserved)")
                             
                             # Read back
                             out_wav, out_sr = sf.read(out_path)
