@@ -53,6 +53,7 @@ def get_ip_mask(coords):
 
 def main():
     print(f"=== Starting EchoMimicV3 SERVER FIX Test (Fresh File) ===")
+    print("VERSION: 3 (Explicit .pth paths)")
     print(f"Device: {DEVICE}, DType: {DTYPE}")
     
     # 1. Load Config
