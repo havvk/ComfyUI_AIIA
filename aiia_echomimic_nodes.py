@@ -380,6 +380,7 @@ class AIIA_EchoMimicSampler:
             x1 * downratio // 16, x2 * downratio // 16,
             sample_height // 16, sample_width // 16,
         )
+        ip_mask = get_ip_mask(coords).unsqueeze(0)
         ip_mask = torch.cat([ip_mask]*3).to(device=device, dtype=dtype)
         
         # Generator on CPU to avoid device mismatch. 
