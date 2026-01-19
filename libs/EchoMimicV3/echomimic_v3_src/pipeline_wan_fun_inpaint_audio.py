@@ -576,6 +576,8 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
             weight_dtype = self.text_encoder.dtype
         elif hasattr(self, "transformer") and self.transformer is not None:
              weight_dtype = self.transformer.dtype
+             # If transformer is present, trust its device over _execution_device (which might follow cpu text_encoder)
+             device = self.transformer.device
         else:
              weight_dtype = torch.float16
 
@@ -737,12 +739,16 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
                     if hasattr(self.scheduler, "scale_model_input"):
                         latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
-                    if init_video is not None:
-                        mask_input = torch.cat([mask_latents] * 3) if do_classifier_free_guidance else mask_latents
-                        masked_video_latents_input = (
-                            torch.cat([masked_video_latents] * 3) if do_classifier_free_guidance else masked_video_latents
-                        )
-                        y = torch.cat([mask_input, masked_video_latents_input], dim=1).to(device, weight_dtype) 
+                        if init_video is not None:
+                            mask_input = torch.cat([mask_latents] * 3) if do_classifier_free_guidance else mask_latents
+                            masked_video_latents_input = (
+                                torch.cat([masked_video_latents] * 3) if do_classifier_free_guidance else masked_video_latents
+                            )
+                            # Ensure both are on the same device (likely latents.device which is GPU)
+                            target_device = latents.device
+                            mask_input = mask_input.to(target_device)
+                            masked_video_latents_input = masked_video_latents_input.to(target_device)
+                            y = torch.cat([mask_input, masked_video_latents_input], dim=1).to(device, weight_dtype) 
 
                     clip_context_input = (
                         torch.cat([clip_context] * 3) if do_classifier_free_guidance else clip_context
