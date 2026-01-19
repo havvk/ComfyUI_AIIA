@@ -192,7 +192,7 @@ class AIIA_EchoMimicLoader:
         
         print(f"[{self.NODE_NAME}] Loading Audio Encoder from {wav2vec_path}...")
         wav2vec_processor = Wav2Vec2Processor.from_pretrained(wav2vec_path)
-        wav2vec_model = Wav2Vec2Model.from_pretrained(wav2vec_path).eval()
+        wav2vec_model = Wav2Vec2Model.from_pretrained(wav2vec_path).to(dtype=weight_dtype).eval()
 
         # Pipeline Construction
         pipeline = WanFunInpaintAudioPipeline(
@@ -289,8 +289,10 @@ class AIIA_EchoMimicSampler:
         wav2vec_model.to(device)
         try:
             input_values = wav2vec_processor(audio_input, sampling_rate=16000, return_tensors="pt").input_values
+            # cast to same dtype as model weights (likely bf16)
+            input_values = input_values.to(device=device, dtype=wav2vec_model.dtype)
             with torch.no_grad():
-                audio_features = wav2vec_model(input_values.to(device)).last_hidden_state
+                audio_features = wav2vec_model(input_values).last_hidden_state
             audio_embeds = audio_features # (1, T_audio, D)
         finally:
             wav2vec_model.to("cpu")
