@@ -439,12 +439,18 @@ class AIIA_EchoMimicSampler:
         temp_init_frames = 0
         while temp_init_frames < video_length:
             chunk_len = partial_video_length
+            is_last_chunk = False
+            
             if temp_init_frames + chunk_len >= video_length:
                 chunk_len = video_length - temp_init_frames
                 chunk_len = (int((chunk_len - 1) // temporal_compression_ratio * temporal_compression_ratio) + 1 if chunk_len != 1 else 1)
+                is_last_chunk = True
                 if chunk_len <= 0: break
             
             total_chunks += 1
+            if is_last_chunk:
+                break
+                
             if temp_init_frames == 0:
                 temp_init_frames += chunk_len
             else:
