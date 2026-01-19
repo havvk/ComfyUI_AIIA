@@ -51,16 +51,6 @@ def _patched_decode_for_in_memory_stack(
             img_t_gpu_raw, _ = self_float_model.motion_autoencoder.dec(s_r_plus_motion, alpha=None, feats=s_r_feats)
             img_t_gpu_clamped = torch.clamp(img_t_gpu_raw, -1, 1) # 值域 [-1, 1]
 
-            # --- AIIA FIX: Top Edge Masking ---
-            mask_top_edge = getattr(self_float_model, '_aiia_mask_top_edge', 0)
-            if mask_top_edge > 0:
-                # img_t_gpu_clamped shape is (B, C, H, W), usually B=1
-                # Copy the first valid row (index = mask_top_edge) to the top area
-                # safe check to avoid index error if image is too small
-                if img_t_gpu_clamped.shape[-2] > mask_top_edge:
-                    img_t_gpu_clamped[..., :mask_top_edge, :] = img_t_gpu_clamped[..., mask_top_edge:mask_top_edge+1, :]
-            # ----------------------------------
-
             gpu_frame_buffer.append(img_t_gpu_clamped.squeeze(0) if B == 1 else img_t_gpu_clamped[0])
 
             if len(gpu_frame_buffer) >= FRAMES_PER_GPU_CHUNK or \
@@ -115,14 +105,6 @@ def _patched_decode_and_save_to_disk(
             s_r_plus_motion = s_r + current_motion_vector
             img_t_gpu_raw, _ = self_float_model.motion_autoencoder.dec(s_r_plus_motion, alpha=None, feats=s_r_feats)
             img_t_gpu_clamped = torch.clamp(img_t_gpu_raw, -1, 1)
-
-            # --- AIIA FIX: Top Edge Masking ---
-            mask_top_edge = getattr(self_float_model, '_aiia_mask_top_edge', 0)
-            if mask_top_edge > 0:
-                 if img_t_gpu_clamped.shape[-2] > mask_top_edge:
-                    img_t_gpu_clamped[..., :mask_top_edge, :] = img_t_gpu_clamped[..., mask_top_edge:mask_top_edge+1, :]
-            # ----------------------------------
-
             gpu_frame_buffer.append(img_t_gpu_clamped.squeeze(0) if B == 1 else img_t_gpu_clamped[0])
 
             if len(gpu_frame_buffer) >= FRAMES_PER_GPU_CHUNK_FOR_PROCESSING or \
@@ -169,7 +151,7 @@ class AIIA_FloatProcess_InMemory:
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"float_pipe": ("FLOAT_PIPE",),"ref_image": ("IMAGE",),"ref_audio": ("AUDIO",),"a_cfg_scale": ("FLOAT", {"default": 2.0,"min": 0.0, "max": 10.0, "step": 0.1}),"r_cfg_scale": ("FLOAT", {"default": 1.0,"min": 0.0, "max": 10.0, "step": 0.1}),"e_cfg_scale": ("FLOAT", {"default": 1.0,"min": 0.0, "max": 10.0, "step": 0.1}),"fps": ("FLOAT", {"default": 25.0, "min":1.0, "max": 60.0, "step": 0.5}),"emotion": (['none', 'angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'], {"default": "none"}),"crop_input_image": ("BOOLEAN",{"default":False},),"seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),"nfe": ("INT", {"default": 10, "min": 1, "max": 100, "step": 1}), },"optional": {"device_override": (["default", "cuda", "cpu"], {"default": "default"}), "decode_gpu_chunk_size": ("INT", {"default": 32, "min":1, "max":128, "step":1, "tooltip":"(In-Memory) GPU解码后一次转移多少帧到CPU。影响显存和速度。"}), "mask_top_edge_pixels": ("INT", {"default": 0, "min": 0, "max": 64, "step": 1, "tooltip": "Top edge fix: replicate pixel row to cover artifacts."})}}
+        return {"required": {"float_pipe": ("FLOAT_PIPE",),"ref_image": ("IMAGE",),"ref_audio": ("AUDIO",),"a_cfg_scale": ("FLOAT", {"default": 2.0,"min": 0.0, "max": 10.0, "step": 0.1}),"r_cfg_scale": ("FLOAT", {"default": 1.0,"min": 0.0, "max": 10.0, "step": 0.1}),"e_cfg_scale": ("FLOAT", {"default": 1.0,"min": 0.0, "max": 10.0, "step": 0.1}),"fps": ("FLOAT", {"default": 25.0, "min":1.0, "max": 60.0, "step": 0.5}),"emotion": (['none', 'angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'], {"default": "none"}),"crop_input_image": ("BOOLEAN",{"default":False},),"seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),"nfe": ("INT", {"default": 10, "min": 1, "max": 100, "step": 1}), },"optional": {"device_override": (["default", "cuda", "cpu"], {"default": "default"}), "decode_gpu_chunk_size": ("INT", {"default": 32, "min":1, "max":128, "step":1, "tooltip":"(In-Memory) GPU解码后一次转移多少帧到CPU。影响显存和速度。"}),}}
 
     def _create_error_image(self, error_message_text: str, log_message: bool = True) -> tuple:
         if log_message:
@@ -180,8 +162,7 @@ class AIIA_FloatProcess_InMemory:
                                a_cfg_scale, r_cfg_scale, e_cfg_scale,
                                fps, emotion, crop_input_image, seed, nfe,
                                device_override: str = "default",
-                               decode_gpu_chunk_size: int = 32,
-                               mask_top_edge_pixels: int = 0):
+                               decode_gpu_chunk_size: int = 32):
         node_name_log = f"[{self.__class__.NODE_NAME}]"
         print(f"{node_name_log} 流程开始 (内存输出模式)。")
         start_time_process = time.time()
@@ -227,8 +208,7 @@ class AIIA_FloatProcess_InMemory:
                     float_pipe.opt.rank = processing_device.index if processing_device.type == 'cuda' and processing_device.index is not None else (0 if processing_device.type == 'cuda' else -1)
                 if hasattr(float_pipe.opt, 'fps'): float_pipe.opt.fps = float(fps)
                 float_pipe.opt.decode_gpu_chunk_size = decode_gpu_chunk_size
-                float_pipe.G._aiia_mask_top_edge = mask_top_edge_pixels # Inject param for patch
-                print(f"{node_name_log} opt 更新: rank={getattr(float_pipe.opt, 'rank', 'N/A')}, fps={getattr(float_pipe.opt, 'fps', 'N/A')}, decode_chunk={getattr(float_pipe.opt, 'decode_gpu_chunk_size', 'N/A')}, mask_top={mask_top_edge_pixels}")
+                print(f"{node_name_log} opt 更新: rank={getattr(float_pipe.opt, 'rank', 'N/A')}, fps={getattr(float_pipe.opt, 'fps', 'N/A')}, decode_chunk={getattr(float_pipe.opt, 'decode_gpu_chunk_size', 'N/A')}")
 
                 model_current_device_before_move = next(float_pipe.G.parameters()).device
                 if model_current_device_before_move != processing_device: float_pipe.G.to(processing_device)
@@ -271,10 +251,6 @@ class AIIA_FloatProcess_InMemory:
                         del float_pipe.opt.decode_gpu_chunk_size
                     except AttributeError:
                         pass
-                
-                if hasattr(float_pipe.G, '_aiia_mask_top_edge'):
-                     try: del float_pipe.G._aiia_mask_top_edge
-                     except: pass
 
                 current_g_device_after_proc = next(float_pipe.G.parameters()).device
                 if current_g_device_after_proc.type == 'cuda':
@@ -317,8 +293,7 @@ class AIIA_FloatProcess_ToDisk:
                              fps, emotion, crop_input_image, seed, nfe,
                              device_override: str = "default",
                              output_subdir_name: str = "float_frames_AIIA",
-                             decode_gpu_chunk_size: int = 16,
-                             mask_top_edge_pixels: int = 0):
+                             decode_gpu_chunk_size: int = 16):
 
         node_name_log = f"[{self.__class__.NODE_NAME}]"
         print(f"{node_name_log} 流程开始 (输出到磁盘模式)。")
@@ -375,8 +350,7 @@ class AIIA_FloatProcess_ToDisk:
                     float_pipe.opt.rank = processing_device.index if processing_device.type == 'cuda' and processing_device.index is not None else (0 if processing_device.type == 'cuda' else -1)
                 if hasattr(float_pipe.opt, 'fps'): float_pipe.opt.fps = float(fps)
                 float_pipe.opt.frames_per_gpu_chunk_for_processing = decode_gpu_chunk_size
-                float_pipe.G._aiia_mask_top_edge = mask_top_edge_pixels # Inject param
-                print(f"{node_name_log} opt 更新: rank={getattr(float_pipe.opt, 'rank', 'N/A')}, fps={getattr(float_pipe.opt, 'fps', 'N/A')}, frames_chunk_for_processing={getattr(float_pipe.opt, 'frames_per_gpu_chunk_for_processing', 'N/A')}, mask_top={mask_top_edge_pixels}")
+                print(f"{node_name_log} opt 更新: rank={getattr(float_pipe.opt, 'rank', 'N/A')}, fps={getattr(float_pipe.opt, 'fps', 'N/A')}, frames_chunk_for_processing={getattr(float_pipe.opt, 'frames_per_gpu_chunk_for_processing', 'N/A')}")
 
                 model_current_device_before_move = next(float_pipe.G.parameters()).device
                 if model_current_device_before_move != processing_device: float_pipe.G.to(processing_device)
@@ -441,10 +415,6 @@ class AIIA_FloatProcess_ToDisk:
                         del float_pipe.opt.frames_per_gpu_chunk_for_processing
                     except AttributeError:
                         pass
-                
-                if hasattr(float_pipe.G, '_aiia_mask_top_edge'):
-                     try: del float_pipe.G._aiia_mask_top_edge
-                     except: pass
 
                 current_g_device_after_proc = next(float_pipe.G.parameters()).device
                 if current_g_device_after_proc.type == 'cuda':
