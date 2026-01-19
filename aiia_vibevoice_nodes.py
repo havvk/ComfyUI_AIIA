@@ -4,6 +4,9 @@ import torch
 import numpy as np
 import torchaudio
 import folder_paths
+import subprocess
+import tempfile
+import soundfile as sf
 # print(f"\n[AIIA DEBUG] Loaded aiia_vibevoice_nodes.py from: {os.path.abspath(__file__)}\n")
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer, Qwen2TokenizerFast
@@ -362,22 +365,50 @@ class AIIA_VibeVoice_TTS:
                     # Ensure float32
                     audio_out = audio_out.float()
                     
-                    # Try SoX 'tempo' for time stretching (pitch preservation)
+                    # Try System 'sox' command for time stretching (pitch preservation)
+                    # This is more robust than torchaudio.sox_effects which may be missing in some builds
                     try:
-                        # sox_effects requires CPU tensor
-                        audio_cpu = audio_out.cpu()
-                        # Ensure [C, T] format for sox
-                        if audio_cpu.ndim == 1: audio_cpu = audio_cpu.unsqueeze(0)
-                        elif audio_cpu.ndim == 3: audio_cpu = audio_cpu.squeeze(0)
+                        # Prepare input
+                        audio_cpu = audio_out.cpu().numpy()
+                        # Ensure [C, T]
+                        if audio_cpu.ndim == 1: audio_cpu = audio_cpu[np.newaxis, :] # [1, T]
+                        elif audio_cpu.ndim == 3: audio_cpu = audio_cpu.squeeze(0)   # [C, T]
                         
-                        effects = [['tempo', str(speed)]]
-                        # apply_effects_tensor returns (waveform, sample_rate)
-                        out_wav, _ = torchaudio.sox_effects.apply_effects_tensor(audio_cpu, 24000, effects)
-                        audio_out = out_wav.to(original_device)
+                        # soundfile writes [T, C]
+                        audio_cpu_t = audio_cpu.T 
+
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as in_f, \
+                             tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as out_f:
+                            in_path = in_f.name
+                            out_path = out_f.name
+                        
+                        try:
+                            # Write temp file
+                            sf.write(in_path, audio_cpu_t, 24000)
+                            
+                            # Call sox
+                            # tempo command: changes speed without pitch
+                            # -q: quiet
+                            cmd = ["sox", "-q", in_path, out_path, "tempo", str(speed)]
+                            subprocess.run(cmd, check=True)
+                            
+                            # Read back
+                            out_wav, out_sr = sf.read(out_path)
+                            # sf reads as [T, C] or [T] if mono
+                            if out_wav.ndim == 1: 
+                                out_wav = out_wav[np.newaxis, :] # [1, T]
+                            else:
+                                out_wav = out_wav.T # [C, T]
+                            
+                            audio_out = torch.from_numpy(out_wav).float().to(original_device)
+                            
+                        finally:
+                            if os.path.exists(in_path): os.remove(in_path)
+                            if os.path.exists(out_path): os.remove(out_path)
                         
                     except Exception as e:
                         # Fallback to Resample (Pitch Shift)
-                        print(f"[AIIA WARNING] SoX tempo failed ({e}), using Resample (Pitch Shift).")
+                        print(f"[AIIA WARNING] System 'sox' failed ({e}), using Resample (Pitch Shift).")
                         resampler = torchaudio.transforms.Resample(orig_freq=int(24000*speed), new_freq=24000).to(original_device)
                         audio_out = resampler(audio_out)
                 
