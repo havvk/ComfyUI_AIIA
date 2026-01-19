@@ -522,6 +522,7 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
         use_longvideo_cfg=False,
         overlap_video_length=5,
         partial_video_length=113,
+        clip_context: Optional[torch.FloatTensor] = None,
     ) -> Union[WanPipelineOutput, Tuple]:
         """
         Function invoked when calling the pipeline for generation.
