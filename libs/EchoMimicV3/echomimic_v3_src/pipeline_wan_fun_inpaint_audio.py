@@ -858,6 +858,8 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
                         seq_len = math.ceil((target_shape[2] * target_shape[3]) / (self.transformer.config.patch_size[1] * self.transformer.config.patch_size[2]) * target_shape[1])
                         
                         
+                        
+                        print(f"[DEBUG PIPE] Before Transformer: latents={latents.device}, latent_model_input={latent_model_input.device}, transformer={self.transformer.device}")
                         with torch.cuda.amp.autocast(dtype=weight_dtype):
                             noise_pred = self.transformer(
                                 x=latent_model_input,
@@ -867,6 +869,7 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
                                 y=y[:, :, :cur_latent_t] if y is not None else None,
                                 clip_fea=clip_context_input,
                             )
+                        print(f"[DEBUG PIPE] After Transformer: noise_pred={noise_pred.device}")
                         
                         if do_classifier_free_guidance:
                             if use_dynamic_cfg:    
@@ -878,6 +881,8 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
                             
                             noise_pred_uncond, noise_pred_drop_audio, noise_pred_cond = noise_pred.chunk(3)
                             noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_drop_audio - noise_pred_uncond) + self.audio_guidance_scale * (noise_pred_cond - noise_pred_drop_audio)
+                        
+                        print(f"[DEBUG PIPE] Before Step: latents={latents.device}, noise_pred={noise_pred.device}")
                         latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
                         torch.cuda.empty_cache()
                         
