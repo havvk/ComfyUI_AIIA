@@ -313,18 +313,12 @@ ComfyUI/models/EchoMimicV3/
 **目标目录结构**:
 ```text
 ComfyUI/models/ditto/
-└── ditto-talkinghead/
-    ├── audio2motion.pth
-    ├── audio2motion.yml
-    ├── decoder.pth
-    ├── decoder.yml
-    ├── identity_encoder.pth
-    ├── identity_encoder.yml
-    ├── mp_adapter.pth
-    ├── mp_adapter.yml
-    ├── pe.pth
-    ├── pe.yml
-    ├── ... (其他配置文件)
+├── ditto_pytorch/
+│   ├── audio2motion.pth
+│   ├── ...
+└── ditto_cfg/
+    ├── v0.4_hubert_cfg_pytorch.pkl
+    ├── ...
 ```
 
 **下载地址**:
@@ -334,10 +328,9 @@ ComfyUI/models/ditto/
 ```bash
 # 进入 models 目录
 cd ComfyUI/models
-mkdir -p ditto
 
-# 下载模型
-hf download digital-avatar/ditto-talkinghead --local-dir ditto/ditto-talkinghead
+# 下载模型 (直接下载到 ditto 目录，避免多层嵌套)
+hf download digital-avatar/ditto-talkinghead --local-dir ditto
 ```
 
 
