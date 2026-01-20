@@ -344,6 +344,12 @@ class ComfyStreamSDK(StreamSDK):
             
             res_frame_rgb = item # This is numpy RGB array usually
             self.generated_frames.append(res_frame_rgb)
+            
+            # Explicit Console Logging for ComfyUI
+            count = len(self.generated_frames)
+            if count % 10 == 0:
+                print(f"[Ditto] Processing frame {count}...")
+                
             if self.pbar:
                 self.pbar.update(1)
 
