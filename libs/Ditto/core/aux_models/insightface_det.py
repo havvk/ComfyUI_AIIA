@@ -71,6 +71,11 @@ class InsightFaceDet:
                 print(f"[InsightFaceDet] Overwriting input_size: {self.input_size}")
             else:
                 print(f"[InsightFaceDet] Using default input_size: {self.input_size}")
+        
+        # FIX: Ensure the underlying model (RetinaFace) also gets the input_size update
+        if input_size is not None and hasattr(self.model, "input_size"):
+             self.model.input_size = input_size
+             print(f"[InsightFaceDet] Updated underlying model.input_size to: {self.model.input_size}")
 
 
     def _init_vars(self):
