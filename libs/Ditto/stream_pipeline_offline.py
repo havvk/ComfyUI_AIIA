@@ -117,6 +117,8 @@ class StreamSDK:
         self.drive_eye = kwargs.get("drive_eye", None)    # None: true4image, false4video
         self.delta_eye_arr = kwargs.get("delta_eye_arr", None)
         self.delta_eye_open_n = kwargs.get("delta_eye_open_n", 0)
+        self.blink_interval_min = kwargs.get("blink_interval_min", 60)
+        self.blink_interval_max = kwargs.get("blink_interval_max", 100)
         self.fade_type = kwargs.get("fade_type", "")    # "" | "d0" | "s"
         self.fade_out_keys = kwargs.get("fade_out_keys", ("exp",))
         self.flag_stitching = kwargs.get("flag_stitching", True)
@@ -188,6 +190,8 @@ class StreamSDK:
             drive_eye=self.drive_eye,
             delta_eye_arr=self.delta_eye_arr,
             delta_eye_open_n=self.delta_eye_open_n,
+            blink_interval_min=self.blink_interval_min,
+            blink_interval_max=self.blink_interval_max,
             fade_out_keys=self.fade_out_keys,
             fade_type=self.fade_type,
             flag_stitching=self.flag_stitching,

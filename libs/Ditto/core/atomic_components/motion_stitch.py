@@ -100,7 +100,7 @@ def _mix_s_d_info(
     return x_d_info
 
 
-def _set_eye_blink_idx(N, blink_n=15, open_n=-1):
+def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=100):
     """
     open_n:
         -1: no blink
@@ -108,8 +108,8 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1):
         >0: fix open_n
         list: loop open_n
     """
-    OPEN_MIN = 60
-    OPEN_MAX = 100
+    OPEN_MIN = interval_min
+    OPEN_MAX = interval_max
 
     idx = [0] * N
     if isinstance(open_n, int):
@@ -311,6 +311,8 @@ class MotionStitch:
         drive_eye=None,  # use d eye or s eye
         delta_eye_arr=None,  # fix eye
         delta_eye_open_n=-1,  # int|list
+        blink_interval_min=60,
+        blink_interval_max=100,
         fade_out_keys=("exp",),
         fade_type="",   # "" | "d0" | "s"
         flag_stitching=True,
@@ -366,7 +368,11 @@ class MotionStitch:
         if self.drive_eye and self.delta_eye_arr is not None:
             N = 3000 if self.N_d == -1 else self.N_d
             self.delta_eye_idx_list = _set_eye_blink_idx(
-                N, len(self.delta_eye_arr), self.delta_eye_open_n
+                N, 
+                len(self.delta_eye_arr), 
+                self.delta_eye_open_n,
+                interval_min=blink_interval_min,
+                interval_max=blink_interval_max
             )
 
         self.pose_s = None
