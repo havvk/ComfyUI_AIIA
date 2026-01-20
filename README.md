@@ -282,6 +282,66 @@ ComfyUI/models/EchoMimicV3/
 - 请确保安装了 `requirements.txt` 中的依赖，如 `diffusers>=0.30.1`。节点加载时会尝试自动引用，但如果报错缺包，请手动安装。
 
 
+#### 2.5 Ditto Talking Head (AIIA Integrated)
+
+这组节点集成了 [Ditto](https://github.com/antgroup/ditto-talkinghead) 数字人模型。我们采用了 **PyTorch** 原生实现，避免了复杂的 TensorRT 编译过程，让用户能够“开箱即用”地生成高质量的 Talking Head 视频。
+
+**特点**:
+- **PyTorch Native**: 无需安装 TensorRT，兼容性更好。
+- **In-Memory Pipeline**: 针对 ComfyUI 优化的内存内处理流程，无需生成中间视频文件。
+- **自动模型管理**: 支持自动下载模型权重。
+
+**1. AIIA Ditto Loader**
+- **用途**: 下载并加载 Ditto 模型 (约 1.2GB)。
+- **参数**:
+  - `model_name`: 模型名称 (默认 `ditto-talkinghead`)。
+  - `device`: 运行设备 (CUDA/CPU)。
+
+**2. AIIA Ditto Sampler**
+- **用途**: 执行推理生成。
+- **输入**:
+  - `pipe`: 来自 Loader 的模型管道。
+  - `ref_image`: 参考人物图片 (建议正方形，人脸居中)。
+  - `audio`: 驱动音频。
+  - `fps`: 建议 **25** (Ditto 针对 25FPS 训练)。即使输入其他值，目前内部逻辑也会优先保证 25FPS 的同步率。
+- **输出**: `IMAGE` (视频帧), `AUDIO`。
+
+**🛠️ 模型下载指南 (Manual Download Guide)**
+
+如果自动下载失败，请手动下载模型并放入 `ComfyUI/models/ditto/` 目录。
+
+**目标目录结构**:
+```text
+ComfyUI/models/ditto/
+└── ditto-talkinghead/
+    ├── audio2motion.pth
+    ├── audio2motion.yml
+    ├── decoder.pth
+    ├── decoder.yml
+    ├── identity_encoder.pth
+    ├── identity_encoder.yml
+    ├── mp_adapter.pth
+    ├── mp_adapter.yml
+    ├── pe.pth
+    ├── pe.yml
+    ├── ... (其他配置文件)
+```
+
+**下载地址**:
+- HuggingFace: [digital-avatar/ditto-talkinghead](https://huggingface.co/digital-avatar/ditto-talkinghead)
+
+**下载命令**:
+```bash
+# 进入 models 目录
+cd ComfyUI/models
+mkdir -p ditto
+
+# 下载模型
+hf download digital-avatar/ditto-talkinghead --local-dir ditto/ditto-talkinghead
+```
+
+
+
 ### 3. 音频智能处理 (Intelligent Audio Processing)
 
 #### 3.1 说话人日志 (Diarization)
@@ -953,6 +1013,13 @@ B: 太神奇了！那我们快去生成试试吧！
 ---
 
 ## Changelog
+
+### [1.9.0] - 2026-01-20
+
+- **Ditto Talking Head**: 新增 Ditto 模型支持 (PyTorch 版)。
+    - **AIIA Ditto Loader**: 支持自动下载与加载。
+    - **AIIA Ditto Sampler**: 支持内存内流式生成。
+- **EchoMimic V3**: 优化了音频同步逻辑，修复了唇形漂移问题。
 
 ### [1.8.4] - 2026-01-19
 

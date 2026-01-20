@@ -42,20 +42,29 @@ else:
         
         module_object = None
         try:
+            # print(f"[AIIA Debug] Attempting to load: {module_alias_for_log} ...")
             # 使用 importlib 进行更动态的导入
             import importlib
             module_object = importlib.import_module(module_name_relative, package=__name__) # __name__ 是当前包名 "ComfyUI_AIIA"
             
             if hasattr(module_object, 'NODE_CLASS_MAPPINGS'):
+                count = len(module_object.NODE_CLASS_MAPPINGS)
+                # print(f"[AIIA Debug] Loaded {count} nodes from {module_alias_for_log}")
                 NODE_CLASS_MAPPINGS.update(module_object.NODE_CLASS_MAPPINGS)
 
             if hasattr(module_object, 'NODE_DISPLAY_NAME_MAPPINGS'):
                 NODE_DISPLAY_NAME_MAPPINGS.update(module_object.NODE_DISPLAY_NAME_MAPPINGS)
                 
         except ImportError as e_import:
-            print(f"错误: 导入 {module_alias_for_log} ({module_name_relative}) 失败: {e_import}")
+            print(f"========== AIIA IMPORT ERROR: {module_alias_for_log} ==========")
+            print(f"Error: {e_import}")
+            print(f"============================================================")
         except Exception as e_generic:
-            print(f"错误: 在 {module_alias_for_log} ({module_name_relative}) 导入或处理过程中发生错误: {e_generic}")
+            print(f"========== AIIA GENERIC ERROR: {module_alias_for_log} ==========")
+            print(f"Error: {e_generic}")
+            import traceback
+            traceback.print_exc()
+            print(f"============================================================")
 
 
     # 1. 处理 aiia_float_nodes.py
@@ -126,6 +135,9 @@ else:
 
     # 22. 处理 aiia_echomimic_nodes.py (新增 EchoMimic V3)
     _load_nodes_from_module(".aiia_echomimic_nodes", "aiia_echomimic_nodes")
+
+    # 23. 处理 aiia_ditto_nodes.py (新增 Ditto)
+    _load_nodes_from_module(".aiia_ditto_nodes", "aiia_ditto_nodes")
 
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
