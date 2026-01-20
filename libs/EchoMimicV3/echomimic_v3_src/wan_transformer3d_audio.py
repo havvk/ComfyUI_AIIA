@@ -178,6 +178,11 @@ def attention(
     fa_version=None,
 ):
     if FLASH_ATTN_2_AVAILABLE or FLASH_ATTN_3_AVAILABLE:
+        # Debug Print (Once)
+        if not hasattr(attention, "msg_printed"):
+             print(f"[EchoMimicV3 Transformer] Using Optimized Flash Attention backend.")
+             attention.msg_printed = True
+
         return flash_attention(
             q=q,
             k=k,
@@ -322,6 +327,11 @@ def audio_attention(
     fa_version=None,
 ):
     if FLASH_ATTN_2_AVAILABLE or FLASH_ATTN_3_AVAILABLE:
+        # Debug Print (Once)
+        if not hasattr(attention, "msg_printed"):
+             print(f"[EchoMimicV3 Transformer] Using Optimized Flash Attention backend.")
+             attention.msg_printed = True
+
         return flash_attention(
             q=q,
             k=k,
