@@ -7,11 +7,9 @@ import folder_paths
 import logging
 
 # Add Ditto library to path
-print("[AIIA Ditto] Initializing...")
 current_dir = os.path.dirname(os.path.abspath(__file__))
 ditto_path = os.path.join(current_dir, "libs", "Ditto")
 if ditto_path not in sys.path:
-    print(f"[AIIA Ditto] Adding path: {ditto_path}")
     sys.path.append(ditto_path)
 
 StreamSDK = object # Default fallback to prevent NameError if import fails
@@ -23,17 +21,12 @@ try:
     from stream_pipeline_offline import StreamSDK
     from core.atomic_components.cfg import parse_cfg
     DITTO_AVAILABLE = True
-    print("[AIIA Ditto] Libraries imported successfully.")
 except ImportError as e:
-    logging.error(f"[AIIA Ditto] Failed to import Ditto libs: {e}")
-    print(f"[AIIA Ditto] IMPORT FAIL: {e}")
+    logging.error(f"Failed to import Ditto libs: {e}")
     # Keep StreamSDK as object so class ComfyStreamSDK(StreamSDK) doesn't crash
     pass
 except Exception as e:
-    logging.error(f"[AIIA Ditto] Unexpected error importing Ditto: {e}")
-    print(f"[AIIA Ditto] UNEXPECTED FAIL: {e}")
-    import traceback
-    traceback.print_exc()
+    logging.error(f"Unexpected error importing Ditto: {e}")
     pass
 
 from huggingface_hub import snapshot_download

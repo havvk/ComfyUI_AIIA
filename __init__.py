@@ -42,29 +42,20 @@ else:
         
         module_object = None
         try:
-            # print(f"[AIIA Debug] Attempting to load: {module_alias_for_log} ...")
             # 使用 importlib 进行更动态的导入
             import importlib
             module_object = importlib.import_module(module_name_relative, package=__name__) # __name__ 是当前包名 "ComfyUI_AIIA"
             
             if hasattr(module_object, 'NODE_CLASS_MAPPINGS'):
-                count = len(module_object.NODE_CLASS_MAPPINGS)
-                # print(f"[AIIA Debug] Loaded {count} nodes from {module_alias_for_log}")
                 NODE_CLASS_MAPPINGS.update(module_object.NODE_CLASS_MAPPINGS)
 
             if hasattr(module_object, 'NODE_DISPLAY_NAME_MAPPINGS'):
                 NODE_DISPLAY_NAME_MAPPINGS.update(module_object.NODE_DISPLAY_NAME_MAPPINGS)
                 
         except ImportError as e_import:
-            print(f"========== AIIA IMPORT ERROR: {module_alias_for_log} ==========")
-            print(f"Error: {e_import}")
-            print(f"============================================================")
+            print(f"错误: 导入 {module_alias_for_log} ({module_name_relative}) 失败: {e_import}")
         except Exception as e_generic:
-            print(f"========== AIIA GENERIC ERROR: {module_alias_for_log} ==========")
-            print(f"Error: {e_generic}")
-            import traceback
-            traceback.print_exc()
-            print(f"============================================================")
+            print(f"错误: 在 {module_alias_for_log} ({module_name_relative}) 导入或处理过程中发生错误: {e_generic}")
 
 
     # 1. 处理 aiia_float_nodes.py
