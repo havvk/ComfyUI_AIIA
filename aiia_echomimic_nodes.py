@@ -287,7 +287,7 @@ class AIIA_EchoMimicSampler:
                 "ref_image": ("IMAGE",), # (1, H, W, 3)
                 "ref_audio": ("AUDIO",),
                 "prompt": ("STRING", {"multiline": True, "default": "best quality, high quality, 8k, realistic, photorealistic, details, sharp focus"}),
-                "negative_prompt": ("STRING", {"multiline": True, "default": "Gesture is bad. Gesture is unclear. Strange and twisted hands. Bad hands. Bad fingers. Unclear and blurry hands. 手部快速摆动, 手指频繁抽搐, 夸张手势, 重复机械性动作."}),
+                "negative_prompt": ("STRING", {"multiline": True, "default": "Gesture is bad. Gesture is unclear. Strange and twisted hands. Bad hands. Bad fingers. Unclear and blurry hands. 手部快速摆动, 手指频繁抽搐, 夸张手势, 重复机械性动作. looking up, rolling eyes, bad eyes, strange eyes"}),
                 "seed": ("INT", {"default": 42, "min": 0, "max": 0xffffffffffffffff}),
                 "steps": ("INT", {"default": 25, "min": 1, "max": 100}),
                 "cfg": ("FLOAT", {"default": 4.0, "min": 1.0, "max": 20.0}),
@@ -499,13 +499,6 @@ class AIIA_EchoMimicSampler:
         # Manual Device Management: Move Text Encoder to GPU for encoding
         if hasattr(pipeline, "text_encoder") and pipeline.text_encoder is not None:
              pipeline.text_encoder.to(device)
-        
-        # Add default negative fix for eyes
-        neg_fix = "looking up, rolling eyes, bad eyes, strange eyes"
-        if negative_prompt:
-             negative_prompt = f"{negative_prompt}, {neg_fix}"
-        else:
-             negative_prompt = neg_fix
         
         do_classifier_free_guidance = cfg > 1.0
         prompt_embeds, negative_prompt_embeds = pipeline.encode_prompt(
