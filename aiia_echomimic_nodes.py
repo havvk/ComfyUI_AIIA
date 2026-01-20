@@ -500,6 +500,13 @@ class AIIA_EchoMimicSampler:
         if hasattr(pipeline, "text_encoder") and pipeline.text_encoder is not None:
              pipeline.text_encoder.to(device)
         
+        # Add default negative fix for eyes
+        neg_fix = "looking up, rolling eyes, bad eyes, strange eyes"
+        if negative_prompt:
+             negative_prompt = f"{negative_prompt}, {neg_fix}"
+        else:
+             negative_prompt = neg_fix
+        
         do_classifier_free_guidance = cfg > 1.0
         prompt_embeds, negative_prompt_embeds = pipeline.encode_prompt(
             prompt,
