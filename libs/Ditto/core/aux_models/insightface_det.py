@@ -68,6 +68,10 @@ class InsightFaceDet:
             self._init_vars()
             if input_size is not None:
                 self.input_size = input_size
+                print(f"[InsightFaceDet] Overwriting input_size: {self.input_size}")
+            else:
+                print(f"[InsightFaceDet] Using default input_size: {self.input_size}")
+
 
     def _init_vars(self):
         self.center_cache = {}
@@ -158,6 +162,7 @@ class InsightFaceDet:
     
     def detect(self, img, input_size=None, max_num=0, metric='default', det_thresh=None):
         input_size = self.input_size if input_size is None else input_size
+        print(f"[InsightFaceDet] detect called with input_size: {input_size}")
         det_thresh = self.det_thresh if det_thresh is None else det_thresh
             
         im_ratio = float(img.shape[0]) / img.shape[1]
