@@ -212,6 +212,13 @@ class AIIA_EchoMimicLoader:
         from echomimic_v3_src.fm_solvers import FlowDPMSolverMultistepScheduler
         scheduler = FlowDPMSolverMultistepScheduler(**filter_kwargs(FlowDPMSolverMultistepScheduler, scheduler_kwargs))
 
+        # Check Optimization libraries
+        try:
+            import flash_attn
+            print(f"[{self.NODE_NAME}] Flash Attention (v2) is available.")
+        except ImportError:
+            print(f"[{self.NODE_NAME}] Flash Attention is NOT available. Using SDPA/Math fallback (slower).")
+
 
         # Wav2Vec (Assume it's in a separate standard folder or specified)
         # For now, we expect it to be in 'models/EchoMimicV3/wav2vec2-base-960h' or similar
@@ -645,6 +652,11 @@ class AIIA_EchoMimicSampler:
                 ) for i in range(current_partial_video_length - overlap_video_length, current_partial_video_length)
             ]
             
+            # Safeguard against infinite loops
+            if total_chunks > 50 and init_frames == 0:
+                 print(f"[{self.NODE_NAME}] Warning: Loop detected with no progress. Force breaking.")
+                 break
+
             # Clean up
             del input_video, input_video_mask, partial_audio_embeds, sample
             torch.cuda.empty_cache()
