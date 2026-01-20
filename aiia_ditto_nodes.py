@@ -167,12 +167,53 @@ class ComfyStreamSDK(StreamSDK):
         # -- avatar_registrar: template cfg --
         self.max_size = kwargs.get("max_size", 1920)
         self.template_n_frames = kwargs.get("template_n_frames", -1)
+
+        # -- avatar_registrar: crop cfg --
+        self.crop_scale = kwargs.get("crop_scale", 2.3)
+        self.crop_vx_ratio = kwargs.get("crop_vx_ratio", 0)
+        self.crop_vy_ratio = kwargs.get("crop_vy_ratio", -0.125)
+        self.crop_flag_do_rot = kwargs.get("crop_flag_do_rot", True)
         
+        # -- avatar_registrar: smo for video --
+        self.smo_k_s = kwargs.get('smo_k_s', 13)
+
+        # -- condition_handler: ECS --
+        self.emo = kwargs.get("emo", 4)    # int | [int] | [[int]] | numpy
+        self.eye_f0_mode = kwargs.get("eye_f0_mode", False)    # for video
+        self.ch_info = kwargs.get("ch_info", None)    # dict of np.ndarray
+
+        # -- audio2motion: setup --
+        self.overlap_v2 = kwargs.get("overlap_v2", 10)
+        self.fix_kp_cond = kwargs.get("fix_kp_cond", 0)
+        self.fix_kp_cond_dim = kwargs.get("fix_kp_cond_dim", None)  # [ds,de]
+        self.sampling_timesteps = kwargs.get("sampling_timesteps", 50)
+        self.online_mode = kwargs.get("online_mode", False)
+        self.v_min_max_for_clip = kwargs.get('v_min_max_for_clip', None)
+        self.smo_k_d = kwargs.get("smo_k_d", 3)
+
+        # -- motion_stitch: setup --
+        self.N_d = kwargs.get("N_d", -1)
+        self.use_d_keys = kwargs.get("use_d_keys", None)
+        self.relative_d = kwargs.get("relative_d", True)
+        self.drive_eye = kwargs.get("drive_eye", None)    # None: true4image, false4video
+        self.delta_eye_arr = kwargs.get("delta_eye_arr", None)
+        self.delta_eye_open_n = kwargs.get("delta_eye_open_n", 0)
+        self.fade_type = kwargs.get("fade_type", "")    # "" | "d0" | "s"
+        self.fade_out_keys = kwargs.get("fade_out_keys", ("exp",))
+        self.flag_stitching = kwargs.get("flag_stitching", True)
+
+        self.ctrl_info = kwargs.get("ctrl_info", dict())
+        self.overall_ctrl_info = kwargs.get("overall_ctrl_info", dict())
+        self.wav2feat = self.wav2feat # ensure exist? (Initialized in __init__)
+        
+        # Assert online mode support
+        # assert self.wav2feat.support_streaming or not self.online_mode
+
         crop_kwargs = {
-            "crop_scale": getattr(self, 'crop_scale', 2.3),
-            "crop_vx_ratio": getattr(self, 'crop_vx_ratio', 0),
-            "crop_vy_ratio": getattr(self, 'crop_vy_ratio', -0.125),
-            "crop_flag_do_rot": getattr(self, 'crop_flag_do_rot', True),
+            "crop_scale": self.crop_scale,
+            "crop_vx_ratio": self.crop_vx_ratio,
+            "crop_vy_ratio": self.crop_vy_ratio,
+            "crop_flag_do_rot": self.crop_flag_do_rot,
         }
         n_frames = self.template_n_frames if self.template_n_frames > 0 else self.N_d
         
