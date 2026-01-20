@@ -560,14 +560,18 @@ class AIIA_EchoMimicSampler:
                     break
             
             # Prepare inputs for this chunk
-            input_video, input_video_mask, clip_image = get_image_to_video_latent3(
+            input_video, input_video_mask, _ = get_image_to_video_latent3(
                 current_ref_images, 
                 None, 
                 video_length=current_partial_video_length, 
                 sample_size=[sample_height, sample_width]
             )
+
+            # CRITICAL FIX: Identity Retention
+            # Always use the ORIGINAL reference image for CLIP Context to prevent "telephone game" drift.
+            # We resize it to match the sample size expected by the model.
+            clip_image = ref_img_pil.resize([sample_width, sample_height])
             
-            # Pre-compute CLIP Context (Optimized Device Management)
             # Pre-compute CLIP Context (Optimized Device Management)
             clip_context = None
             if hasattr(pipeline, "clip_image_encoder") and pipeline.clip_image_encoder is not None:
