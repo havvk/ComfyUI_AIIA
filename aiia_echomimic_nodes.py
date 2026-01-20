@@ -649,6 +649,14 @@ class AIIA_EchoMimicSampler:
             del input_video, input_video_mask, partial_audio_embeds, sample
             torch.cuda.empty_cache()
 
+            # Update loop counters
+            if init_frames == 0:
+                init_frames += current_partial_video_length
+            else:
+                init_frames += (current_partial_video_length - overlap_video_length)
+            
+            last_frames = init_frames + partial_video_length
+
         # Final Post-processing
         output = new_sample.permute(0, 2, 3, 4, 1).cpu().float() # (B, F, H, W, C)
         output = output.squeeze(0)
