@@ -54,24 +54,49 @@ class AIIA_DittoLoader:
         if not os.path.exists(base_path):
             os.makedirs(base_path, exist_ok=True)
             
-        model_dir = os.path.join(base_path, "ditto_pytorch")
-        cfg_dir = os.path.join(base_path, "ditto_cfg")
+        # Check for nested structure (common with hf download)
+        # We look for 'ditto_pytorch' inside 'ditto-talkinghead' subdir first, then in base.
+        nested_base = os.path.join(base_path, "ditto-talkinghead")
+        
+        if os.path.exists(os.path.join(nested_base, "ditto_pytorch")):
+             final_model_root = nested_base
+        else:
+             final_model_root = base_path
+
+        model_dir = os.path.join(final_model_root, "ditto_pytorch")
+        cfg_dir = os.path.join(final_model_root, "ditto_cfg")
         
         # 2. Check and Download if missing
         if not os.path.exists(model_dir) or not os.path.exists(cfg_dir):
-            print(f"[AIIA_DittoLoader] Model not found. Downloading from HuggingFace...")
+            print(f"[AIIA_DittoLoader] Model not found at {model_dir}. Downloading from HuggingFace...")
             snapshot_download(
                 repo_id="digital-avatar/ditto-talkinghead",
-                local_dir=base_path,
+                local_dir=base_path, # Download to base (ditto/) which creates ditto/.huggingface AND ditto/ditto_pytorch etc OR ditto/ditto-talkinghead depending on args
+                # snapshot_download usually flattens if local_dir provided, UNLESS accessing a folder in repo?
+                # Actually, HF snapshot_download by default structures as tree.
                 allow_patterns=["ditto_pytorch/*", "ditto_cfg/*"],
                 local_dir_use_symlinks=False
             )
+            # Recheck paths after download
+            if os.path.exists(os.path.join(base_path, "ditto-talkinghead", "ditto_pytorch")):
+                final_model_root = os.path.join(base_path, "ditto-talkinghead")
+            else:
+                final_model_root = base_path
+            
+            model_dir = os.path.join(final_model_root, "ditto_pytorch")
+            cfg_dir = os.path.join(final_model_root, "ditto_cfg")
+            
             print("[AIIA_DittoLoader] Download complete.")
+            
+        print(f"[AIIA_DittoLoader] Model Dir: {model_dir}")
+        print(f"[AIIA_DittoLoader] Config Dir: {cfg_dir}")
         
         # 3. Initialize SDK
         # We need to construct the cfg_pkl path
         cfg_pkl = os.path.join(cfg_dir, "v0.4_hubert_cfg_pytorch.pkl")
-        data_root = os.path.join(base_path, "ditto_pytorch")
+        data_root = model_dir # ditto_pytorch IS the data_root expected by Ditto?
+        # StreamSDK uses data_root to find 'aux_models', 'models' etc.
+        # Yes, based on ditto_pytorch structure.
         
         if not os.path.exists(cfg_pkl):
              raise FileNotFoundError(f"Config file not found: {cfg_pkl}")
