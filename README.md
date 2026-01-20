@@ -1003,8 +1003,9 @@ B: 太神奇了！那我们快去生成试试吧！
 - **场景**: 强烈建议在 **Ditto Sampler** 或其他视频生成节点之前使用，以确保输入图像（特别是人脸）处于最佳位置和比例，避免“嘴巴太大”或“五官漂移”等问题。
 - **参数**:
   - `crop_basis`: 裁切基准。
-    - `fixed_width` / `fixed_height`: 锁定一条边，另一条边自适应。
-    - `fixed_long_side` / `fixed_short_side`: 锁定长边或短边 (例如锁定 512 的长边)。
+    - `fixed_width` / `fixed_height`: 锁定一条边 (使用 width/height 参数)，另一条边自适应。
+    - `fixed_long_side`: **匹配原图长边**。裁切出的长边长度等于原图长边长度 (忽略 width/height 参数)。
+    - `fixed_short_side`: **匹配原图短边**。裁切出的短边长度等于原图短边长度 (忽略 width/height 参数)。适合“最大化裁切”。
     - `custom_size`: 强制裁切为指定的 `width` x `height`。
   - `aspect_ratio`: 裁切比例。
     - 默认为 `original` (保持原图比例或使用 custom_size 的宽高)。

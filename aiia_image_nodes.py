@@ -81,28 +81,27 @@ class AIIA_ImageSmartCrop:
                 tgt_w = int(height * target_ratio)
                 
             elif crop_basis == "fixed_long_side":
-                # Determine which side of the RESULT should be the long side based on ratio
-                # Logic: We force the LONGEST side of the CROP to be 'width' pixels.
+                # Matches the Source Long Side. Ignores 'width' input.
                 
-                # If target_ratio > 1 (Landscape), Width is long side.
+                # If target_ratio > 1 (Landscape), Width (Long Side) matches Source Long Side.
                 if target_ratio >= 1.0:
-                    tgt_w = width
-                    tgt_h = int(width / target_ratio)
+                    tgt_w = max(src_w, src_h)
+                    tgt_h = int(tgt_w / target_ratio)
                 else:
-                    # Portrait, Height is long side.
-                    tgt_h = width # Using 'width' input as the constraint value
+                    # Portrait, Height (Long Side) matches Source Long Side.
+                    tgt_h = max(src_w, src_h)
                     tgt_w = int(tgt_h * target_ratio)
                     
             elif crop_basis == "fixed_short_side":
-                # Logic: We force the SHORTEST side of the CROP to be 'width' pixels.
+                # Matches the Source Short Side. Ignores 'width' input.
                 
-                # If target_ratio > 1 (Landscape), Height is short side.
+                # If target_ratio > 1 (Landscape), Height (Short Side) matches Source Short Side.
                 if target_ratio >= 1.0:
-                    tgt_h = width # Using 'width' input as the constraint value
+                    tgt_h = min(src_w, src_h)
                     tgt_w = int(tgt_h * target_ratio)
                 else:
-                    # Portrait, Width is short side.
-                    tgt_w = width
+                    # Portrait, Width (Short Side) matches Source Short Side.
+                    tgt_w = min(src_w, src_h)
                     tgt_h = int(tgt_w / target_ratio)
 
             # --- Logic End ---
