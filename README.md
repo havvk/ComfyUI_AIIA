@@ -305,6 +305,14 @@ ComfyUI/models/EchoMimicV3/
   - `audio`: 驱动音频。
   - `fps`: 建议 **25** (Ditto 针对 25FPS 训练)。即使输入其他值，目前内部逻辑也会优先保证 25FPS 的同步率。
 - **输出**: `IMAGE` (视频帧), `AUDIO`。
+- **高级参数 (Advanced Parameters)**:
+  - `crop_scale`: (默认 2.3) 人脸裁剪比例。数值越小，人脸占比越大(镜头越近)；数值越大，包含背景越多(镜头越远)。
+  - `emo`: (默认 Neutral) 表情控制。可选 Angry, Happy, Sad 等。
+  - `drive_eye`: (默认 True) 是否驱动眼睛。关闭后眼睛将保持参考图状态(或微动)，适合原图眼神较好的情况。
+  - `chk_eye_blink`: (默认 True) 自动眨眼。开启后会强制添加随机眨眼动作，增加生动感。
+  - `smo_k_d`: (默认 3) 运动平滑系数。数值越大动作越柔和，可抑制面部抖动。
+  - `hd_rot_p` / `hd_rot_y` / `hd_rot_r`: 头部旋转微调 (Pitch/Yaw/Roll)。用于强制修正头部角度。
+- **进度条支持**: 节点已对接 ComfyUI 原生进度条，可实时显示推理进度。
 
 **🛠️ 模型下载指南 (Manual Download Guide)**
 
