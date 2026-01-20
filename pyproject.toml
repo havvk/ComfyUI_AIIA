@@ -1,13 +1,13 @@
 [project]
 name = "aiia"
-description = "The Ultimate AI Audio/Video toolkit for ComfyUI. Features EchoMimic V3 (OOM-Safe Talking Head), VibeVoice & CosyVoice 3.0 (SOTA Voice Cloning), Multi-Role Podcast Generation, and a powerful Media Browser."
-version = "1.9.0"
+description = "The Ultimate AI Audio/Video toolkit for ComfyUI. Features Ditto & EchoMimic V3 (OOM-Safe Talking Head), VibeVoice & CosyVoice 3.0 (SOTA Voice Cloning), Multi-Role Podcast Generation, FLOAT utilities, and a powerful Media Browser."
+version = "1.9.1"
 license = {file = "LICENSE"}
 readme = "README.md"
 authors = [
     { name = "Hawk Lee", email = "l.y@live.cn" }
 ]
-keywords = ["ComfyUI", "Audio", "TTS", "Voice Cloning", "Podcast", "Dialogue", "CosyVoice", "VibeVoice", "Media Management", "Video", "EchoMimic", "Talking Head", "Avatar", "OOM-Safe"]
+keywords = ["ComfyUI", "Audio", "TTS", "Voice Cloning", "Podcast", "Dialogue", "CosyVoice", "VibeVoice", "Media Management", "Video", "EchoMimic", "Ditto", "Talking Head", "Avatar", "OOM-Safe", "FLOAT"]
 dependencies = [
     "soundfile",
     "numpy",
