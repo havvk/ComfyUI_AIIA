@@ -1,6 +1,6 @@
 [project]
 name = "aiia"
-description = "The Ultimate AI Audio/Video toolkit for ComfyUI. Features Ditto & EchoMimic V3 (OOM-Safe Talking Head), VibeVoice & CosyVoice 3.0 (SOTA Voice Cloning), Multi-Role Podcast Generation, FLOAT utilities, and a powerful Media Browser."
+description = "The Ultimate AI Audio/Video toolkit for ComfyUI. Features Ditto, EchoMimic V3 & FLOAT (SOTA Talking Heads), VibeVoice & CosyVoice 3.0 (Zero-Shot Voice Cloning), Multi-Role Podcast Generation, and a powerful Media Browser."
 version = "1.9.1"
 license = {file = "LICENSE"}
 readme = "README.md"
