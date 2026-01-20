@@ -12,14 +12,54 @@ ditto_path = os.path.join(current_dir, "libs", "Ditto")
 if ditto_path not in sys.path:
     sys.path.append(ditto_path)
 
+# --- Logging Protection ---
+import logging
+class RestoreLogging:
+    def __enter__(self):
+        self.saved_handlers = logging.root.handlers[:]
+        self.saved_stdout = sys.stdout
+        self.saved_stderr = sys.stderr
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Restore sys streams if hijacked
+        if sys.stdout != self.saved_stdout:
+            sys.stdout = self.saved_stdout
+        if sys.stderr != self.saved_stderr:
+            sys.stderr = self.saved_stderr
+            
+        # Restore logging handlers if absl wacked them
+        # (absl adds its own handler that writes to stderr)
+        # We don't want to simply overwrite if new handlers were LEGITIMATELY added,
+        # but absl usually just adds one.
+        # A safer bet: ensure our original handlers are still there.
+        # If logging.root.handlers changed, we might want to revert or merge.
+        # For ComfyUI, usually we just want to ensure the Comfy handlers are present.
+        
+        # Simple Logic: If handlers count changed, try to restore original set
+        # checking if they are missing.
+        
+        # Force restore for now as absl is aggressive
+        # But we verify if anything removed.
+        
+        for h in self.saved_handlers:
+            if h not in logging.root.handlers:
+                logging.root.addHandler(h)
+        
+        # Remove absl handlers if found?
+        # absl handlers typically valid for absl logs, but if it captures root...
+        pass
+# --------------------------
+
 StreamSDK = object # Default fallback to prevent NameError if import fails
 DITTO_AVAILABLE = False
 
 try:
-    # Import directly since we added ditto_path to sys.path
-    # This avoids assuming 'libs' is a resolvable package
-    from stream_pipeline_offline import StreamSDK
-    from core.atomic_components.cfg import parse_cfg
+    with RestoreLogging():
+        # Import directly since we added ditto_path to sys.path
+        # This avoids assuming 'libs' is a resolvable package
+        from stream_pipeline_offline import StreamSDK
+        from core.atomic_components.cfg import parse_cfg
     DITTO_AVAILABLE = True
 except ImportError as e:
     logging.error(f"Failed to import Ditto libs: {e}")
@@ -115,7 +155,8 @@ class AIIA_DittoLoader:
         
         # Initialize ComfyStreamSDK (Subclass of StreamSDK that avoids File I/O for frames)
         try:
-            sdk = ComfyStreamSDK(cfg_pkl, data_root)
+            with RestoreLogging():
+                sdk = ComfyStreamSDK(cfg_pkl, data_root)
         except Exception as e:
             logging.error(f"Failed to initialize Ditto SDK: {e}")
             raise e
@@ -427,35 +468,37 @@ class AIIA_DittoSampler:
             "mouth_amp": mouth_amp,
         }
         
-        # Calling setup() creates fresh threads and queues
-        master_sdk.setup(
-            source_image_pil=ref_image_pil, 
-            output_path=None, # In-memory
-            N_d=num_frames,
-            sampling_timesteps=sampling_steps,
-            crop_scale=crop_scale,
-            emo=emo_idx,
-            drive_eye=drive_eye,
-            delta_eye_open_n=0 if chk_eye_blink else -1, # 0=random, -1=none
-            smo_k_d=smo_k_d,
-            overall_ctrl_info=overall_ctrl_info,
-            total_frames=num_frames # For pbar
-        )
         
-        # 4. Trigger Audio Feat Extraction & Pipeline
-        try:
-             aud_feat = master_sdk.wav2feat.wav2feat(audio_np)
-             master_sdk.audio2motion_queue.put(aud_feat)
-             
-             # 5. Wait for completion
-             # master_sdk.close() joins threads.
-             master_sdk.close() 
-        except Exception as e:
-             logging.error(f"Error during Ditto inference: {e}")
-             # Ensure cleanup
-             try: master_sdk.close()
-             except: pass
-             raise e
+        # Calling setup() creates fresh threads and queues
+        with RestoreLogging():
+            master_sdk.setup(
+                source_image_pil=ref_image_pil, 
+                output_path=None, # In-memory
+                N_d=num_frames,
+                sampling_timesteps=sampling_steps,
+                crop_scale=crop_scale,
+                emo=emo_idx,
+                drive_eye=drive_eye,
+                delta_eye_open_n=0 if chk_eye_blink else -1, # 0=random, -1=none
+                smo_k_d=smo_k_d,
+                overall_ctrl_info=overall_ctrl_info,
+                total_frames=num_frames # For pbar
+            )
+            
+            # 4. Trigger Audio Feat Extraction & Pipeline
+            try:
+                 aud_feat = master_sdk.wav2feat.wav2feat(audio_np)
+                 master_sdk.audio2motion_queue.put(aud_feat)
+                 
+                 # 5. Wait for completion
+                 # master_sdk.close() joins threads.
+                 master_sdk.close() 
+            except Exception as e:
+                 logging.error(f"Error during Ditto inference: {e}")
+                 # Ensure cleanup
+                 try: master_sdk.close()
+                 except: pass
+                 raise e
              
         # 6. Retrieve frames
         generated = master_sdk.generated_frames
