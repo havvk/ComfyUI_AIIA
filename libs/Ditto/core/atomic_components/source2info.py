@@ -89,7 +89,7 @@ class Source2Info:
         ret_dct = crop_image(
             img,
             lmk203,
-            dsize=800,
+            dsize=512,
             scale=kwargs.get("crop_scale", 2.3),
             vx_ratio=kwargs.get("crop_vx_ratio", 0),
             vy_ratio=kwargs.get("crop_vy_ratio", -0.125),

@@ -71,7 +71,7 @@ class InsightFaceDet:
         self.nms_thresh = 0.4
         self.det_thresh = 0.5
 
-        self.input_size = (512, 512)
+        self.input_size = (800, 800)
         self.input_mean = 127.5
         self.input_std = 128.0
         self._anchor_ratio = 1.0
