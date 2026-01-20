@@ -286,9 +286,16 @@ class ComfyStreamSDK(StreamSDK):
         # ======== Video Writer Bypass ========
         # Mock the writer components so SDK.close() doesn't fail
         self.writer = MockWriter()
-        self.writer_pbar = MockWriter()
+        self.writer_pbar = MockWriter() # We replace this with our own logic
         self.generated_frames = []
         
+        # Prepare Progress Bar
+        from comfy.utils import ProgressBar
+        if total_frames > 0:
+            self.pbar = ProgressBar(total_frames)
+        else:
+            self.pbar = None
+            
         # ======== Setup queues and threads (Copied from StreamSDK.setup) ========
         # We need these because we are starting fresh threads every setup()
         import queue
@@ -305,19 +312,10 @@ class ComfyStreamSDK(StreamSDK):
         self.putback_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
         self.writer_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
         
-        # Reset logic states/buffers if needed? 
-        # StreamSDK doesn't reset buffers (audio_feat) in setup... it assumes fresh instance?
-        # But StreamSDK.__init__ initializes self.audio_feat.
-        # If we reuse SDK, we might need to reset self.audio_feat and self.cond_idx_start?
+        # Reset logic states/buffers
         if not self.online_mode:
             self.audio_feat = np.zeros((0, self.wav2feat.feat_dim), dtype=np.float32)
         self.cond_idx_start = 0 - len(self.audio_feat)
-        
-        # Logic states like clip_idx are reset by setup() of subcomponents usually?
-        # audio2motion.setup doesn't reset clip_idx.
-        # audio2motion_worker resets logic per loop? No.
-        # audio2motion_worker uses self.clip_idx = 0 at start?
-        # Let's check worker.
         self.clip_idx = 0 
 
         self.thread_list = [
@@ -345,7 +343,8 @@ class ComfyStreamSDK(StreamSDK):
             
             res_frame_rgb = item # This is numpy RGB array usually
             self.generated_frames.append(res_frame_rgb)
-            # self.writer_pbar.update()
+            if self.pbar:
+                self.pbar.update(1)
 
     def cleanup(self):
         pass
@@ -360,6 +359,8 @@ class AIIA_DittoSampler:
                 "audio": ("AUDIO",),
                 "sampling_steps": ("INT", {"default": 50, "min": 1, "max": 100}),
                 "fps": ("INT", {"default": 25, "min": 15, "max": 60}),
+                "crop_scale": ("FLOAT", {"default": 2.3, "min": 1.0, "max": 5.0, "step": 0.1}),
+                "emo": (["Neutral", "Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Contempt"], {"default": "Neutral"}),
             }
         }
 
@@ -368,7 +369,7 @@ class AIIA_DittoSampler:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Ditto"
 
-    def generate(self, pipe, ref_image, audio, sampling_steps, fps):
+    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo):
         # pipe is the dict we returned in Loader
         master_sdk = pipe["sdk"]
         cfg_pkl = pipe["cfg_pkl"]
@@ -397,12 +398,22 @@ class AIIA_DittoSampler:
         target_fps = 25 # Force 25 for stability first
         num_frames = math.ceil(len(audio_np) / 16000 * target_fps)
         
+        # Map emo string to int
+        emo_map = {
+            "Angry": 0, "Disgust": 1, "Fear": 2, "Happy": 3,
+            "Neutral": 4, "Sad": 5, "Surprise": 6, "Contempt": 7
+        }
+        emo_idx = emo_map.get(emo, 4)
+        
         # Calling setup() creates fresh threads and queues
         master_sdk.setup(
             source_image_pil=ref_image_pil, 
             output_path=None, # In-memory
             N_d=num_frames,
-            sampling_timesteps=sampling_steps
+            sampling_timesteps=sampling_steps,
+            crop_scale=crop_scale,
+            emo=emo_idx,
+            total_frames=num_frames # For pbar
         )
         
         # 4. Trigger Audio Feat Extraction & Pipeline
