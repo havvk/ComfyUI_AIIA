@@ -218,7 +218,15 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `ref_audio`: 驱动音频。
 - **参数**:
   - `cfg`: 视觉引导系数 (默认 4.0)。
-  - `audio_cfg`: 音频引导系数 (默认 2.9)。数值越高，口型越准，但运动可能变僵硬。
+  - `audio_cfg`: 音频引导系数 (默认 2.9)。
+  - `enable_teacache`: **True** (默认)。开启后生成速度提升 1.5 倍以上，且质量无损。
+  - `keep_model_loaded`: **True** (默认)。即使显存占用增加，也强制将模型保留在 GPU 上，显著减少多段视频生成时的加载时间。
+  - `negative_prompt`: 已内置优化过的 **眼部修复 (Eye Correction)** 提示词，有效防止翻白眼和眼神飘忽。
+
+**🚀 性能优化 (Performance)**:
+- **Flash Attention 2**: 强烈推荐安装。检测到时会自动启用，大幅提升推理速度。
+- **TeaCache**: 默认启用。通过缓存部分 Transformer 层计算，大幅加速生成。
+- **Full GPU Mode**: 默认启用。适合显存充足 (24GB+) 用户，享受极致流畅的生成体验。
 
 **🛠️ 模型下载指南 (Manual Download Guide)**
 
