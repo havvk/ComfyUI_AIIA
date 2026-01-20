@@ -368,6 +368,7 @@ class AIIA_DittoSampler:
                 "hd_rot_p": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "hd_rot_y": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "hd_rot_r": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
+                "mouth_amp": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
             }
         }
 
@@ -376,7 +377,7 @@ class AIIA_DittoSampler:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Ditto"
 
-    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r):
+    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp):
         # pipe is the dict we returned in Loader
         master_sdk = pipe["sdk"]
         cfg_pkl = pipe["cfg_pkl"]
@@ -417,6 +418,7 @@ class AIIA_DittoSampler:
             "delta_pitch": hd_rot_p,
             "delta_yaw": hd_rot_y,
             "delta_roll": hd_rot_r,
+            "mouth_amp": mouth_amp,
         }
         
         # Calling setup() creates fresh threads and queues

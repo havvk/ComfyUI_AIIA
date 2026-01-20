@@ -43,6 +43,11 @@ def ctrl_motion(x_d_info, **kwargs):
         k = "exp"
         x_d_info[k] = x_d_info[k] + kwargs["delta_exp"]
 
+    # mouth amp
+    if "mouth_amp" in kwargs:
+        _lip = [6, 12, 14, 17, 19, 20]
+        x_d_info["exp"][:, _lip] *= kwargs["mouth_amp"]
+
     return x_d_info
 
 
