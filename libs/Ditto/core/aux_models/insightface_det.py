@@ -55,6 +55,8 @@ def distance2kps(points, distance, max_shape=None):
 
 class InsightFaceDet:
     def __init__(self, model_path, device="cuda", **kwargs):
+        input_size = kwargs.pop("input_size", None)
+        
         kwargs["model_file"] = model_path
         kwargs["module_name"] = "RetinaFace"
         kwargs["package_name"] = "..aux_models.modules"
@@ -64,6 +66,8 @@ class InsightFaceDet:
 
         if self.model_type != "ori":
             self._init_vars()
+            if input_size is not None:
+                self.input_size = input_size
 
     def _init_vars(self):
         self.center_cache = {}
