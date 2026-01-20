@@ -300,7 +300,7 @@ class AIIA_EchoMimicSampler:
                 "context_length": ("INT", {"default": 49, "min": 16, "max": 200, "step": 1}),
                 "enable_teacache": ("BOOLEAN", {"default": False}),
                 "teacache_threshold": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "keep_model_loaded": ("BOOLEAN", {"default": False, "label_on": "Enable (Full GPU)", "label_off": "Disable (Save VRAM)"}),
+                "keep_model_loaded": ("BOOLEAN", {"default": True, "label_on": "Enable (Full GPU)", "label_off": "Disable (Save VRAM)"}),
             }
         }
 
@@ -595,8 +595,48 @@ class AIIA_EchoMimicSampler:
                     pipeline.clip_image_encoder.to("cpu")
                     torch.cuda.empty_cache()
             
-            # Slice audio embeds
-            partial_audio_embeds = audio_embeds[:, init_frames * 2 : (init_frames + current_partial_video_length) * 2]
+            # Slice and Interpolate audio embeds for this chunk
+            # EchoMimic V3 Model is trained on 25 FPS video with 50Hz Audio Features (Ratio = 2 vectors / frame).
+            # If current FPS != 25, we must interpolate audio features to maintain '2 vectors per frame' rule
+            # relative to the visual frames, otherwise the model will consume audio too fast/slow.
+            
+            # 1. Calculate the exact time window for this chunk
+            # Each chunk covers 'current_partial_video_length' frames.
+            # In time: (current_partial_video_length / fps) seconds.
+            # Original Audio Features are 50Hz.
+            # So we need (current_partial_video_length / fps) * 50 source vectors.
+            
+            start_frame = init_frames
+            end_frame = init_frames + current_partial_video_length
+            
+            start_idx = int((start_frame / fps) * 50)
+            end_idx = int((end_frame / fps) * 50)
+            
+            # Handle edge case where audio is shorter than video duration request
+            if start_idx >= audio_embeds.shape[1]:
+                chunk_audio = audio_embeds[:, -1:, :].repeat(1, current_partial_video_length * 2, 1)
+            else:
+                chunk_audio = audio_embeds[:, start_idx:end_idx, :]
+            
+            # 2. Interpolate to exactly (current_partial_video_length * 2) length
+            target_len = current_partial_video_length * 2
+            
+            if chunk_audio.shape[1] != target_len:
+                 # Permute to (B, C, T) for interpolate
+                 chunk_audio_t = chunk_audio.permute(0, 2, 1)
+                 chunk_audio_t = torch.nn.functional.interpolate(
+                     chunk_audio_t, 
+                     size=target_len, 
+                     mode='linear', 
+                     align_corners=False
+                 )
+                 partial_audio_embeds = chunk_audio_t.permute(0, 2, 1)
+            else:
+                 partial_audio_embeds = chunk_audio
+
+            # Debug Info
+            # print(f"Chunk Audio: frames {current_partial_video_length}, fps {ipv_fps}, src_embeds {chunk_audio.shape[1]}, target {target_len}")
+
 
             print(f"[{self.NODE_NAME}] Processing chunk: frames {init_frames} to {init_frames + current_partial_video_length}")
             log_vram(f"Start Chunk {init_frames}")
