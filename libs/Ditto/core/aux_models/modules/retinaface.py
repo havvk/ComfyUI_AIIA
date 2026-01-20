@@ -54,7 +54,11 @@ def distance2kps(points, distance, max_shape=None):
 
 
 class RetinaFace:
-    def __init__(self, model_file, device="cuda"):
+    def __init__(self, model_file, device="cuda", **kwargs):
+        self.input_size_override = kwargs.get("input_size", None)
+        if self.input_size_override:
+             print(f"[RetinaFaceInternal] Overwriting input_size: {self.input_size_override}")
+        
         if device == "cuda":
             providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
         else:
@@ -67,7 +71,10 @@ class RetinaFace:
         self._init_vars()
 
     def _init_vars(self):
-        self.input_size = (512, 512)
+        if getattr(self, "input_size_override", None):
+             self.input_size = self.input_size_override
+        else:
+             self.input_size = (512, 512)
         input_cfg = self.session.get_inputs()[0]
         input_name = input_cfg.name
         outputs = self.session.get_outputs()
