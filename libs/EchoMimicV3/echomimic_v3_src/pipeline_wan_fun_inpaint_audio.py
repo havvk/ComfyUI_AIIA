@@ -724,6 +724,7 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
         if not use_longvideo_cfg:
             print('not use long video cfg')
             with self.progress_bar(total=num_inference_steps) as progress_bar:
+                start_time = time.time()
                 for i, t in enumerate(timesteps):
                     if do_classifier_free_guidance:
                         if i <= neg_steps:
