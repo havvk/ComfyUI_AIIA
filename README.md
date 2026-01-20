@@ -1006,6 +1006,11 @@ B: 太神奇了！那我们快去生成试试吧！
     - `fixed_width` / `fixed_height`: 锁定一条边，另一条边自适应。
     - `fixed_long_side` / `fixed_short_side`: 锁定长边或短边 (例如锁定 512 的长边)。
     - `custom_size`: 强制裁切为指定的 `width` x `height`。
+  - `aspect_ratio`: 裁切比例。
+    - 默认为 `original` (保持原图比例或使用 custom_size 的宽高)。
+    - 可选 `1:1`, `16:9`, `custom` 等。
+    - 选择非 original 时，会根据 `crop_basis` 自动计算另一条边的长度。
+  - `custom_aspect_ratio`: 自定义比例值 (例如 2.35)。仅在 `aspect_ratio` 选 `custom` 时生效。
   - `position`: 锚点位置 (九宫格)。支持 `center`, `top`, `bottom_left` 等。
   - `offset_x` / `offset_y`: 相对偏移量。用于在自动定位的基础上进行微调 (范围 -1.0 到 1.0)。
 - **输出**: `IMAGE` (裁切后的图像)。

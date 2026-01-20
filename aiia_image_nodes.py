@@ -11,6 +11,8 @@ class AIIA_ImageSmartCrop:
                 "width": ("INT", {"default": 512, "min": 0, "max": 8192, "step": 8}),
                 "height": ("INT", {"default": 512, "min": 0, "max": 8192, "step": 8}),
                 "crop_basis": (["custom_size", "fixed_width", "fixed_height", "fixed_long_side", "fixed_short_side"],),
+                "aspect_ratio": (["original", "custom", "1:1", "4:3", "3:4", "16:9", "9:16", "21:9", "9:21"], {"default": "original"}),
+                "custom_aspect_ratio": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 10.0, "step": 0.01}),
                 "position": (["center", "top", "bottom", "left", "right", "top_left", "top_right", "bottom_left", "bottom_right"],),
                 "offset_x": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
                 "offset_y": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
@@ -21,7 +23,7 @@ class AIIA_ImageSmartCrop:
     FUNCTION = "crop"
     CATEGORY = "AIIA/Image"
 
-    def crop(self, image, width, height, crop_basis, position, offset_x, offset_y):
+    def crop(self, image, width, height, crop_basis, aspect_ratio, custom_aspect_ratio, position, offset_x, offset_y):
         # Image is typically [B, H, W, C]
         batch_results = []
         
@@ -34,66 +36,76 @@ class AIIA_ImageSmartCrop:
             src_w, src_h = img_pil.size
             tgt_w, tgt_h = width, height
 
+            # --- 0. Determine Target Aspect Ratio ---
+            target_ratio = None # w / h
+            
+            if aspect_ratio == "original":
+                target_ratio = src_w / src_h
+            elif aspect_ratio == "custom":
+                target_ratio = custom_aspect_ratio
+            elif aspect_ratio == "1:1":
+                target_ratio = 1.0
+            elif aspect_ratio == "4:3":
+                target_ratio = 4.0 / 3.0
+            elif aspect_ratio == "3:4":
+                target_ratio = 3.0 / 4.0
+            elif aspect_ratio == "16:9":
+                target_ratio = 16.0 / 9.0
+            elif aspect_ratio == "9:16":
+                target_ratio = 9.0 / 16.0
+            elif aspect_ratio == "21:9":
+                target_ratio = 21.0 / 9.0
+            elif aspect_ratio == "9:21":
+                target_ratio = 9.0 / 21.0
+                
             # --- 1. Determine Target Dimensions ---
-            if crop_basis == "fixed_width":
+            if crop_basis == "custom_size":
+                 # In custom_size mode, if aspect_ratio is NOT original, we override height? 
+                 # Usually custom_size means strict Width x Height.
+                 # Let's say: If Aspect Ratio is standard (original), use WxH.
+                 # If user Explicitly selects a ratio (e.g. 1:1), we respect Width and recalc Height?
+                 if aspect_ratio != "original":
+                     # Treat 'width' as the primary dimension
+                     tgt_w = width
+                     tgt_h = int(width / target_ratio)
+                 else:
+                     tgt_w = width
+                     tgt_h = height
+            
+            elif crop_basis == "fixed_width":
                 tgt_w = width
-                tgt_h = int(src_h * (width / src_w))
+                tgt_h = int(width / target_ratio)
+                
             elif crop_basis == "fixed_height":
                 tgt_h = height
-                tgt_w = int(src_w * (height / src_h))
+                tgt_w = int(height * target_ratio)
+                
             elif crop_basis == "fixed_long_side":
-                if src_w > src_h:
+                # Determine which side of the RESULT should be the long side based on ratio
+                # Logic: We force the LONGEST side of the CROP to be 'width' pixels.
+                
+                # If target_ratio > 1 (Landscape), Width is long side.
+                if target_ratio >= 1.0:
                     tgt_w = width
-                    tgt_h = int(src_h * (width / src_w))
+                    tgt_h = int(width / target_ratio)
                 else:
-                    tgt_h = width  # treat 'width' input as the long side length
-                    tgt_w = int(src_w * (width / src_h))
+                    # Portrait, Height is long side.
+                    tgt_h = width # Using 'width' input as the constraint value
+                    tgt_w = int(tgt_h * target_ratio)
+                    
             elif crop_basis == "fixed_short_side":
-                if src_w < src_h:
-                    tgt_w = width
-                    tgt_h = int(src_h * (width / src_w))
+                # Logic: We force the SHORTEST side of the CROP to be 'width' pixels.
+                
+                # If target_ratio > 1 (Landscape), Height is short side.
+                if target_ratio >= 1.0:
+                    tgt_h = width # Using 'width' input as the constraint value
+                    tgt_w = int(tgt_h * target_ratio)
                 else:
-                    tgt_h = width  # treat 'width' input as the short side length
-                    tgt_w = int(src_w * (width / src_h))
-            else: # custom_size
-                pass # Use provided width and height directly
+                    # Portrait, Width is short side.
+                    tgt_w = width
+                    tgt_h = int(tgt_w / target_ratio)
 
-            # --- 2. Resize Logic (if preserving aspect ratio logic implies resizing first, or just cropping?)
-            # The user asked for "crop out designated size". 
-            # If the target size is strictly smaller than source, we crop.
-            # If target size logic implies scaling (like "fixed width" Usually implies resize to that width), then we resize.
-            # BUT, standard "Crop" nodes usually just cut. Smart Crop often implies finding the best area.
-            # Given the "crop_basis" names, "fixed_width" usually means "Resize image so width is X".
-            # However, prompt says "crop out designated proportion".
-            # Let's assume standard Comfy behavior: 
-            # "Smart Crop" implies resizing the *Shortest* side to fill the target frame, then cropping the rest?
-            # OR, does it mean "Cut a 512x512 box out of a 1024x1024 image"?
-            # Re-reading prompt: "from image designated position (top, left...) cut out designated proportion picture".
-            # And "crop_scale... changes action area...".
-            
-            # Let's interpret "crop_basis" as "How to calculate the CROP BOX size".
-            # If "fixed_width", the crop box has width=InputWidth, Height=InputHeight (or derived?).
-            # Actually, standard "Resize" behavior is more useful here usually.
-            # But let's stick to strict "Crop" logic if the user wants to isolate mouth etc.
-            # However, if user wants to prevent "mouth too wide" (resolution mismatch), they likely want to RESIZE the image to 512x512 (centering or cropping).
-            
-            # Let's implement a hybrid "Resize then Crop" if needed, OR just "Crop".
-            # For "custom_size" (512x512) on a 1920x1080 image:
-            # We cut a 512x512 box.
-            
-            # Handling "fixed_width" etc for CROP size:
-            # If I select "fixed_width" and width=512. Why do I need height? 
-            # Maybe I want a crop of width 512, and height covering the whole image?
-            
-            # Let's allow Target W/H to be defined.
-            # BUT, if we want to support "Resizing", that's a different node usually.
-            # The prompt mentions "crop_scale" issues in Ditto.
-            # Let's implement strict Cropping for now.
-            
-            # Refined Target Dimensions Force Constraint:
-            # If "fixed_width", we ignore input height and use source height? 
-            # No, that's just passing through.
-            # Let's stick to the interpretation: "Calculate the rectangle size to crop".
+            # --- Logic End ---
             
             cw, ch = tgt_w, tgt_h
             
