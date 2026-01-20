@@ -484,6 +484,7 @@ class AIIA_EchoMimicSampler:
                 temp_init_frames += (chunk_len - overlap_video_length)
                 
         total_steps = total_chunks * steps
+        print(f"[{self.NODE_NAME}] Total Chunks: {total_chunks}, Steps/Chunk: {steps}, Total Steps: {total_steps}")
         pbar = ProgressBar(total_steps)
         
         def progress_callback(pipe, step_index, timestep, callback_kwargs):
