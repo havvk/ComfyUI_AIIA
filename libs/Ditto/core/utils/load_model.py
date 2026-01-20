@@ -60,7 +60,5 @@ def load_force_ori_type(
     import importlib
 
     module = getattr(importlib.import_module(package_name, __package__), module_name)
-    print(f"[load_model] Loaded module: {module} from {package_name} in {__package__}")
-    print(f"[load_model] Module file: {importlib.import_module(package_name, __package__).__file__}")
     model = module(**kwargs)
     return model

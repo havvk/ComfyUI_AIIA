@@ -35,7 +35,6 @@ class StreamSDK:
         # Force input_size for InsightFaceDet (RetinaFace) to avoid ONNX mismatch warnings (Expected 640, Got 512)
         if "insightface_det_cfg" in avatar_registrar_cfg:
             avatar_registrar_cfg["insightface_det_cfg"]["input_size"] = (640, 640)
-            print(f"[StreamSDK] Forced InsightFaceDet input_size to: {avatar_registrar_cfg['insightface_det_cfg']['input_size']}")
 
         self.avatar_registrar = AvatarRegistrar(**avatar_registrar_cfg)
         self.condition_handler = ConditionHandler(**condition_handler_cfg)
