@@ -300,10 +300,11 @@ class AIIA_EchoMimicSampler:
                 "context_length": ("INT", {"default": 49, "min": 16, "max": 200, "step": 1}),
                 "enable_teacache": ("BOOLEAN", {"default": False}),
                 "teacache_threshold": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "keep_model_loaded": ("BOOLEAN", {"default": False, "label_on": "Enable (Full GPU)", "label_off": "Disable (Save VRAM)"}),
             }
         }
 
-    def process(self, pipe, ref_image, ref_audio, prompt, negative_prompt, seed, steps, cfg, audio_cfg, fps, width=768, height=768, context_length=49, enable_teacache=False, teacache_threshold=0.1):
+    def process(self, pipe, ref_image, ref_audio, prompt, negative_prompt, seed, steps, cfg, audio_cfg, fps, width=768, height=768, context_length=49, enable_teacache=False, teacache_threshold=0.1, keep_model_loaded=False):
         if not ECHOMIMIC_AVAILABLE: return (torch.zeros((1, 64, 64, 3)),)
 
         pipeline = pipe["pipeline"]
@@ -364,8 +365,9 @@ class AIIA_EchoMimicSampler:
                 audio_features = wav2vec_model(input_values).last_hidden_state
             audio_embeds = audio_features # (1, T_audio, D)
         finally:
-            wav2vec_model.to("cpu")
-            torch.cuda.empty_cache()
+            if not keep_model_loaded:
+                wav2vec_model.to("cpu")
+                torch.cuda.empty_cache()
 
         # 3. Setup Video Params
         duration_sec = len(audio_input) / 16000
@@ -509,14 +511,13 @@ class AIIA_EchoMimicSampler:
         )
         print(f"[{self.NODE_NAME}] Text prompts encoded.")
 
-        # Aggressive memory cleanup: Move Text Encoder BACK TO CPU
-        # This frees VRAM but keeps the model available for next run (unlike deleting it)
-        if hasattr(pipeline, "text_encoder") and pipeline.text_encoder is not None:
+        # Aggressive memory cleanup: Move Text Encoder BACK TO CPU if not keeping loaded
+        if not keep_model_loaded and hasattr(pipeline, "text_encoder") and pipeline.text_encoder is not None:
              pipeline.text_encoder.to("cpu")
         
         gc.collect()
         torch.cuda.empty_cache()
-        log_vram(f"[{self.NODE_NAME}] After Moving T5 to CPU")
+        log_vram(f"[{self.NODE_NAME}] After Prompt Encoding")
 
         # Move Generation Models to GPU
         print(f"[{self.NODE_NAME}] Moving models to GPU for generation...")
@@ -526,7 +527,10 @@ class AIIA_EchoMimicSampler:
         if hasattr(pipeline, "vae") and pipeline.vae is not None:
             pipeline.vae.to(device)
             
-        # CLIP Image Encoder is moved to GPU only when needed, inside the loop
+        # CLIP Image Encoder: Move to GPU PREEMPTIVELY if keeping loaded
+        if keep_model_loaded and hasattr(pipeline, "clip_image_encoder") and pipeline.clip_image_encoder is not None:
+             print(f"[{self.NODE_NAME}] Full GPU Mode: Moving CLIP Encoder to GPU (Persistent)...")
+             pipeline.clip_image_encoder.to(device)
             
         if hasattr(pipeline, "scheduler") and pipeline.scheduler is not None:
              # Scheduler buffers (sigmas) need to be on device
@@ -564,10 +568,12 @@ class AIIA_EchoMimicSampler:
             )
             
             # Pre-compute CLIP Context (Optimized Device Management)
+            # Pre-compute CLIP Context (Optimized Device Management)
             clip_context = None
             if hasattr(pipeline, "clip_image_encoder") and pipeline.clip_image_encoder is not None:
-                print(f"[{self.NODE_NAME}] Computing CLIP Context (Moving Encoder to GPU)...")
-                pipeline.clip_image_encoder.to(device)
+                if not keep_model_loaded:
+                    print(f"[{self.NODE_NAME}] Computing CLIP Context (Moving Encoder to GPU)...")
+                    pipeline.clip_image_encoder.to(device)
                 
                 # Logic copied from pipeline
                 if clip_image is not None:
@@ -581,8 +587,9 @@ class AIIA_EchoMimicSampler:
                      clip_context = pipeline.clip_image_encoder([clip_image_t[:, None, :, :]])
                      clip_context = torch.zeros_like(clip_context)
 
-                pipeline.clip_image_encoder.to("cpu")
-                torch.cuda.empty_cache()
+                if not keep_model_loaded:
+                    pipeline.clip_image_encoder.to("cpu")
+                    torch.cuda.empty_cache()
             
             # Slice audio embeds
             partial_audio_embeds = audio_embeds[:, init_frames * 2 : (init_frames + current_partial_video_length) * 2]
