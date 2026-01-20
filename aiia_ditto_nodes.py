@@ -150,13 +150,10 @@ class ComfyStreamSDK(StreamSDK):
         super().__init__(cfg_pkl, data_root, **kwargs)
         self.generated_frames = [] # Store result frames here
         
-        # Stop the initial threads started by super().__init__
-        # We will restart them manually in Sampler
-        self.close()
-        # Reset stop event because close() sets it? 
-        # StreamSDK.close() DOES NOT set stop_event. It just sends poison pill.
-        # But if exceptions occurred, stop_event might be set.
-        self.stop_event.clear()
+        # NOTE: StreamSDK.__init__ does NOT start threads or create queues (they are created in setup).
+        # So we do NOT need to call self.close() here. Calling it causes AttributeError because queues don't exist yet.
+        # We just leave it as is. setup() will be called by the Sampler node.
+        pass
         
     def setup(self, source_image_pil, **kwargs):
         # Override setup to accept PIL Image instead of path
