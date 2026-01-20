@@ -252,6 +252,11 @@ class AIIA_VibeVoice_TTS:
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
         is_streaming = vibevoice_model.get("is_streaming", False)
+        
+        # AIIA Fix: Ensure model is on GPU (it might have been offloaded to CPU by previous run)
+        if torch.cuda.is_available():
+            model.to("cuda")
+        
         device = model.device 
         
         if processor is None: raise RuntimeError("Processor is missing.")
