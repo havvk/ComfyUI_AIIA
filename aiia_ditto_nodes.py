@@ -155,7 +155,7 @@ class ComfyStreamSDK(StreamSDK):
         # We just leave it as is. setup() will be called by the Sampler node.
         pass
         
-    def setup(self, source_image_pil, **kwargs):
+    def setup(self, source_image_pil, total_frames=0, **kwargs):
         # Override setup to accept PIL Image instead of path
         
         # ======== Prepare Options ========
@@ -195,6 +195,7 @@ class ComfyStreamSDK(StreamSDK):
         self.N_d = kwargs.get("N_d", -1)
         self.use_d_keys = kwargs.get("use_d_keys", None)
         self.relative_d = kwargs.get("relative_d", True)
+        # drive_eye might be passed in kwargs
         self.drive_eye = kwargs.get("drive_eye", None)    # None: true4image, false4video
         self.delta_eye_arr = kwargs.get("delta_eye_arr", None)
         self.delta_eye_open_n = kwargs.get("delta_eye_open_n", 0)
@@ -361,6 +362,12 @@ class AIIA_DittoSampler:
                 "fps": ("INT", {"default": 25, "min": 15, "max": 60}),
                 "crop_scale": ("FLOAT", {"default": 2.3, "min": 1.0, "max": 5.0, "step": 0.1}),
                 "emo": (["Neutral", "Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Contempt"], {"default": "Neutral"}),
+                "drive_eye": ("BOOLEAN", {"default": True}),
+                "chk_eye_blink": ("BOOLEAN", {"default": True}),
+                "smo_k_d": ("INT", {"default": 3, "min": 1, "max": 9}),
+                "hd_rot_p": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
+                "hd_rot_y": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
+                "hd_rot_r": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
             }
         }
 
@@ -369,7 +376,7 @@ class AIIA_DittoSampler:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Ditto"
 
-    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo):
+    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r):
         # pipe is the dict we returned in Loader
         master_sdk = pipe["sdk"]
         cfg_pkl = pipe["cfg_pkl"]
@@ -405,6 +412,13 @@ class AIIA_DittoSampler:
         }
         emo_idx = emo_map.get(emo, 4)
         
+        # Prepare Controls
+        overall_ctrl_info = {
+            "delta_pitch": hd_rot_p,
+            "delta_yaw": hd_rot_y,
+            "delta_roll": hd_rot_r,
+        }
+        
         # Calling setup() creates fresh threads and queues
         master_sdk.setup(
             source_image_pil=ref_image_pil, 
@@ -413,6 +427,10 @@ class AIIA_DittoSampler:
             sampling_timesteps=sampling_steps,
             crop_scale=crop_scale,
             emo=emo_idx,
+            drive_eye=drive_eye,
+            delta_eye_open_n=0 if chk_eye_blink else -1, # 0=random, -1=none
+            smo_k_d=smo_k_d,
+            overall_ctrl_info=overall_ctrl_info,
             total_frames=num_frames # For pbar
         )
         
