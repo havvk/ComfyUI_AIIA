@@ -161,6 +161,9 @@ class ComfyStreamSDK(StreamSDK):
         # ======== Prepare Options ========
         kwargs = self._merge_kwargs(self.default_kwargs, kwargs)
 
+        print("=" * 20, "ComfyStreamSDK setup", "=" * 20)
+        # print_cfg not imported, skip
+        
         # -- avatar_registrar: template cfg --
         self.max_size = kwargs.get("max_size", 1920)
         self.template_n_frames = kwargs.get("template_n_frames", -1)
@@ -243,8 +246,50 @@ class ComfyStreamSDK(StreamSDK):
         # Mock the writer components so SDK.close() doesn't fail
         self.writer = MockWriter()
         self.writer_pbar = MockWriter()
-        
         self.generated_frames = []
+        
+        # ======== Setup queues and threads (Copied from StreamSDK.setup) ========
+        # We need these because we are starting fresh threads every setup()
+        import queue
+        import threading
+        
+        QUEUE_MAX_SIZE = 100
+        self.worker_exception = None
+        self.stop_event = threading.Event()
+
+        self.audio2motion_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
+        self.motion_stitch_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
+        self.warp_f3d_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
+        self.decode_f3d_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
+        self.putback_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
+        self.writer_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
+        
+        # Reset logic states/buffers if needed? 
+        # StreamSDK doesn't reset buffers (audio_feat) in setup... it assumes fresh instance?
+        # But StreamSDK.__init__ initializes self.audio_feat.
+        # If we reuse SDK, we might need to reset self.audio_feat and self.cond_idx_start?
+        if not self.online_mode:
+            self.audio_feat = np.zeros((0, self.wav2feat.feat_dim), dtype=np.float32)
+        self.cond_idx_start = 0 - len(self.audio_feat)
+        
+        # Logic states like clip_idx are reset by setup() of subcomponents usually?
+        # audio2motion.setup doesn't reset clip_idx.
+        # audio2motion_worker resets logic per loop? No.
+        # audio2motion_worker uses self.clip_idx = 0 at start?
+        # Let's check worker.
+        self.clip_idx = 0 
+
+        self.thread_list = [
+            threading.Thread(target=self.audio2motion_worker),
+            threading.Thread(target=self.motion_stitch_worker),
+            threading.Thread(target=self.warp_f3d_worker),
+            threading.Thread(target=self.decode_f3d_worker),
+            threading.Thread(target=self.putback_worker),
+            threading.Thread(target=self.writer_worker),
+        ]
+
+        for thread in self.thread_list:
+            thread.start()
         
     def _writer_worker(self):
         # Override to append to list instead of writing to disk
@@ -262,22 +307,6 @@ class ComfyStreamSDK(StreamSDK):
             # self.writer_pbar.update()
 
     def cleanup(self):
-        # Close SDK but keep threads alive? 
-        # StreamSDK.close() joins threads. We can call close() then create new SDK for next run?
-        # Or just clear queues.
-        # For safety/simplicity in ComfyUI (stateless nodes), we might want to kill it.
-        # But loading models takes time.
-        # Models are in self.avatar_registrar, self.audio2motion, etc.
-        # If we `close()`, threads die. We cannot restart threads on same object easily because thread.start() only once.
-        # So we should probably keep SDK alive but define a 'reset' method?
-        # But SDK structure couples Threads with Init.
-        # So: Re-instantiate SDK every run?
-        # If models are loaded in __init__, re-instantiation re-loads models. BAD.
-        # Models are loaded in __init__.
-        # Optimizing:
-        # We should separate Model Loading from Thread Starting.
-        # But that requires modifying StreamSDK code.
-        # Allow me to modify StreamSDK via monkeypatch or rewrite.
         pass
 
 class AIIA_DittoSampler:
@@ -300,63 +329,10 @@ class AIIA_DittoSampler:
 
     def generate(self, pipe, ref_image, audio, sampling_steps, fps):
         # pipe is the dict we returned in Loader
-        # Create a FRESH SDK instance for each run because threads die after run.
-        # To reuse models, we need to hack StreamSDK.
-        # BUT, Ditto models are small (~few hundred MB?). Maybe acceptable to reload?
-        # No, Load time is 5-10s. Usability suffers.
-        # Strategy:
-        # Load models ONCE (in Loader) and pass them to Sampler?
-        # StreamSDK owns the models.
-        # We can create a new SDK instance but share the underlying model objects?
-        # StreamSDK init: self.lmdm = LMDM(...)
-        # We can extract models from 'pipe["sdk"]' (the master instance) and inject them into a new 'RuntimeSDK'.
-        
         master_sdk = pipe["sdk"]
         cfg_pkl = pipe["cfg_pkl"]
         data_root = pipe["data_root"]
         
-        # Create a new Runtime SDK that shares models with Master SDK
-        # We need to modify StreamSDK to support 'preloaded_models' argument.
-        # Or we can just spin up new threads on the Master SDK?
-        # master_sdk.thread_list are dead if previous run finished.
-        # We need to re-create threads.
-        
-        # Let's try to Restart Threads on master_sdk:
-        # Threads cannot be restarted. We must create new Thread objects targeting the SAME worker methods.
-        import threading
-        
-        master_sdk.stop_event.clear()
-        master_sdk.generated_frames = []
-        master_sdk.worker_exception = None
-        
-        # Reset Queues
-        import queue
-        master_sdk.audio2motion_queue = queue.Queue(maxsize=100)
-        master_sdk.motion_stitch_queue = queue.Queue(maxsize=100)
-        master_sdk.warp_f3d_queue = queue.Queue(maxsize=100)
-        master_sdk.decode_f3d_queue = queue.Queue(maxsize=100)
-        master_sdk.putback_queue = queue.Queue(maxsize=100)
-        master_sdk.writer_queue = queue.Queue(maxsize=100)
-        
-        # Reset logic states
-        master_sdk.clip_idx = 0 # audio2motion
-        # But logic state is inside atomic components too? 
-        # e.g. self.audio2motion.clip_idx...
-        # We should call .setup() again?
-        # YES, implementation below calls .setup() which seems to reset components.
-        
-        # Start new threads
-        master_sdk.thread_list = [
-            threading.Thread(target=master_sdk.audio2motion_worker),
-            threading.Thread(target=master_sdk.motion_stitch_worker),
-            threading.Thread(target=master_sdk.warp_f3d_worker),
-            threading.Thread(target=master_sdk.decode_f3d_worker),
-            threading.Thread(target=master_sdk.putback_worker),
-            threading.Thread(target=master_sdk.writer_worker),
-        ]
-        for t in master_sdk.thread_list:
-            t.start()
-            
         # 1. Prepare Audio
         waveform = audio["waveform"]
         sample_rate = audio["sample_rate"]
@@ -375,22 +351,12 @@ class AIIA_DittoSampler:
         ref_image_pil = Image.fromarray(ref_image_np)
         
         # 3. Setup SDK with this run's data
-        # Calculate Number of Frames based on Audio Duration
-        # Ditto standard FPS is 25?
-        # math.ceil(len(audio) / 16000 * 25) in inference.py
         import math
-        # If user provides FPS, we must adapt.
-        # But Ditto model might be trained on 25fps fixed?
-        # LMDM seq_frames=80.
-        # Let's enforce 25fps for now as Ditto seems tuned for it.
-        # If user wants 60fps, we might need to interpolation output.
-        # Let's use user fps to calculate N_f, but warn if model is 25-fixed.
-        # The paper says 40FPS/Realtime, but generated video FPS depends on how dense the motion keys are.
-        # Let's stick to 25 for safe start.
         
         target_fps = 25 # Force 25 for stability first
         num_frames = math.ceil(len(audio_np) / 16000 * target_fps)
         
+        # Calling setup() creates fresh threads and queues
         master_sdk.setup(
             source_image_pil=ref_image_pil, 
             output_path=None, # In-memory
@@ -399,11 +365,6 @@ class AIIA_DittoSampler:
         )
         
         # 4. Trigger Audio Feat Extraction & Pipeline
-        # In StreamSDK.run_chunk or offline mode logic.
-        # We need to inspect how 'run' starts.
-        # In inference.py: SDK.wav2feat... then SDK.audio2motion_queue.put(aud_feat)
-        # We replicate inference.py logic here.
-        
         try:
              aud_feat = master_sdk.wav2feat.wav2feat(audio_np)
              master_sdk.audio2motion_queue.put(aud_feat)
