@@ -23,7 +23,7 @@ if _is_duplicate:
     NODE_CLASS_MAPPINGS = {}
     NODE_DISPLAY_NAME_MAPPINGS = {}
 else:
-    # print("--- 正在加载 ComfyUI_AIIA 自定义节点包 ---")
+    print("--- 正在加载 ComfyUI_AIIA 自定义节点包 ---")
 
     # 初始化空的映射字典
     NODE_CLASS_MAPPINGS = {}
@@ -140,9 +140,7 @@ else:
     __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']
 
     if not NODE_CLASS_MAPPINGS:
-        # print("严重警告: [ComfyUI_AIIA __init__] 未从任何模块加载到节点类映射。AIIA 节点将不可用。")
-        pass
+        print("严重警告: [ComfyUI_AIIA __init__] 未从任何模块加载到节点类映射。AIIA 节点将不可用。")
     else:
-        # loaded_node_count = len(NODE_CLASS_MAPPINGS)
-        # print(f"--- ComfyUI_AIIA 自定义节点包: 成功处理导入。最终 NODE_CLASS_MAPPINGS 包含 {loaded_node_count} 个条目 ---")
-        pass
+        loaded_node_count = len(NODE_CLASS_MAPPINGS)
+        print(f"--- ComfyUI_AIIA 自定义节点包: 成功处理导入。最终 NODE_CLASS_MAPPINGS 包含 {loaded_node_count} 个条目 ---")
