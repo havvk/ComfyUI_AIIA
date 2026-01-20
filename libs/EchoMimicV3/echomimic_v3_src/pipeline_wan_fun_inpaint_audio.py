@@ -808,6 +808,10 @@ class WanFunInpaintAudioPipeline(DiffusionPipeline):
                     
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
                     progress_bar.update()
+                    step_time = time.time() - start_time
+                    print(f"    Step {i+1}/{len(timesteps)}: {step_time:.2f}s")
+                    start_time = time.time() # Reset for next step
+                
                 if comfyui_progressbar:
                     pbar.update(1)
 
