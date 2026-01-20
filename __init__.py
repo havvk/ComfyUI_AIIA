@@ -130,6 +130,9 @@ else:
     # 23. 处理 aiia_ditto_nodes.py (新增 Ditto)
     _load_nodes_from_module(".aiia_ditto_nodes", "aiia_ditto_nodes")
 
+    # 24. 处理 aiia_image_nodes.py (新增 Smart Crop)
+    _load_nodes_from_module(".aiia_image_nodes", "aiia_image_nodes")
+
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
 
