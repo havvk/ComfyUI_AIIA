@@ -133,7 +133,7 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
     cur_n_i = 1
     
     # Double Blink Probability
-    double_blink_prob = 0.25
+    double_blink_prob = 0.15
     
     while cur_i < max_i:
         # First Blink
@@ -148,8 +148,8 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
         cur_i += blink_n
         
         if is_double:
-             # Short gap: 2-5 frames (FAST re-blink)
-             short_gap = random.randint(2, 6)
+             # Short gap: 4-8 frames (Clearer re-blink)
+             short_gap = random.randint(4, 8)
              cur_i += short_gap
              
              # Second Blink
