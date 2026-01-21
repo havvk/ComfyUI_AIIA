@@ -668,7 +668,7 @@ class AIIA_DittoSampler:
                 overall_ctrl_info=overall_ctrl_info,
                 ctrl_info=ctrl_info,
                 vad_timeline=dataset_alpha,
-                **vars(ditto_config)
+                **vars(ditto_model)
             )
             
         # 4. Trigger Audio Feat Extraction & Pipeline
