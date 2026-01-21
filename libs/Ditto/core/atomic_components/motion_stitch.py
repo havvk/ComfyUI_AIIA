@@ -136,8 +136,8 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
     double_blink_prob = 0.15
     
     # Hold Duration (Frames to keep eye closed)
-    blink_hold_min = 2
-    blink_hold_max = 5
+    blink_hold_min = 1
+    blink_hold_max = 3
     
     while cur_i < max_i:
         # First Blink
@@ -173,7 +173,7 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
              cur_i += short_gap
              
              # Second Blink
-             hold_frames_2 = random.randint(1, 3) # Shorter hold for 2nd blink
+             hold_frames_2 = random.randint(0, 2) # Shorter hold for 2nd blink
              
              seq_mid_2 = [blink_idx[mid_point]] * (hold_frames_2 + 1)
              full_blink_seq_2 = seq_start + seq_mid_2 + seq_end
