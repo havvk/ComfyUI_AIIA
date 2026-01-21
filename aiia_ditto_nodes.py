@@ -573,11 +573,11 @@ class AIIA_DittoSampler:
             # Release tau ~ 0.4s -> coeff ~ 0.90
             
             # Linear Ramp Logic
-            # Attack: Fast but not instant (avoid snapping). 10 frames (0.4s)
-            # Release: Very slow and smooth. 33 frames (1.3s)
+            # Attack: Very fast. Speech onset is explosive. 2 frames (0.08s).
+            # Release: Very slow and smooth. 33 frames (1.3s).
             
-            attack_step = 0.10 # +0.1 per frame (was 0.2)
-            release_step = 0.03 # -0.03 per frame (was 0.05)
+            attack_step = 0.50 # +0.5 per frame (Fast Attack)
+            release_step = 0.03 # -0.03 per frame (Slow Release)
             
             for i in range(num_frames):
                 target = target_alpha[i]
