@@ -547,6 +547,16 @@ class AIIA_DittoSampler:
             segments = []
             if num_frames > 0:
                 current_val = target_alpha[0]
+            # [FIX] VAD Gap Filling
+            # Bridge short silences (dips in energy) to prevent "Release" logic from triggering 
+            # in the middle of a sentence (which causes freeze-frame artifacts).
+            # 8 frames ~ 0.32s.
+            min_silence = 8
+            
+            # Find Silence Segments (val == 0.0)
+            segments = []
+            if num_frames > 0:
+                current_val = target_alpha[0]
                 start_idx = 0
                 for i in range(1, num_frames):
                     if target_alpha[i] != current_val:
@@ -554,9 +564,28 @@ class AIIA_DittoSampler:
                         current_val = target_alpha[i]
                         start_idx = i
                 segments.append((start_idx, num_frames, current_val))
-                
-            min_speech = 3
+            
+            # Fill short silence gaps
             for start, end, val in segments:
+                duration = end - start
+                if val == 0.0 and duration < min_silence:
+                    target_alpha[start:end] = 1.0 # Fill gap
+            
+            # Re-calculate segments for min_speech filtering (post-fill)
+            # Find Speech Segments (val == 1.0)
+            speech_segments = []
+            if num_frames > 0:
+                current_val = target_alpha[0]
+                start_idx = 0
+                for i in range(1, num_frames):
+                    if target_alpha[i] != current_val:
+                        speech_segments.append((start_idx, i, current_val))
+                        current_val = target_alpha[i]
+                        start_idx = i
+                speech_segments.append((start_idx, num_frames, current_val))
+            
+            min_speech = 3
+            for start, end, val in speech_segments:
                 duration = end - start
                 if val == 1.0 and duration < min_speech:
                      target_alpha[start:end] = 0.0
