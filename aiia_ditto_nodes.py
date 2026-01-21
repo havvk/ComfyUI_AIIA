@@ -417,7 +417,7 @@ class AIIA_DittoSampler:
                 "hd_rot_y": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "hd_rot_r": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "mouth_amp": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
-                "auto_ref_frame": ("BOOLEAN", {"default": True, "label_on": "Auto-Revert on Silence", "label_off": "Disabled"}),
+                "relax_on_silence": ("BOOLEAN", {"default": True, "label_on": "Relax Face on Silence", "label_off": "Disabled"}),
                 "ref_threshold": ("FLOAT", {"default": 0.01, "min": 0.0, "max": 1.0, "step": 0.001}),
                 "blink_mode": (["Random (Normal)", "Fast", "Slow", "None"], {"default": "Random (Normal)"}),
             }
@@ -428,7 +428,7 @@ class AIIA_DittoSampler:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Ditto"
 
-    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, auto_ref_frame, ref_threshold, blink_mode):
+    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, relax_on_silence, ref_threshold, blink_mode):
         # pipe is the dict we returned in Loader
         master_sdk = pipe["sdk"]
         cfg_pkl = pipe["cfg_pkl"]
@@ -459,7 +459,7 @@ class AIIA_DittoSampler:
         
         # VAD / Volume Analysis
         ctrl_info = {}
-        if auto_ref_frame:
+        if relax_on_silence:
             # Calculate RMS per frame
             frame_len = 640 # 16000 / 25
             
@@ -476,30 +476,45 @@ class AIIA_DittoSampler:
             rms = np.sqrt(np.mean(audio_frames**2, axis=1))
             
             # Create alpha mask (0.0 = Silence/Ref, 1.0 = Speech/Gen)
-            dataset_alpha = np.ones(num_frames, dtype=np.float32)
+            # Apply Attack/Release Envelope
+            # Attack (Silence -> Speech): Fast (e.g. 0.05s / ~1-2 frames)
+            # Release (Speech -> Silence): Slow (e.g. 0.3-0.5s / ~8-12 frames)
             
-            # 1. Hard Threshold
+            target_alpha = np.zeros(num_frames, dtype=np.float32)
             for i in range(num_frames):
-                if rms[i] < ref_threshold:
-                    dataset_alpha[i] = 0.0
+                target_alpha[i] = 0.0 if rms[i] < ref_threshold else 1.0
             
-            # 2. Smoothing (Convolution)
-            # Use a Hanning window for smooth ease-in/out
-            # Window size: 7 frames (approx 280ms at 25fps)
-            win_len = 7
-            if num_frames > win_len:
-                window = np.hanning(win_len)
-                window /= window.sum() # Normalize
-                # Pad to keep length same
-                pad_w = win_len // 2
-                padded = np.pad(dataset_alpha, (pad_w, pad_w), mode='edge')
-                smoothed = np.convolve(padded, window, mode='valid')
+            current_alpha = 1.0 # Assume start with speech-ready state or 0.0? 
+            # If user starts silent, 0.0 is better, but let's assume 1.0 to avoid initial fade-in lag.
+            # Actually, let's start at target[0].
+            current_alpha = target_alpha[0]
+            
+            dataset_alpha = np.zeros(num_frames, dtype=np.float32)
+            
+            # Coefficients
+            # alpha_new = alpha_old * coeff + target * (1 - coeff)
+            # coeff = exp(-dt / tau)
+            # dt = 1/25 = 0.04s
+            # Attack tau ~ 0.05s -> coeff ~ 0.45
+            # Release tau ~ 0.4s -> coeff ~ 0.90
+            
+            att_coeff = 0.1 # Very fast reaction to speech (0.1 means 90% target influence)
+            rel_coeff = 0.90 # Slow decay to silence (10% target influence per frame)
+            
+            for i in range(num_frames):
+                target = target_alpha[i]
+                if target > current_alpha:
+                    # Attack (Rising)
+                    current_alpha = current_alpha * (1 - att_coeff) + target * att_coeff # wait, simple Lerp
+                    # Lerp: curr + (target - curr) * speed
+                    # Speed = 1 - coeff ? 
+                    # Let's use simple lerp
+                    current_alpha = current_alpha + (target - current_alpha) * (1.0 - att_coeff) # Fast approach
+                else:
+                    # Release (Falling)
+                    current_alpha = current_alpha + (target - current_alpha) * (1.0 - rel_coeff) # Slow approach
                 
-                # Handling convolution length mismatch slightly if any (due to valid/same modes)
-                # 'valid' on padded returns exactly num_frames usually if padding is correct.
-                # Let's verify: len(padded) = N + 2*3 = N+6. win=7.
-                # Valid: (N+6) - 7 + 1 = N. Correct.
-                dataset_alpha = smoothed[:num_frames]
+                dataset_alpha[i] = current_alpha
                 
             # 3. Populate ctrl_info
             for i in range(num_frames):
@@ -507,9 +522,7 @@ class AIIA_DittoSampler:
                 # Clip just in case
                 alpha = max(0.0, min(1.0, alpha))
                 
-                # Only save if not full 1.0 (to save space/bandwidth?)
-                # Actually motion_stitch defaults to 1.0 usually (if not present).
-                # So we only send if < 1.0
+                # Only save if not full 1.0
                 if alpha < 0.999:
                      ctrl_info[i] = {"vad_alpha": alpha}
         
