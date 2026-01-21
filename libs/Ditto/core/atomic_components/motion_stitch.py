@@ -131,16 +131,41 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
     max_i = N - max(end_n, blink_n)
     cur_i = start_n
     cur_n_i = 1
+    
+    # Double Blink Probability
+    double_blink_prob = 0.25
+    
     while cur_i < max_i:
+        # First Blink
+        if cur_i + blink_n > len(idx): 
+            break
         idx[cur_i : cur_i + blink_n] = blink_idx
+        
+        # Decide if Double Blink
+        is_double = random.random() < double_blink_prob
+        
+        # Advance current index
+        cur_i += blink_n
+        
+        if is_double:
+             # Short gap: 2-5 frames (FAST re-blink)
+             short_gap = random.randint(2, 6)
+             cur_i += short_gap
+             
+             # Second Blink
+             if cur_i + blink_n > len(idx): 
+                 break # Safety break
+             idx[cur_i : cur_i + blink_n] = blink_idx
+             cur_i += blink_n
 
+        # Long Interval (Standard)
         if open_ns:
             cur_n = open_ns[cur_n_i % len(open_ns)]
             cur_n_i += 1
         else:
             cur_n = random.randint(OPEN_MIN, OPEN_MAX)
 
-        cur_i = cur_i + blink_n + cur_n
+        cur_i += cur_n
 
     return idx
 
