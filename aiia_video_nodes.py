@@ -234,12 +234,19 @@ class AIIA_VideoCombine:
             effective_frames_dir, effective_filename_pattern = None, filename_pattern
             if images is not None:
                 logger.info(f"检测到 {images.shape[0]} 帧的图像张量输入...")
+                from tqdm import tqdm
                 temp_image_dir_to_delete = tempfile.mkdtemp(prefix="aiia_frames_")
                 effective_frames_dir, effective_filename_pattern = temp_image_dir_to_delete, "frame_%08d.png"
                 pbar = ProgressBar(images.shape[0])
+                # Direct tqdm to stdout for console logs
+                console_pbar = tqdm(total=images.shape[0], desc="[AIIA Video] Saving Frames", unit="frame", file=sys.stdout)
+                
                 for i, frame_tensor in enumerate(images):
                     Image.fromarray((frame_tensor.cpu().numpy() * 255).astype(np.uint8)).save(os.path.join(effective_frames_dir, effective_filename_pattern % (i + 1)))
                     pbar.update(1)
+                    console_pbar.update(1)
+                
+                console_pbar.close()
             elif frames_directory:
                 effective_frames_dir = strip_path_aiia(frames_directory)
                 if not validate_path_aiia(effective_frames_dir, check_is_dir=True):
