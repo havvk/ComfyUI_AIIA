@@ -398,8 +398,9 @@ class StreamSDK:
             while idx < num_frames:
                 pbar.update()
                 
-                do_reset = False
                 vad_timeline = getattr(self, "vad_timeline", None)
+                step_len = valid_clip_len  # Default step
+                
                 if vad_timeline is not None:
                      end_idx = min(idx + valid_clip_len, len(vad_timeline))
                      if idx < end_idx:
@@ -409,37 +410,75 @@ class StreamSDK:
                          if chunk_max < 0.1:
                              # Full Silence Chunk
                              silence_frames_count += len(chunk_vad)
+                             do_reset = False
                          else:
-                             # Speech Chunk (contains at least some speech)
-                             # Calculate silence prefix before onset
+                             # Speech Chunk
                              is_active = chunk_vad > 0.1
-                             onset_idx = np.argmax(is_active) # First index where True
+                             onset_idx = np.argmax(is_active) 
                              
-                             # Add prefix silence to counter
-                             silence_frames_count += onset_idx
-                             
-                             # Check if we should reset (Long Silence -> Speech)
-                             if silence_frames_count >= min_silence_for_reset:
-                                 do_reset = True
-                                 print(f"[Ditto] Speech Onset at Frame {idx + onset_idx} (After {silence_frames_count} frames silence). RESET triggered.")
-                             
-                             # Reset counter (we are in speech now)
-                             silence_frames_count = 0
-                             
-                             # Handle trailing silence for NEXT chunk
-                             # Find last active frame
-                             last_active_local_idx = len(chunk_vad) - 1 - np.argmax(is_active[::-1])
-                             trailing_silence = len(chunk_vad) - 1 - last_active_local_idx
-                             silence_frames_count = trailing_silence
+                             if onset_idx > 0:
+                                 # found onset inside chunk
+                                 # Check if previous silence justifies a split (to align reset)
+                                 # or if we just continue
+                                 
+                                 # If we have accumulated distinct silence before this onset, 
+                                 # OR if the onset offset implies a significant gap within this chunk.
+                                 # We perform a "Silence Step" up to onset_idx.
+                                 
+                                 # We only align if the resulting reset is worth it (silence frames > threshold)
+                                 total_silence_at_onset = silence_frames_count + onset_idx
+                                 if total_silence_at_onset >= min_silence_for_reset:
+                                     # ALIGNMENT ACTION:
+                                     # Reduce step to onset_idx (just process the silence part)
+                                     step_len = onset_idx
+                                     do_reset = False
+                                     # silence_frames_count will accumulate this step in next loop logic? 
+                                     # No, we handle it here.
+                                     # We just let the loop proceed with step_len=onset_idx.
+                                     # It will run audio2motion for the silence part.
+                                     # Next iteration will start exactly at Onset.
+                                     
+                                     # Update silence count for this partial step
+                                     # The loop bottom doesn't update silence count, we track it manually here?
+                                     # Actually, my logic below "silence_frames_count += len(chunk) if <0.1" implies strict steps.
+                                     # To keep it consistent, we mark this partial step as "Silence".
+                                     pass 
+                                 else:
+                                     # Not enough silence to trigger reset, just proceed normally.
+                                     # Treat as speech chunk.
+                                     silence_frames_count = 0 
+                                     last_active = len(chunk_vad) - 1 - np.argmax(is_active[::-1])
+                                     trailing = len(chunk_vad) - 1 - last_active
+                                     silence_frames_count = trailing
+                                     do_reset = False
+                             else:
+                                 # onset_idx == 0. We are at Onset.
+                                 if silence_frames_count >= min_silence_for_reset:
+                                     do_reset = True
+                                     print(f"[Ditto] Speech Onset at Frame {idx}. RESET triggered (Silence: {silence_frames_count}).")
+                                 
+                                 silence_frames_count = 0
+                                 # Handle trailing
+                                 last_active = len(chunk_vad) - 1 - np.argmax(is_active[::-1])
+                                 trailing = len(chunk_vad) - 1 - last_active
+                                 silence_frames_count = trailing
 
-                aud_cond = aud_cond_all[idx:idx + seq_frames][None]
+                # Logic refinement for silence accounting in non-split case:
+                # If we split (step_len < valid), we assume it was Silent Prefix.
+                if step_len < valid_clip_len:
+                     silence_frames_count += step_len
+                     # No reset for silence step
+                     do_reset = False
+
+                aud_cond = aud_cond_all[idx:idx + seq_frames][None] # We feed seq_frames, but step is step_len
                 if aud_cond.shape[1] < seq_frames:
                     pad = np.stack([aud_cond[:, -1]] * (seq_frames - aud_cond.shape[1]), 1)
                     aud_cond = np.concatenate([aud_cond, pad], 1)
                 
-                # Call Audio2Motion with reset flag
-                res_kp_seq = self.audio2motion(aud_cond, res_kp_seq, reset=do_reset)
-                idx += valid_clip_len
+                # Call Audio2Motion with variable step
+                # Note: stream_pipeline_offline updates 'res_kp_seq' continuously.
+                res_kp_seq = self.audio2motion(aud_cond, res_kp_seq, reset=do_reset, step_len=step_len)
+                idx += step_len
 
             pbar.close()
             res_kp_seq = res_kp_seq[:, :num_frames]

@@ -109,7 +109,7 @@ class Audio2Motion:
 
         self.clip_idx = 0
 
-    def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None):
+    def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         ## ========================
         ## offline fuse mode
         ## last clip:  -------
@@ -124,10 +124,15 @@ class Audio2Motion:
         ## output:          ^^
         ## ========================
 
+        if step_len is None:
+            step_len = self.valid_clip_len
+
         fuse_r1_s = res_kp_seq.shape[1] - self.fuse_length
         fuse_r1_e = res_kp_seq.shape[1]
-        fuse_r2_s = self.seq_frames - self.valid_clip_len - self.fuse_length
-        fuse_r2_e = self.seq_frames - self.valid_clip_len
+        
+        # Calculate fuse range based on step_len
+        fuse_r2_s = self.seq_frames - step_len - self.fuse_length
+        fuse_r2_e = self.seq_frames - step_len
 
         r1 = res_kp_seq[:, fuse_r1_s:fuse_r1_e]     # [1, fuse_len, dim]
         r2 = pred_kp_seq[:, fuse_r2_s: fuse_r2_e]   # [1, fuse_len, dim]
@@ -164,10 +169,14 @@ class Audio2Motion:
             res_kp_seq[:, i, :202] = np.mean(new_res_kp_seq[:, ss:ee, :202], axis=1)
         return res_kp_seq
     
-    def __call__(self, aud_cond, res_kp_seq=None, reset=False):
+    def __call__(self, aud_cond, res_kp_seq=None, reset=False, step_len=None):
         """
         aud_cond: (1, seq_frames, dim)
+        step_len: int, optional. Frames to advance. Defaults to self.valid_clip_len.
         """
+        if step_len is None:
+            step_len = self.valid_clip_len
+
         if reset:
             # Force current conditioning to Reference (Neutral)
             # HARD RESET at Speech Onset to mimic "Clean Start"
@@ -183,10 +192,10 @@ class Audio2Motion:
             # If reset (Onset), use alpha=1.0 to overwrite history (Silence) with new clean prediction
             # This cuts off the drifted silence tail and starts fresh speech.
             fuse_alpha_val = 1.0 if reset else None
-            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=fuse_alpha_val)
+            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=fuse_alpha_val, step_len=step_len)
             # Fix Bug: Originally only smoothed the fuse region (approx 1 frame?). 
             # We must smooth the entire newly added segment to enable smooth_motion consistency.
-            res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - self.valid_clip_len - self.fuse_length, res_kp_seq.shape[1])
+            res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - step_len - self.fuse_length, res_kp_seq.shape[1])
 
         self.clip_idx += 1
 
