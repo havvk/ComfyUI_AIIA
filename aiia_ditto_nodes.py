@@ -501,10 +501,11 @@ class AIIA_DittoSampler:
             # Coefficients
             # alpha_new = alpha_old * coeff + target * (1 - coeff)
             # Attack: Instant (React immediately to voice)
-            # Release: Slow (Natural close)
+            # Release: Linear/Exponential decay
             
-            # rel_coeff = 0.90 -> 10% decay per frame (approx 0.5s to close)
-            rel_coeff = 0.90
+            # rel_coeff = 0.80 -> 20% decay per frame (approx 8-10 frames / 0.4s to close)
+            # This is faster than 0.90 (which took ~2s) and feels more responsive.
+            rel_coeff = 0.80
             
             for i in range(num_frames):
                 target = target_alpha[i]
