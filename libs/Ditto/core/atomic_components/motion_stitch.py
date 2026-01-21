@@ -571,12 +571,24 @@ class MotionStitch:
         # [FIX] Expression Temporal Smoothing (EMA)
         # Prevents inhumanly fast mouth open/close cycles by adding inertia.
         # Human mouths have physical mass; they can't teleport.
-        if not hasattr(self, 'prev_exp_ema'):
-            self.prev_exp_ema = x_d_info["exp"].copy()
         
-        exp_decay = 0.5 # 50% weight to previous frame. Higher = more smoothing, more lag.
-        x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)
-        self.prev_exp_ema = x_d_info["exp"].copy()
+        # Map user selection to decay value
+        mouth_smoothing_mode = kwargs.get("mouth_smoothing", "Normal")
+        if mouth_smoothing_mode == "None (Raw)":
+            exp_decay = 0.0
+        elif mouth_smoothing_mode == "Light":
+            exp_decay = 0.3
+        elif mouth_smoothing_mode == "Heavy":
+            exp_decay = 0.7
+        else:  # "Normal" (Default)
+            exp_decay = 0.5
+        
+        if exp_decay > 0:
+            if not hasattr(self, 'prev_exp_ema'):
+                self.prev_exp_ema = x_d_info["exp"].copy()
+            
+            x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)
+            self.prev_exp_ema = x_d_info["exp"].copy()
 
         delta_eye = 0
         if self.drive_eye and self.delta_eye_arr is not None:
