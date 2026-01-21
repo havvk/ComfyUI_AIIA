@@ -522,15 +522,49 @@ class AIIA_DittoSampler:
             non_silence_count = np.count_nonzero(target_alpha)
             logging.info(f"[Ditto] VAD Stats: {non_silence_count}/{num_frames} frames active. RMS Mean: {np.mean(rms):.4f}, Min: {np.min(rms):.4f}, Max: {np.max(rms):.4f}")
             
-            # 3. Populate ctrl_info
+            # 3. Populate ctrl_info with VAD Alpha and Micro-Motion
+            # Micro-Motion: Inject subtle head sway during silence to prevent "dead static" look.
+            # Only applied when alpha < 1.0.
+            
+            idle_amp = 0.5 # Degrees
+            
             for i in range(num_frames):
                 alpha = float(dataset_alpha[i])
                 # Clip just in case
                 alpha = max(0.0, min(1.0, alpha))
                 
-                # Only save if not full 1.0
+                info_dict = {}
+                
+                # VAD Alpha (Mouth Control)
                 if alpha < 0.999:
-                     ctrl_info[i] = {"vad_alpha": alpha}
+                     info_dict["vad_alpha"] = alpha
+                
+                # Idle Micro-Motion (Head Control)
+                # Blend in motion as alpha decreases (silence increases)
+                # We use (1.0 - alpha) as the weight for idle motion.
+                if alpha < 1.0:
+                    idle_weight = (1.0 - alpha)
+                    
+                    # Periodic sway
+                    # t = i / 25.0
+                    # Pitch: slower, cos wave
+                    # Yaw: slightly faster, sin wave
+                    t = i / 25.0
+                    d_pitch = math.cos(t * 1.5) * idle_amp * idle_weight
+                    d_yaw = math.sin(t * 1.2) * idle_amp * idle_weight
+                    
+                    # We need to ADD this to the global controls (hd_rot_p, etc.)
+                    # But ctrl_info overrides per frame.
+                    # Since we want to ADD to the global setting, we must include the global base + offset.
+                    # Wait, MotionStitch typically MERGES: default_kwargs filled first, then run_kwargs override.
+                    # So if we put 'delta_pitch' here, it OVERRIDES the global one.
+                    # So we must add global + offset here.
+                    
+                    info_dict["delta_pitch"] = hd_rot_p + d_pitch
+                    info_dict["delta_yaw"] = hd_rot_y + d_yaw
+                    
+                if info_dict:
+                     ctrl_info[i] = info_dict
         
         # Blink Settings
         delta_eye_open_n = 0 if chk_eye_blink else -1
