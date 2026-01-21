@@ -480,11 +480,18 @@ class AIIA_DittoSampler:
             # Attack (Silence -> Speech): Fast (e.g. 0.05s / ~1-2 frames)
             # Release (Speech -> Silence): Slow (e.g. 0.3-0.5s / ~8-12 frames)
             
-            target_alpha = np.zeros(num_frames, dtype=np.float32)
-            for i in range(num_frames):
-                target_alpha[i] = 0.0 if rms[i] < ref_threshold else 1.0
+            # Normalize RMS to handling dynamic range issues (e.g. quiet second sentence)
+            # We treat ref_threshold as a relative percentage of the peak volume.
+            rms_max = np.max(rms) if np.max(rms) > 0 else 1.0
+            rms_norm = rms / (rms_max + 1e-9)
             
             # --- VAD Signal Stabilization ---
+            target_alpha = np.zeros(num_frames, dtype=np.float32)
+            for i in range(num_frames):
+                # Use Normalized RMS
+                target_alpha[i] = 0.0 if rms_norm[i] < ref_threshold else 1.0
+                
+            logging.info(f"[Ditto] VAD Pre-Process: RMS Max={rms_max:.4f}. Using Relative Threshold={ref_threshold} (Abs={ref_threshold*rms_max:.5f})")
             # 1. Gap Filling (Morphological Closing): Fill short silences inside speech
             # If silence duration < 8 frames (0.32s), consider it speech.
             # This prevents "chattering" mouth during briefly quiet phonemes.
