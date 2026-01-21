@@ -199,18 +199,23 @@ class Audio2Motion:
         if reset and res_kp_seq is not None:
              print("[Ditto Debug] Reset Triggered. Calculation Delta for Warping...")
              
-             # Get FULL keypoint vector, not just :202, to include expression
+             # CRITICAL: The fuse region is NOT at pred_kp_seq[0], but at a specific offset!
+             # _fuse uses: pred_kp_seq[:, fuse_r2_s: fuse_r2_e] where fuse_r2_s = seq_frames - step_len - fuse_length
+             # So we must warp from fuse_r2_s, not from 0.
+             fuse_r2_s = self.seq_frames - step_len - self.fuse_length
+             
+             # Get FULL keypoint vector to include expression
              kp_dim = res_kp_seq.shape[2]
-             last_pose = res_kp_seq[0, -1, :kp_dim].copy()  # Full dimension
-             curr_pose = pred_kp_seq[0, 0, :kp_dim].copy()  # Full dimension
+             last_pose = res_kp_seq[0, -1, :kp_dim].copy()  # Last frame of history
+             curr_pose = pred_kp_seq[0, fuse_r2_s, :kp_dim].copy()  # First frame of fuse region
              
              delta = last_pose - curr_pose
              
-             # Apply Delta with Decay over 20 frames
+             # Apply Delta with Decay over 20 frames starting from fuse_r2_s
              warp_len = 20
-             actual_len = pred_kp_seq.shape[1]
+             actual_len = pred_kp_seq.shape[1] - fuse_r2_s
              
-             print(f"[Ditto Debug] Warping Prediction. Step={step_len}, WarpLen={warp_len}, KpDim={kp_dim}")
+             print(f"[Ditto Debug] Warping Prediction. Step={step_len}, WarpLen={warp_len}, KpDim={kp_dim}, FuseStart={fuse_r2_s}")
              
              for i in range(min(warp_len, actual_len)):
                  # decay from 1.0 to 0.0
@@ -218,7 +223,7 @@ class Audio2Motion:
                  t = i / warp_len
                  decay = (1 - t)**3  # 1 -> 0
                  
-                 pred_kp_seq[0, i, :kp_dim] += delta * decay
+                 pred_kp_seq[0, fuse_r2_s + i, :kp_dim] += delta * decay
              
              # Also need to handle the overlap region in fuse?
              # _fuse uses pred_kp_seq starting from 0?
