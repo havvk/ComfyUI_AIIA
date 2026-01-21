@@ -471,15 +471,43 @@ class AIIA_DittoSampler:
             audio_frames = audio_proc.reshape(num_frames, frame_len)
             rms = np.sqrt(np.mean(audio_frames**2, axis=1))
             
+            # Create alpha mask (0.0 = Silence/Ref, 1.0 = Speech/Gen)
+            dataset_alpha = np.ones(num_frames, dtype=np.float32)
+            
+            # 1. Hard Threshold
             for i in range(num_frames):
-                val = rms[i]
-                if val < ref_threshold:
-                    alpha = 0.0 # Full Reference
-                else:
-                    alpha = 1.0 # Full Generated
+                if rms[i] < ref_threshold:
+                    dataset_alpha[i] = 0.0
+            
+            # 2. Smoothing (Convolution)
+            # Use a Hanning window for smooth ease-in/out
+            # Window size: 7 frames (approx 280ms at 25fps)
+            win_len = 7
+            if num_frames > win_len:
+                window = np.hanning(win_len)
+                window /= window.sum() # Normalize
+                # Pad to keep length same
+                pad_w = win_len // 2
+                padded = np.pad(dataset_alpha, (pad_w, pad_w), mode='edge')
+                smoothed = np.convolve(padded, window, mode='valid')
                 
-                if alpha < 1.0:
-                    ctrl_info[i] = {"vad_alpha": alpha}
+                # Handling convolution length mismatch slightly if any (due to valid/same modes)
+                # 'valid' on padded returns exactly num_frames usually if padding is correct.
+                # Let's verify: len(padded) = N + 2*3 = N+6. win=7.
+                # Valid: (N+6) - 7 + 1 = N. Correct.
+                dataset_alpha = smoothed[:num_frames]
+                
+            # 3. Populate ctrl_info
+            for i in range(num_frames):
+                alpha = float(dataset_alpha[i])
+                # Clip just in case
+                alpha = max(0.0, min(1.0, alpha))
+                
+                # Only save if not full 1.0 (to save space/bandwidth?)
+                # Actually motion_stitch defaults to 1.0 usually (if not present).
+                # So we only send if < 1.0
+                if alpha < 0.999:
+                     ctrl_info[i] = {"vad_alpha": alpha}
         
         # Blink Settings
         delta_eye_open_n = 0 if chk_eye_blink else -1
