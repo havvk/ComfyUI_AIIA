@@ -138,7 +138,7 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
     
     # Hold Duration (Frames to keep eye closed)
     blink_hold_min = 1
-    blink_hold_max = 3
+    blink_hold_max = 1
     
     while cur_i < max_i:
         # First Blink
