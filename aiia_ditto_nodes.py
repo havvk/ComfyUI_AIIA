@@ -652,6 +652,11 @@ class AIIA_DittoSampler:
         }
         
         
+        if isinstance(ditto_config, dict):
+            ditto_config_kwargs = ditto_config
+        else:
+            ditto_config_kwargs = vars(ditto_config)
+
         # Calling setup() creates fresh threads and queues
         # Wrap setup() with RestoreLogging to catch any init-time hijacking (e.g. MediaPipe/absl)
         # and restore it IMMEDIATELY before we start the long-running inference.
@@ -672,7 +677,7 @@ class AIIA_DittoSampler:
                 overall_ctrl_info=overall_ctrl_info,
                 ctrl_info=ctrl_info,
                 vad_timeline=dataset_alpha,
-                **vars(ditto_config)
+                **ditto_config_kwargs
             )
             
         # 4. Trigger Audio Feat Extraction & Pipeline
