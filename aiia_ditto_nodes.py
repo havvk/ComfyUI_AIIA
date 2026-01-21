@@ -244,6 +244,7 @@ class ComfyStreamSDK(StreamSDK):
         self.fade_type = kwargs.get("fade_type", "")    # "" | "d0" | "s"
         self.fade_out_keys = kwargs.get("fade_out_keys", ("exp",))
         self.flag_stitching = kwargs.get("flag_stitching", True)
+        self.blink_amp = kwargs.get("blink_amp", 1.0) # Extract blink_amp
 
         self.ctrl_info = kwargs.get("ctrl_info", dict())
         self.overall_ctrl_info = kwargs.get("overall_ctrl_info", dict())
@@ -326,6 +327,7 @@ class ComfyStreamSDK(StreamSDK):
             d0=None,
             ch_info=self.ch_info,
             overall_ctrl_info=self.overall_ctrl_info,
+            blink_amp=self.blink_amp, # Pass blink_amp
         )
 
         # ======== Video Writer Bypass ========
@@ -426,6 +428,7 @@ class AIIA_DittoSampler:
                 "hd_rot_y": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "hd_rot_r": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "mouth_amp": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
+                "blink_amp": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
                 "relax_on_silence": ("BOOLEAN", {"default": True, "label_on": "Relax Face on Silence", "label_off": "Disabled"}),
                 "ref_threshold": ("FLOAT", {"default": 0.005, "min": 0.0, "max": 1.0, "step": 0.001}),
                 "blink_mode": (["Random (Normal)", "Fast", "Slow", "None"], {"default": "Random (Normal)"}),
@@ -438,9 +441,33 @@ class AIIA_DittoSampler:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Ditto"
 
-    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, relax_on_silence, ref_threshold, blink_mode, seed):
+    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, blink_amp, relax_on_silence, ref_threshold, blink_mode, seed):
         # pipe is the dict we returned in Loader
         master_sdk = pipe["sdk"]
+        # ... (unchanged code) ...
+        # ... (skipping to setup call) ...
+        with RestoreLogging():
+            master_sdk.setup(
+                source_path=None, 
+                emo=emo_idx,
+                source_image_pil=ref_image_pil,
+                total_frames=num_frames, # Make sure to pass this for progress bar!
+                output_path=None,
+                N_d=num_frames,
+                sampling_timesteps=sampling_steps,
+                crop_scale=crop_scale,
+                drive_eye=drive_eye,
+                delta_eye_open_n=delta_eye_open_n,
+                blink_interval_min=blink_min,
+                blink_interval_max=blink_max,
+                smo_k_d=smo_k_d,
+                overall_ctrl_info=overall_ctrl_info,
+                ctrl_info=ctrl_info,
+                vad_timeline=dataset_alpha,
+                seed=seed,
+                blink_amp=blink_amp,
+                **ditto_config_kwargs
+            )
         cfg_pkl = pipe["cfg_pkl"]
         data_root = pipe["data_root"]
         
