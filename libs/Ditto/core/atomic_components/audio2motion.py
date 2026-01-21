@@ -173,7 +173,9 @@ class Audio2Motion:
             res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
         else:
             res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq)  # len(res_kp_seq) + valid_clip_len
-            res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - self.valid_clip_len - self.fuse_length, res_kp_seq.shape[1] - self.valid_clip_len + 1)
+            # Fix Bug: Originally only smoothed the fuse region (approx 1 frame?). 
+            # We must smooth the entire newly added segment to enable smooth_motion consistency.
+            res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - self.valid_clip_len - self.fuse_length, res_kp_seq.shape[1])
 
         self.clip_idx += 1
 
