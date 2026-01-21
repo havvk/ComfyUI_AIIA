@@ -535,8 +535,10 @@ class MotionStitch:
             self.last_speaking_exp = x_d_info["exp"].copy()
             # print(f"[MotionStitch] Captured Last Speaking Exp. VAD={vad_current}")
         
-        # Clear on Rising Edge (Silence -> Speech)
-        if vad_current >= 0.99:
+        # Clear on Rising Edge (Silence -> Speech) OR Re-entry
+        # If vad is increasing (Attack phase), we must use the LIVE model output
+        # immediately, otherwise we blend back to the OLD frozen frame.
+        if vad_current > self.prev_vad_alpha:
             self.last_speaking_exp = None
             
         self.prev_vad_alpha = vad_current
