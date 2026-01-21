@@ -135,17 +135,37 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
     # Double Blink Probability
     double_blink_prob = 0.15
     
+    # Hold Duration (Frames to keep eye closed)
+    blink_hold_min = 2
+    blink_hold_max = 5
+    
     while cur_i < max_i:
         # First Blink
-        if cur_i + blink_n > len(idx): 
+        hold_frames = random.randint(blink_hold_min, blink_hold_max)
+        
+        # Construct Blink Sequence with Hold
+        # split blink_idx into open->close (first half) and close->open (second half)
+        mid_point = blink_n // 2
+        # e.g. 0...7 (8 frames) + 7...7 (hold) + 8...14 (7 frames)
+        
+        # Safe slice
+        seq_start = blink_idx[:mid_point]
+        seq_mid = [blink_idx[mid_point]] * (hold_frames + 1) # +1 to include original
+        seq_end = blink_idx[mid_point+1:]
+        
+        full_blink_seq = seq_start + seq_mid + seq_end
+        full_len = len(full_blink_seq)
+        
+        if cur_i + full_len > len(idx): 
             break
-        idx[cur_i : cur_i + blink_n] = blink_idx
+            
+        idx[cur_i : cur_i + full_len] = full_blink_seq
         
         # Decide if Double Blink
         is_double = random.random() < double_blink_prob
         
         # Advance current index
-        cur_i += blink_n
+        cur_i += full_len
         
         if is_double:
              # Short gap: 4-8 frames (Clearer re-blink)
@@ -153,10 +173,17 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
              cur_i += short_gap
              
              # Second Blink
-             if cur_i + blink_n > len(idx): 
+             hold_frames_2 = random.randint(1, 3) # Shorter hold for 2nd blink
+             
+             seq_mid_2 = [blink_idx[mid_point]] * (hold_frames_2 + 1)
+             full_blink_seq_2 = seq_start + seq_mid_2 + seq_end
+             full_len_2 = len(full_blink_seq_2)
+             
+             if cur_i + full_len_2 > len(idx): 
                  break # Safety break
-             idx[cur_i : cur_i + blink_n] = blink_idx
-             cur_i += blink_n
+                 
+             idx[cur_i : cur_i + full_len_2] = full_blink_seq_2
+             cur_i += full_len_2
 
         # Long Interval (Standard)
         # Long Interval (Standard)
