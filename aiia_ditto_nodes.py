@@ -498,23 +498,21 @@ class AIIA_DittoSampler:
             # Attack tau ~ 0.05s -> coeff ~ 0.45
             # Release tau ~ 0.4s -> coeff ~ 0.90
             
-            # Coefficients
-            # alpha_new = alpha_old * coeff + target * (1 - coeff)
-            # Attack: Instant (React immediately to voice)
-            # Release: Linear/Exponential decay
+            # Linear Ramp Logic
+            # Attack: Fast but not instant (avoid snapping). 5 frames (0.2s)
+            # Release: Slow and smooth. 20 frames (0.8s)
             
-            # rel_coeff = 0.80 -> 20% decay per frame (approx 8-10 frames / 0.4s to close)
-            # This is faster than 0.90 (which took ~2s) and feels more responsive.
-            rel_coeff = 0.80
+            attack_step = 0.20 # +0.2 per frame
+            release_step = 0.05 # -0.05 per frame
             
             for i in range(num_frames):
                 target = target_alpha[i]
                 if target > current_alpha:
-                    # Attack (Rising) - Instant
-                    current_alpha = target
+                    # Attack (Linearly increase)
+                    current_alpha = min(target, current_alpha + attack_step)
                 else:
-                    # Release (Falling) - Smoothed
-                    current_alpha = current_alpha + (target - current_alpha) * (1.0 - rel_coeff)
+                    # Release (Linearly decrease)
+                    current_alpha = max(target, current_alpha - release_step)
                 
                 dataset_alpha[i] = current_alpha
                 
