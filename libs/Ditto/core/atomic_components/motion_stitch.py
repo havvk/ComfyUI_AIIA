@@ -133,7 +133,8 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
     cur_n_i = 1
     
     # Double Blink Probability
-    double_blink_prob = 0.15
+    # double_blink_prob = 0.15
+    double_blink_prob = 0 # Disabled by user request
     
     # Hold Duration (Frames to keep eye closed)
     blink_hold_min = 1
