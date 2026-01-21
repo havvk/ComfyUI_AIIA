@@ -519,37 +519,54 @@ class MotionStitch:
             self.d0,
         )
 
-        # [FIX] Instant Mouth Closing
-        # LMDM often snaps mouth closed instantly when audio ends.
-        # We capture the last speaking expression and blend FROM it during the VAD release phase.
+        # [FIX] Instant Mouth Closing & Onset Ghosting
+        # 1. Capture Buffer: Keep history to capture a truly "Open" frame before LMDM closes it.
+        # 2. Instant Attack: Force full expression strength on onset to prevent attenuated "ghosting".
+        
         vad_current = kwargs.get("vad_alpha", 1.0)
         
-        # Initialize state if missing (first run)
+        # Initialize state
         if not hasattr(self, 'prev_vad_alpha'):
             self.prev_vad_alpha = 1.0
             self.last_speaking_exp = None
+            self.exp_buffer = [] # Store last 5 frames of exp
 
-        # Capture on Falling Edge (Speech -> Silence)
-        # Using 0.99 threshold to catch the very beginning of the release
-        if self.prev_vad_alpha >= 0.99 and vad_current < 0.99:
-            self.last_speaking_exp = x_d_info["exp"].copy()
-            # print(f"[MotionStitch] Captured Last Speaking Exp. VAD={vad_current}")
+        # Update Buffer
+        # Copy to avoid reference issues. 
+        # We only need to buffer when speaking (or transition), but buffering always is safer/simpler.
+        self.exp_buffer.append(x_d_info["exp"].copy())
+        if len(self.exp_buffer) > 5:
+            self.exp_buffer.pop(0)
+
+        # Logic Vars
+        is_release_start = (self.prev_vad_alpha >= 0.99 and vad_current < 0.99)
+        is_attack = (vad_current > self.prev_vad_alpha)
         
-        # Clear on Rising Edge (Silence -> Speech) OR Re-entry
-        # If vad is increasing (Attack phase), we must use the LIVE model output
-        # immediately, otherwise we blend back to the OLD frozen frame.
-        if vad_current > self.prev_vad_alpha:
+        # 1. Capture Logic (Release Start)
+        if is_release_start:
+            # Capture from buffer (e.g. -2 or -3) to ensure we get the Open frame 
+            # before LMDM started closing.
+            # Using -2 (approx 0.08s ago)
+            idx = -2 if len(self.exp_buffer) >= 2 else -1
+            self.last_speaking_exp = self.exp_buffer[idx].copy()
+        
+        # 2. Clear Logic (Attack / Re-entry)
+        if is_attack:
             self.last_speaking_exp = None
             
         self.prev_vad_alpha = vad_current
 
-        if vad_current < 1.0:
-            # If we legitimate captured a speaking frame, use it as the source
-            # instead of the potentially closed LMDM output.
-            if self.last_speaking_exp is not None:
+        # 3. Apply Logic
+        # Calculate effective alpha for expression blending
+        # If we are attacking, force 1.0 to avoid "Weak/Half-Closed" ghosting.
+        exp_blend_alpha = 1.0 if is_attack else vad_current
+
+        if exp_blend_alpha < 1.0:
+            # If releasing (and not attacking), use frozen frame if available
+            if self.last_speaking_exp is not None and not is_attack:
                  x_d_info["exp"] = self.last_speaking_exp.copy()
             
-            x_d_info = ctrl_vad(x_d_info, x_s_info, vad_current)
+            x_d_info = ctrl_vad(x_d_info, x_s_info, exp_blend_alpha)
 
         delta_eye = 0
         if self.drive_eye and self.delta_eye_arr is not None:
