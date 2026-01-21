@@ -447,30 +447,6 @@ class AIIA_DittoSampler:
     def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, blink_amp, relax_on_silence, ref_threshold, blink_mode, seed):
         # pipe is the dict we returned in Loader
         master_sdk = pipe["sdk"]
-        # ... (unchanged code) ...
-        # ... (skipping to setup call) ...
-        with RestoreLogging():
-            master_sdk.setup(
-                source_path=None, 
-                emo=emo_idx,
-                source_image_pil=ref_image_pil,
-                total_frames=num_frames, # Make sure to pass this for progress bar!
-                output_path=None,
-                N_d=num_frames,
-                sampling_timesteps=sampling_steps,
-                crop_scale=crop_scale,
-                drive_eye=drive_eye,
-                delta_eye_open_n=delta_eye_open_n,
-                blink_interval_min=blink_min,
-                blink_interval_max=blink_max,
-                smo_k_d=smo_k_d,
-                overall_ctrl_info=overall_ctrl_info,
-                ctrl_info=ctrl_info,
-                vad_timeline=dataset_alpha,
-                seed=seed,
-                blink_amp=blink_amp,
-                **ditto_config_kwargs
-            )
         cfg_pkl = pipe["cfg_pkl"]
         data_root = pipe["data_root"]
         
@@ -720,6 +696,7 @@ class AIIA_DittoSampler:
                 ctrl_info=ctrl_info,
                 vad_timeline=dataset_alpha,
                 seed=seed,
+                blink_amp=blink_amp,
                 **ditto_config_kwargs
             )
             
