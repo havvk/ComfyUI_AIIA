@@ -181,7 +181,19 @@ class Audio2Motion:
         if reset:
             # Force current conditioning to Reference (Neutral)
             # HARD RESET at Speech Onset to mimic "Clean Start"
+            
+            # [OPTIMIZATION] Avoid Head Snap/Jump
+            # Instead of resetting EVERYTHING, we keep the Head Pose (Pitch, Yaw, Roll, T) 
+            # from the current state (drifted is fine, jumping is bad).
+            # We ONLY reset the Expression parts (>202) to fix Lip Sync Drift.
+            
+            current_pose = self.kp_cond[:, :202].clone() if isinstance(self.kp_cond, torch.Tensor) else self.kp_cond[:, :202].copy()
+            
             self.kp_cond = self.s_kp_cond.copy()
+            
+            # Restore Pose
+            self.kp_cond[:, :202] = current_pose
+            
             # Reset clip_idx to 0 to mimic "First Segment" conditions derived from position (if any)
             self.clip_idx = 0
             
