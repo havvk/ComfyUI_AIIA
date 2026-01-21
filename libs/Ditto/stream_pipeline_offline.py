@@ -388,7 +388,8 @@ class StreamSDK:
             num_frames = len(aud_cond_all)
             idx = 0
             res_kp_seq = None
-            pbar = tqdm(desc="dit")
+            # Disable inner tqdm to avoid conflict with the main node's progress bar
+            pbar = tqdm(desc="dit", disable=True)
             
             # State for Onset Detection
             was_silence = False
