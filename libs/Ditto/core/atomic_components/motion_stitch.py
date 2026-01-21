@@ -63,32 +63,17 @@ def fade(x_d_info, dst, alpha, keys=None):
 
 def ctrl_vad(x_d_info, dst, alpha):
     # 1. Blend Expression (Existing)
-    # Note: Originally this function had a bug where _a1 was calculated but x_d_info["exp"] 
-    # was overwritten using global scalar alpha. We keep the effective logic (Global Blend)
-    # but clean it up.
+    # Relax to dst['exp'] (Reference/Neutral) as alpha -> 0
     exp = x_d_info["exp"]
     exp_dst = dst["exp"]
-
-    # Blend Exp:
-    # Relax to dst['exp'] (Reference/Neutral) as alpha -> 0
     x_d_info["exp"] = exp * alpha + exp_dst * (1 - alpha)
     
-    # 2. Blend Head Pose (New: Lookahead Relaxation)
-    # This pulls the head back to the reference angle during silence,
-    # preventing "Head Snap" when the next speech segment starts (and resets).
-    for k in ["pitch", "yaw", "roll", "t", "scale"]:
-        if k in x_d_info and k in dst:
-            val_d = x_d_info[k]
-            val_s = dst[k]
-            
-            # Convert Bins to Degrees for Rotation
-            if k in ["pitch", "yaw", "roll"]:
-                val_d = bin66_to_degree(val_d)
-                val_s = bin66_to_degree(val_s)
-            
-            # Linear Interpolation
-            # val = val_d * alpha + val_s * (1 - alpha)
-            x_d_info[k] = val_d * alpha + val_s * (1 - alpha)
+    # [REVERTED] Head Pose Relaxation
+    # We found that forcing the head pose to reference during silence 
+    # kills the natural "Micro-Drift" and makes the avatar look static/dead.
+    # Since our "Pre-Fuse Warping" (in audio2motion.py) already solves the 
+    # "Snap" problem perfectly, we don't need this aggressive locking.
+    # Letting the head drift naturally gives more "Life".
 
     return x_d_info
     
