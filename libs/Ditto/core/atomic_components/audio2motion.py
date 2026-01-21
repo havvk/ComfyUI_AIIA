@@ -192,6 +192,12 @@ class Audio2Motion:
                 torch.cuda.manual_seed_all(seed)
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
+        
+        # [OPTIMIZATION] Capture last pose for Smooth Reset
+        last_pose = None
+        if reset and res_kp_seq is not None:
+             last_pose = res_kp_seq[0, -1, :202].copy()
+
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq   # [1, seq_frames, dim]
             res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
@@ -200,6 +206,31 @@ class Audio2Motion:
             # This cuts off the drifted silence tail and starts fresh speech.
             fuse_alpha_val = 1.0 if reset else None
             res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=fuse_alpha_val, step_len=step_len)
+            
+            # [OPTIMIZATION] Apply Smooth Reset (Pose Blending)
+            # If we just Reset, the Head Pose snapped. We blend from last_pose to the new prediction.
+            if last_pose is not None:
+                # Blend over 12 frames (~0.5s)
+                blend_len = 12
+                # Ensure we don't go out of bounds
+                seq_len = res_kp_seq.shape[1]
+                # The new segment effectively starts after the overlap? 
+                # _fuse appends step_len amount of new frames.
+                # The cut point was at (seq_len - step_len).
+                start_idx = seq_len - step_len
+                
+                for i in range(blend_len):
+                    curr_idx = start_idx + i
+                    if curr_idx >= seq_len: break
+                    
+                    alpha = (i + 1) / (blend_len + 1) # 0 to 1
+                    # Cubic Ease-Out for smoother feeling? Or just Linear.
+                    # Linear is robust enough.
+                    
+                    target_pose = res_kp_seq[0, curr_idx, :202]
+                    blended_pose = last_pose * (1 - alpha) + target_pose * alpha
+                    res_kp_seq[0, curr_idx, :202] = blended_pose
+
             # Fix Bug: Originally only smoothed the fuse region (approx 1 frame?). 
             # We must smooth the entire newly added segment to enable smooth_motion consistency.
             res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - step_len - self.fuse_length, res_kp_seq.shape[1])
