@@ -169,19 +169,19 @@ class Audio2Motion:
         aud_cond: (1, seq_frames, dim)
         """
         if reset:
-            # Soft Reset: Interpolate towards Reference (Neutral) to dampen drift without hard snapping
-            # This prevents oscillation if Ref is "Open" but Silence needs "Closed"
-            # 0.5 means we pull 50% towards Ref every chunk (exponential decay of drift)
-            self.kp_cond = self.kp_cond * 0.5 + self.s_kp_cond * 0.5
+            # Force current conditioning to Reference (Neutral)
+            # HARD RESET at Speech Onset to mimic "Clean Start"
+            self.kp_cond = self.s_kp_cond.copy()
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq   # [1, seq_frames, dim]
             res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
         else:
-            # Revert to standard fusion (None override) to ensure smooth transition
-            # Hard fuse (1.0) caused discontinuities. Soft reset + Cross-fade is better.
-            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=None)
+            # If reset (Onset), use alpha=1.0 to overwrite history (Silence) with new clean prediction
+            # This cuts off the drifted silence tail and starts fresh speech.
+            fuse_alpha_val = 1.0 if reset else None
+            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=fuse_alpha_val)
             # Fix Bug: Originally only smoothed the fuse region (approx 1 frame?). 
             # We must smooth the entire newly added segment to enable smooth_motion consistency.
             res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - self.valid_clip_len - self.fuse_length, res_kp_seq.shape[1])

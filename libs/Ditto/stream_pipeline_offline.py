@@ -389,16 +389,31 @@ class StreamSDK:
             idx = 0
             res_kp_seq = None
             pbar = tqdm(desc="dit")
+            
+            # State for Onset Detection
+            was_silence = False
+            
             while idx < num_frames:
                 pbar.update()
                 
-                # Check for VAD Reset (Deep Silence)
+                # Check for VAD Reset (Trigger ONLY at Recall/Speech Onset)
                 do_reset = False
                 vad_timeline = getattr(self, "vad_timeline", None)
-                if vad_timeline is not None and idx < len(vad_timeline):
-                    # If current frame is deep silence (< 0.1), trigger Hard Reset
-                    if vad_timeline[idx] < 0.1:
-                        do_reset = True
+                if vad_timeline is not None:
+                     # Check VAD for current chunk
+                     end_idx = min(idx + valid_clip_len, len(vad_timeline))
+                     if idx < end_idx:
+                         chunk_vad = vad_timeline[idx:end_idx]
+                         # If max VAD in chunk > threshold, consider it Speech/Active
+                         is_speech = np.max(chunk_vad) > 0.1 
+                         
+                         if not is_speech:
+                             was_silence = True
+                         else:
+                             # It is speech. If we were in silence previously, TRIGGER RESET.
+                             if was_silence:
+                                 do_reset = True
+                                 was_silence = False
                         
                 aud_cond = aud_cond_all[idx:idx + seq_frames][None]
                 if aud_cond.shape[1] < seq_frames:
