@@ -86,6 +86,9 @@ class AIIA_DittoLoader:
     CATEGORY = "AIIA/Ditto"
 
     def load_model(self, model_name, device):
+        if not DITTO_AVAILABLE:
+            raise RuntimeError("Ditto libraries failed to import. Please check console logs for details (missing dependencies?).")
+            
         print(f"[AIIA_DittoLoader] Loading Ditto model: {model_name} on {device}")
         
         # 1. Prepare Model Paths
