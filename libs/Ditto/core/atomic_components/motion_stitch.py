@@ -62,14 +62,33 @@ def fade(x_d_info, dst, alpha, keys=None):
 
 
 def ctrl_vad(x_d_info, dst, alpha):
+    # 1. Blend Expression (Existing)
+    # Note: Originally this function had a bug where _a1 was calculated but x_d_info["exp"] 
+    # was overwritten using global scalar alpha. We keep the effective logic (Global Blend)
+    # but clean it up.
     exp = x_d_info["exp"]
     exp_dst = dst["exp"]
 
-    _lip = [6, 12, 14, 17, 19, 20]
-    _a1 = np.zeros((21, 3), dtype=np.float32)
-    _a1[_lip] = alpha
-    _a1 = _a1.reshape(1, -1)
+    # Blend Exp:
+    # Relax to dst['exp'] (Reference/Neutral) as alpha -> 0
     x_d_info["exp"] = exp * alpha + exp_dst * (1 - alpha)
+    
+    # 2. Blend Head Pose (New: Lookahead Relaxation)
+    # This pulls the head back to the reference angle during silence,
+    # preventing "Head Snap" when the next speech segment starts (and resets).
+    for k in ["pitch", "yaw", "roll", "t", "scale"]:
+        if k in x_d_info and k in dst:
+            val_d = x_d_info[k]
+            val_s = dst[k]
+            
+            # Convert Bins to Degrees for Rotation
+            if k in ["pitch", "yaw", "roll"]:
+                val_d = bin66_to_degree(val_d)
+                val_s = bin66_to_degree(val_s)
+            
+            # Linear Interpolation
+            # val = val_d * alpha + val_s * (1 - alpha)
+            x_d_info[k] = val_d * alpha + val_s * (1 - alpha)
 
     return x_d_info
     
