@@ -172,6 +172,8 @@ class Audio2Motion:
             # Force current conditioning to Reference (Neutral)
             # HARD RESET at Speech Onset to mimic "Clean Start"
             self.kp_cond = self.s_kp_cond.copy()
+            # Reset clip_idx to 0 to mimic "First Segment" conditions derived from position (if any)
+            self.clip_idx = 0
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         if res_kp_seq is None:
