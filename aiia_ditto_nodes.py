@@ -332,20 +332,21 @@ class ComfyStreamSDK(StreamSDK):
         self.writer_pbar = MockWriter() # We replace this with our own logic
         self.generated_frames = []
         
+        # We need these because we are starting fresh threads every setup()
+        import queue
+        import threading
+        import sys
+        
         # Prepare Progress Bar
         from comfy.utils import ProgressBar
         from tqdm import tqdm
         if total_frames > 0:
             self.pbar = ProgressBar(total_frames)
-            self.console_pbar = tqdm(total=total_frames, desc="[Ditto] Generating", unit="frame")
+            # Force tqdm to stdout so it appears in ComfyUI console logs
+            self.console_pbar = tqdm(total=total_frames, desc="[Ditto] Generating", unit="frame", file=sys.stdout)
         else:
             self.pbar = None
             self.console_pbar = None
-            
-        # ======== Setup queues and threads (Copied from StreamSDK.setup) ========
-        # We need these because we are starting fresh threads every setup()
-        import queue
-        import threading
         
         QUEUE_MAX_SIZE = 100
         self.worker_exception = None
