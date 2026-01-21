@@ -22,33 +22,28 @@ class RestoreLogging:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        # Restore sys streams if hijacked
+        # 1. Restore sys streams
         if sys.stdout != self.saved_stdout:
             sys.stdout = self.saved_stdout
         if sys.stderr != self.saved_stderr:
             sys.stderr = self.saved_stderr
             
-        # Restore logging handlers if absl wacked them
-        # (absl adds its own handler that writes to stderr)
-        # We don't want to simply overwrite if new handlers were LEGITIMATELY added,
-        # but absl usually just adds one.
-        # A safer bet: ensure our original handlers are still there.
-        # If logging.root.handlers changed, we might want to revert or merge.
-        # For ComfyUI, usually we just want to ensure the Comfy handlers are present.
+        # 2. Restore Logging Handlers
+        # ABSL and other libs often add a StreamHandler to stderr.
+        # We want to revert to the exact set of handlers we had before.
         
-        # Simple Logic: If handlers count changed, try to restore original set
-        # checking if they are missing.
-        
-        # Force restore for now as absl is aggressive
-        # But we verify if anything removed.
-        
+        # Identify new handlers
+        current_handlers = logging.root.handlers[:]
+        for h in current_handlers:
+            if h not in self.saved_handlers:
+                # This is a new handler added during the block. Remove it.
+                # Common culprit: absl.logging.ABSLHandler
+                logging.root.removeHandler(h)
+                
+        # Restore missing handlers
         for h in self.saved_handlers:
             if h not in logging.root.handlers:
                 logging.root.addHandler(h)
-        
-        # Remove absl handlers if found?
-        # absl handlers typically valid for absl logs, but if it captures root...
-        pass
 # --------------------------
 
 StreamSDK = object # Default fallback to prevent NameError if import fails
@@ -155,6 +150,8 @@ class AIIA_DittoLoader:
         
         # Initialize ComfyStreamSDK (Subclass of StreamSDK that avoids File I/O for frames)
         try:
+            # Also wrap this instantiation because StreamSDK.__init__ calls parse_cfg
+            # which might also trigger logging config changes if not careful.
             with RestoreLogging():
                 sdk = ComfyStreamSDK(cfg_pkl, data_root)
         except Exception as e:
@@ -515,6 +512,8 @@ class AIIA_DittoSampler:
         
         
         # Calling setup() creates fresh threads and queues
+        # Wrap setup() with RestoreLogging to catch any init-time hijacking (e.g. MediaPipe/absl)
+        # and restore it IMMEDIATELY before we start the long-running inference.
         with RestoreLogging():
             master_sdk.setup(
                 source_image_pil=ref_image_pil, 
@@ -533,20 +532,20 @@ class AIIA_DittoSampler:
                 total_frames=num_frames # For pbar
             )
             
-            # 4. Trigger Audio Feat Extraction & Pipeline
-            try:
-                 aud_feat = master_sdk.wav2feat.wav2feat(audio_np)
-                 master_sdk.audio2motion_queue.put(aud_feat)
-                 
-                 # 5. Wait for completion
-                 # master_sdk.close() joins threads.
-                 master_sdk.close() 
-            except Exception as e:
-                 logging.error(f"Error during Ditto inference: {e}")
-                 # Ensure cleanup
-                 try: master_sdk.close()
-                 except: pass
-                 raise e
+        # 4. Trigger Audio Feat Extraction & Pipeline
+        try:
+             aud_feat = master_sdk.wav2feat.wav2feat(audio_np)
+             master_sdk.audio2motion_queue.put(aud_feat)
+             
+             # 5. Wait for completion
+             # master_sdk.close() joins threads.
+             master_sdk.close() 
+        except Exception as e:
+             logging.error(f"Error during Ditto inference: {e}")
+             # Ensure cleanup
+             try: master_sdk.close()
+             except: pass
+             raise e
              
         # 6. Retrieve frames
         generated = master_sdk.generated_frames
