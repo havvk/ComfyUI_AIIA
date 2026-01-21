@@ -195,8 +195,11 @@ class Audio2Motion:
         
         # [OPTIMIZATION] Capture last pose for Smooth Reset
         last_pose = None
-        if reset and res_kp_seq is not None:
-             last_pose = res_kp_seq[0, -1, :202].copy()
+        if reset:
+             print(f"[Ditto Debug] Reset Triggered! res_kp_seq is {'None' if res_kp_seq is None else 'Present'}")
+             if res_kp_seq is not None:
+                 last_pose = res_kp_seq[0, -1, :202].copy()
+                 print("[Ditto Debug] Last Pose Captured.")
 
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq   # [1, seq_frames, dim]
@@ -210,6 +213,7 @@ class Audio2Motion:
             # [OPTIMIZATION] Apply Smooth Reset (Pose Blending)
             # If we just Reset, the Head Pose snapped. We blend from last_pose to the new prediction.
             if last_pose is not None:
+                print("[Ditto Debug] Applying Smooth Reset Blending...")
                 # Blend over 12 frames (~0.5s)
                 blend_len = 12
                 # Ensure we don't go out of bounds
@@ -230,6 +234,7 @@ class Audio2Motion:
                     target_pose = res_kp_seq[0, curr_idx, :202]
                     blended_pose = last_pose * (1 - alpha) + target_pose * alpha
                     res_kp_seq[0, curr_idx, :202] = blended_pose
+                print("[Ditto Debug] Blending Done.")
 
             # Fix Bug: Originally only smoothed the fuse region (approx 1 frame?). 
             # We must smooth the entire newly added segment to enable smooth_motion consistency.
