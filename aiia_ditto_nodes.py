@@ -484,9 +484,56 @@ class AIIA_DittoSampler:
             for i in range(num_frames):
                 target_alpha[i] = 0.0 if rms[i] < ref_threshold else 1.0
             
-            current_alpha = 1.0 # Assume start with speech-ready state or 0.0? 
-            # If user starts silent, 0.0 is better, but let's assume 1.0 to avoid initial fade-in lag.
-            # Actually, let's start at target[0].
+            # --- VAD Signal Stabilization ---
+            # 1. Gap Filling (Morphological Closing): Fill short silences inside speech
+            # If silence duration < 8 frames (0.32s), consider it speech.
+            # This prevents "chattering" mouth during briefly quiet phonemes.
+            gap_fill = 8
+            silence_run = 0
+            # Forward pass: Count silence, if run < gap_fill and we hit speech, backtrack and fill.
+            # Wait, easier approach: Use scipy.ndimage or just simple loops.
+            # Simple loop:
+            # Find all silence segments. If len < gap_fill, set to 1.
+            
+            # Find contiguous segments
+            segments = []
+            if num_frames > 0:
+                current_val = target_alpha[0]
+                start_idx = 0
+                for i in range(1, num_frames):
+                    if target_alpha[i] != current_val:
+                        segments.append((start_idx, i, current_val))
+                        current_val = target_alpha[i]
+                        start_idx = i
+                segments.append((start_idx, num_frames, current_val))
+                
+            # Apply Filter
+            for start, end, val in segments:
+                duration = end - start
+                # Fill short silences
+                if val == 0.0 and duration < gap_fill:
+                     target_alpha[start:end] = 1.0
+                     
+            # 2. Spike Removal: Remove very short speech bursts (noise)
+            # If speech duration < 3 frames (0.12s), consider it silence.
+            # Re-segment
+            segments = []
+            if num_frames > 0:
+                current_val = target_alpha[0]
+                start_idx = 0
+                for i in range(1, num_frames):
+                    if target_alpha[i] != current_val:
+                        segments.append((start_idx, i, current_val))
+                        current_val = target_alpha[i]
+                        start_idx = i
+                segments.append((start_idx, num_frames, current_val))
+                
+            min_speech = 3
+            for start, end, val in segments:
+                duration = end - start
+                if val == 1.0 and duration < min_speech:
+                     target_alpha[start:end] = 0.0
+            
             current_alpha = target_alpha[0]
             
             dataset_alpha = np.zeros(num_frames, dtype=np.float32)
