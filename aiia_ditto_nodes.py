@@ -547,11 +547,12 @@ class AIIA_DittoSampler:
             segments = []
             if num_frames > 0:
                 current_val = target_alpha[0]
-            # [FIX] VAD Gap Filling
-            # Bridge short silences (dips in energy) to prevent "Release" logic from triggering 
-            # in the middle of a sentence (which causes freeze-frame artifacts).
-            # 8 frames ~ 0.32s.
-            min_silence = 8
+            # [FIX] VAD Gap Filling & Predictive Logic
+            # "Don't start what you can't finish."
+            # Release animation takes ~33 frames (1.0 / 0.03).
+            # If silence is shorter than that, we force "Speech Mode" (1.0) and let LMDM handle it naturally.
+            # Only trigger Gentle Release for Long Pauses (>1.4s).
+            min_silence = 35 # 1.4s (Safe buffer > 33)
             
             # Find Silence Segments (val == 0.0)
             segments = []
@@ -571,8 +572,7 @@ class AIIA_DittoSampler:
                 if val == 0.0 and duration < min_silence:
                     target_alpha[start:end] = 1.0 # Fill gap
             
-            # Re-calculate segments for min_speech filtering (post-fill)
-            # Find Speech Segments (val == 1.0)
+            # Re-calculate segments
             speech_segments = []
             if num_frames > 0:
                 current_val = target_alpha[0]
