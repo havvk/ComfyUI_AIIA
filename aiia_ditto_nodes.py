@@ -418,7 +418,7 @@ class AIIA_DittoSampler:
                 "hd_rot_r": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "mouth_amp": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
                 "relax_on_silence": ("BOOLEAN", {"default": True, "label_on": "Relax Face on Silence", "label_off": "Disabled"}),
-                "ref_threshold": ("FLOAT", {"default": 0.01, "min": 0.0, "max": 1.0, "step": 0.001}),
+                "ref_threshold": ("FLOAT", {"default": 0.005, "min": 0.0, "max": 1.0, "step": 0.001}),
                 "blink_mode": (["Random (Normal)", "Fast", "Slow", "None"], {"default": "Random (Normal)"}),
             }
         }
@@ -498,24 +498,29 @@ class AIIA_DittoSampler:
             # Attack tau ~ 0.05s -> coeff ~ 0.45
             # Release tau ~ 0.4s -> coeff ~ 0.90
             
-            att_coeff = 0.1 # Very fast reaction to speech (0.1 means 90% target influence)
-            rel_coeff = 0.90 # Slow decay to silence (10% target influence per frame)
+            # Coefficients
+            # alpha_new = alpha_old * coeff + target * (1 - coeff)
+            # Attack: Instant (React immediately to voice)
+            # Release: Slow (Natural close)
+            
+            # rel_coeff = 0.90 -> 10% decay per frame (approx 0.5s to close)
+            rel_coeff = 0.90
             
             for i in range(num_frames):
                 target = target_alpha[i]
                 if target > current_alpha:
-                    # Attack (Rising)
-                    current_alpha = current_alpha * (1 - att_coeff) + target * att_coeff # wait, simple Lerp
-                    # Lerp: curr + (target - curr) * speed
-                    # Speed = 1 - coeff ? 
-                    # Let's use simple lerp
-                    current_alpha = current_alpha + (target - current_alpha) * (1.0 - att_coeff) # Fast approach
+                    # Attack (Rising) - Instant
+                    current_alpha = target
                 else:
-                    # Release (Falling)
-                    current_alpha = current_alpha + (target - current_alpha) * (1.0 - rel_coeff) # Slow approach
+                    # Release (Falling) - Smoothed
+                    current_alpha = current_alpha + (target - current_alpha) * (1.0 - rel_coeff)
                 
                 dataset_alpha[i] = current_alpha
                 
+            # Log VAD stats for debugging
+            non_silence_count = np.count_nonzero(target_alpha)
+            logging.info(f"[Ditto] VAD Stats: {non_silence_count}/{num_frames} frames active. RMS Mean: {np.mean(rms):.4f}, Min: {np.min(rms):.4f}, Max: {np.max(rms):.4f}")
+            
             # 3. Populate ctrl_info
             for i in range(num_frames):
                 alpha = float(dataset_alpha[i])
