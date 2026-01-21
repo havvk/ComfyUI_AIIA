@@ -198,8 +198,11 @@ class Audio2Motion:
         # to align its start with the last historical pose.
         if reset and res_kp_seq is not None:
              print("[Ditto Debug] Reset Triggered. Calculation Delta for Warping...")
-             last_pose = res_kp_seq[0, -1, :202] # (202,)
-             curr_pose = pred_kp_seq[0, 0, :202] # (202,) Neutral start
+             
+             # Get FULL keypoint vector, not just :202, to include expression
+             kp_dim = res_kp_seq.shape[2]
+             last_pose = res_kp_seq[0, -1, :kp_dim].copy()  # Full dimension
+             curr_pose = pred_kp_seq[0, 0, :kp_dim].copy()  # Full dimension
              
              delta = last_pose - curr_pose
              
@@ -207,16 +210,15 @@ class Audio2Motion:
              warp_len = 20
              actual_len = pred_kp_seq.shape[1]
              
-             print(f"[Ditto Debug] Warping Prediction. Step={step_len}, WarpLen={warp_len}")
+             print(f"[Ditto Debug] Warping Prediction. Step={step_len}, WarpLen={warp_len}, KpDim={kp_dim}")
              
              for i in range(min(warp_len, actual_len)):
                  # decay from 1.0 to 0.0
-                 # Cubic Ease Out: starts slow decay? No, we want to start at delta and end at 0.
-                 # t goes 0 -> 1.
+                 # Cubic Ease Out
                  t = i / warp_len
                  decay = (1 - t)**3  # 1 -> 0
                  
-                 pred_kp_seq[0, i, :202] += delta * decay
+                 pred_kp_seq[0, i, :kp_dim] += delta * decay
              
              # Also need to handle the overlap region in fuse?
              # _fuse uses pred_kp_seq starting from 0?
