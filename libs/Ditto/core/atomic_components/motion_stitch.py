@@ -390,7 +390,6 @@ class MotionStitch:
         d0=None,
         ch_info=None,
         overall_ctrl_info=None,
-        overall_ctrl_info=None,
         vad_timeline=None,
         blink_amp=1.0,
     ):
