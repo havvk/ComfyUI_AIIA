@@ -653,11 +653,20 @@ class AIIA_DittoSampler:
         # and restore it IMMEDIATELY before we start the long-running inference.
         with RestoreLogging():
             master_sdk.setup(
-                source_path, 
-                emo_indices, 
+                source_path=None, 
+                emo=emo_idx,
+                source_image_pil=ref_image_pil,
+                output_path=None,
+                N_d=num_frames,
+                sampling_timesteps=sampling_steps,
+                crop_scale=crop_scale,
+                drive_eye=drive_eye,
+                delta_eye_open_n=delta_eye_open_n,
+                blink_interval_min=blink_min,
+                blink_interval_max=blink_max,
+                smo_k_d=smo_k_d,
                 overall_ctrl_info=overall_ctrl_info,
                 ctrl_info=ctrl_info,
-                # Fix Jitter: Pass VAD timeline to reset LMDM state during silences.
                 vad_timeline=dataset_alpha,
                 **vars(ditto_config)
             )
