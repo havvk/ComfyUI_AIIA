@@ -400,6 +400,7 @@ class StreamSDK:
                 
                 vad_timeline = getattr(self, "vad_timeline", None)
                 step_len = valid_clip_len  # Default step
+                do_reset = False           # Default reset state
                 
                 if vad_timeline is not None:
                      end_idx = min(idx + valid_clip_len, len(vad_timeline))
