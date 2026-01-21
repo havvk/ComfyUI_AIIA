@@ -673,6 +673,7 @@ class AIIA_DittoSampler:
                 source_path=None, 
                 emo=emo_idx,
                 source_image_pil=ref_image_pil,
+                total_frames=num_frames, # Make sure to pass this for progress bar!
                 output_path=None,
                 N_d=num_frames,
                 sampling_timesteps=sampling_steps,
