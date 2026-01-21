@@ -441,6 +441,9 @@ class MotionStitch:
             self.d0,
         )
 
+        if kwargs.get("vad_alpha", 1) < 1:
+            x_d_info = ctrl_vad(x_d_info, x_s_info, kwargs.get("vad_alpha", 1))
+
         delta_eye = 0
         if self.drive_eye and self.delta_eye_arr is not None:
             delta_eye = self.delta_eye_arr[
@@ -454,9 +457,6 @@ class MotionStitch:
             self.fix_exp_a2,
             self.fix_exp_a3,
         )
-
-        if kwargs.get("vad_alpha", 1) < 1:
-            x_d_info = ctrl_vad(x_d_info, x_s_info, kwargs.get("vad_alpha", 1))
 
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 

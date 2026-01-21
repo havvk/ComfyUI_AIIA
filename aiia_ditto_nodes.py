@@ -44,6 +44,10 @@ class RestoreLogging:
         for h in self.saved_handlers:
             if h not in logging.root.handlers:
                 logging.root.addHandler(h)
+                
+        # 3. Force Level to INFO
+        # absl often sets it to FATAL or something high.
+        logging.root.setLevel(logging.INFO)
 # --------------------------
 
 StreamSDK = object # Default fallback to prevent NameError if import fails
