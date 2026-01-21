@@ -607,7 +607,7 @@ class AIIA_DittoSampler:
             # Attack: Very fast. Speech onset is explosive. 2 frames (0.08s).
             # Release: Dynamic based on user selection.
             
-            silence_mode = kwargs.get("silence_release", "Natural (0.8s)")
+            silence_mode = silence_release  # Use directly (passed as arg)
             
             if silence_mode == "Fast (0.5s)":
                 # Quick, responsive closure. Good for fast talkers.
