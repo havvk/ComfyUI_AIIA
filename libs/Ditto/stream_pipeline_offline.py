@@ -405,16 +405,31 @@ class StreamSDK:
                      end_idx = min(idx + valid_clip_len, len(vad_timeline))
                      if idx < end_idx:
                          chunk_vad = vad_timeline[idx:end_idx]
-                         # If max VAD in chunk > threshold, consider it Speech/Active
-                         is_speech = np.max(chunk_vad) > 0.1 
+                         chunk_max = np.max(chunk_vad)
+                         chunk_min = np.min(chunk_vad)
                          
-                         if not is_speech:
+                         is_speech_chunk = chunk_max > 0.1
+                         is_silence_chunk = chunk_max < 0.1
+                         
+                         # Condition 1: Transition from Previous Full Silence
+                         if was_silence and is_speech_chunk:
+                             do_reset = True
+                             was_silence = False
+                             print(f"[Ditto] Reset Triggered at Frame {idx} (Post-Silence)")
+                             
+                         # Condition 2: Internal Onset (Mid-Chunk Transition)
+                         # If start is silence (<0.1) and end is speech (>0.1), and we haven't already reset
+                         elif not do_reset and chunk_vad[0] < 0.1 and chunk_vad[-1] > 0.1:
+                             do_reset = True
+                             was_silence = False
+                             print(f"[Ditto] Reset Triggered at Frame {idx} (Mid-Chunk Onset)")
+
+                         # Update State for Next Chunk
+                         if is_silence_chunk:
                              was_silence = True
-                         else:
-                             # It is speech. If we were in silence previously, TRIGGER RESET.
-                             if was_silence:
-                                 do_reset = True
-                                 was_silence = False
+                         elif is_speech_chunk and chunk_vad[-1] > 0.1:
+                             # If we end in speech, next chunk prefix is speech.
+                             was_silence = False
                         
                 aud_cond = aud_cond_all[idx:idx + seq_frames][None]
                 if aud_cond.shape[1] < seq_frames:
