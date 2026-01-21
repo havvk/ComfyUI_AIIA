@@ -213,28 +213,30 @@ class Audio2Motion:
             # [OPTIMIZATION] Apply Smooth Reset (Pose Blending)
             # If we just Reset, the Head Pose snapped. We blend from last_pose to the new prediction.
             if last_pose is not None:
-                print("[Ditto Debug] Applying Smooth Reset Blending...")
-                # Blend over 12 frames (~0.5s)
-                blend_len = 12
-                # Ensure we don't go out of bounds
-                seq_len = res_kp_seq.shape[1]
-                # The new segment effectively starts after the overlap? 
-                # _fuse appends step_len amount of new frames.
-                # The cut point was at (seq_len - step_len).
-                start_idx = seq_len - step_len
+                # Blend over 20 frames (~0.8s) to cover Fuse Overlap (10) + New Frames (10)
+                blend_len = 20
                 
+                # Correct Start Index: Must include the Fuse Overlap region!
+                # resetting 'fuse_alpha' to 1.0 caused the overlap region to snap to Neutral too.
+                # So we must start blending from the beginning of the overlap.
+                fuse_len = self.fuse_length
+                start_idx = seq_len - step_len - fuse_len
+                
+                print(f"[Ditto Debug] Applying Smooth Reset. Start={start_idx}, Len={blend_len}")
+
                 for i in range(blend_len):
                     curr_idx = start_idx + i
                     if curr_idx >= seq_len: break
                     
-                    alpha = (i + 1) / (blend_len + 1) # 0 to 1
-                    # Cubic Ease-Out for smoother feeling? Or just Linear.
-                    # Linear is robust enough.
+                    # Cubic Ease-Out for smoother natural movement
+                    # t goes 0 -> 1
+                    t = (i + 1) / (blend_len + 1)
+                    alpha = 1 - (1 - t)**3  # Cubic Ease Out
                     
                     target_pose = res_kp_seq[0, curr_idx, :202]
                     blended_pose = last_pose * (1 - alpha) + target_pose * alpha
                     res_kp_seq[0, curr_idx, :202] = blended_pose
-                print("[Ditto Debug] Blending Done.")
+                print(f"[Ditto Debug] Blending Done. Final Alpha={alpha:.2f}")
 
             # Fix Bug: Originally only smoothed the fuse region (approx 1 frame?). 
             # We must smooth the entire newly added segment to enable smooth_motion consistency.
