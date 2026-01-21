@@ -519,8 +519,35 @@ class MotionStitch:
             self.d0,
         )
 
-        if kwargs.get("vad_alpha", 1) < 1:
-            x_d_info = ctrl_vad(x_d_info, x_s_info, kwargs.get("vad_alpha", 1))
+        # [FIX] Instant Mouth Closing
+        # LMDM often snaps mouth closed instantly when audio ends.
+        # We capture the last speaking expression and blend FROM it during the VAD release phase.
+        vad_current = kwargs.get("vad_alpha", 1.0)
+        
+        # Initialize state if missing (first run)
+        if not hasattr(self, 'prev_vad_alpha'):
+            self.prev_vad_alpha = 1.0
+            self.last_speaking_exp = None
+
+        # Capture on Falling Edge (Speech -> Silence)
+        # Using 0.99 threshold to catch the very beginning of the release
+        if self.prev_vad_alpha >= 0.99 and vad_current < 0.99:
+            self.last_speaking_exp = x_d_info["exp"].copy()
+            # print(f"[MotionStitch] Captured Last Speaking Exp. VAD={vad_current}")
+        
+        # Clear on Rising Edge (Silence -> Speech)
+        if vad_current >= 0.99:
+            self.last_speaking_exp = None
+            
+        self.prev_vad_alpha = vad_current
+
+        if vad_current < 1.0:
+            # If we legitimate captured a speaking frame, use it as the source
+            # instead of the potentially closed LMDM output.
+            if self.last_speaking_exp is not None:
+                 x_d_info["exp"] = self.last_speaking_exp.copy()
+            
+            x_d_info = ctrl_vad(x_d_info, x_s_info, vad_current)
 
         delta_eye = 0
         if self.drive_eye and self.delta_eye_arr is not None:
