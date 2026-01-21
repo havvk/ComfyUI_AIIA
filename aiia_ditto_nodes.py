@@ -434,6 +434,10 @@ class AIIA_DittoSampler:
         cfg_pkl = pipe["cfg_pkl"]
         data_root = pipe["data_root"]
         
+        import pickle
+        with open(cfg_pkl, 'rb') as f:
+            ditto_config = pickle.load(f)
+        
         # 1. Prepare Audio
         waveform = audio["waveform"]
         sample_rate = audio["sample_rate"]
@@ -668,7 +672,7 @@ class AIIA_DittoSampler:
                 overall_ctrl_info=overall_ctrl_info,
                 ctrl_info=ctrl_info,
                 vad_timeline=dataset_alpha,
-                **vars(ditto_model)
+                **vars(ditto_config)
             )
             
         # 4. Trigger Audio Feat Extraction & Pipeline
