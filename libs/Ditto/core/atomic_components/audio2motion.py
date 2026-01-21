@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from ..models.lmdm import LMDM
 
 
@@ -169,7 +170,7 @@ class Audio2Motion:
             res_kp_seq[:, i, :202] = np.mean(new_res_kp_seq[:, ss:ee, :202], axis=1)
         return res_kp_seq
     
-    def __call__(self, aud_cond, res_kp_seq=None, reset=False, step_len=None):
+    def __call__(self, aud_cond, res_kp_seq=None, reset=False, step_len=None, seed=None):
         """
         aud_cond: (1, seq_frames, dim)
         step_len: int, optional. Frames to advance. Defaults to self.valid_clip_len.
@@ -183,6 +184,12 @@ class Audio2Motion:
             self.kp_cond = self.s_kp_cond.copy()
             # Reset clip_idx to 0 to mimic "First Segment" conditions derived from position (if any)
             self.clip_idx = 0
+            
+            # Reset Random Seed to ensure Noise Sampling is consistent with the "First Segment" behavior
+            if seed is not None:
+                torch.manual_seed(seed)
+                torch.cuda.manual_seed(seed)
+                torch.cuda.manual_seed_all(seed)
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         if res_kp_seq is None:

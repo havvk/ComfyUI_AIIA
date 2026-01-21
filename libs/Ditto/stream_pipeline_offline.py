@@ -126,6 +126,7 @@ class StreamSDK:
         self.ctrl_info = kwargs.get("ctrl_info", dict())
         self.overall_ctrl_info = kwargs.get("overall_ctrl_info", dict())
         self.vad_timeline = kwargs.get("vad_timeline", None)
+        self.seed = kwargs.get("seed", 42)
         """
         ctrl_info: list or dict
             {
@@ -478,7 +479,7 @@ class StreamSDK:
                 
                 # Call Audio2Motion with variable step
                 # Note: stream_pipeline_offline updates 'res_kp_seq' continuously.
-                res_kp_seq = self.audio2motion(aud_cond, res_kp_seq, reset=do_reset, step_len=step_len)
+                res_kp_seq = self.audio2motion(aud_cond, res_kp_seq, reset=do_reset, step_len=step_len, seed=self.seed)
                 idx += step_len
 
             pbar.close()

@@ -686,6 +686,7 @@ class AIIA_DittoSampler:
                 overall_ctrl_info=overall_ctrl_info,
                 ctrl_info=ctrl_info,
                 vad_timeline=dataset_alpha,
+                seed=seed,
                 **ditto_config_kwargs
             )
             
