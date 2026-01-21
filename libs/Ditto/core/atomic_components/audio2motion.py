@@ -193,14 +193,34 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [OPTIMIZATION] Capture last pose for Smooth Reset
-        last_pose = None
-        if reset:
-             print(f"[Ditto Debug] Reset Triggered! res_kp_seq is {'None' if res_kp_seq is None else 'Present'}")
-             if res_kp_seq is not None:
-                 last_pose = res_kp_seq[0, -1, :202].copy()
-                 print("[Ditto Debug] Last Pose Captured.")
-
+        # [OPTIMIZATION] WARPING PREDICTION for Smooth Reset
+        # Instead of blending history after fusion, we warp the NEW prediction
+        # to align its start with the last historical pose.
+        if reset and res_kp_seq is not None:
+             print("[Ditto Debug] Reset Triggered. Calculation Delta for Warping...")
+             last_pose = res_kp_seq[0, -1, :202] # (202,)
+             curr_pose = pred_kp_seq[0, 0, :202] # (202,) Neutral start
+             
+             delta = last_pose - curr_pose
+             
+             # Apply Delta with Decay over 20 frames
+             warp_len = 20
+             actual_len = pred_kp_seq.shape[1]
+             
+             print(f"[Ditto Debug] Warping Prediction. Step={step_len}, WarpLen={warp_len}")
+             
+             for i in range(min(warp_len, actual_len)):
+                 # decay from 1.0 to 0.0
+                 # Cubic Ease Out: starts slow decay? No, we want to start at delta and end at 0.
+                 # t goes 0 -> 1.
+                 t = i / warp_len
+                 decay = (1 - t)**3  # 1 -> 0
+                 
+                 pred_kp_seq[0, i, :202] += delta * decay
+             
+             # Also need to handle the overlap region in fuse?
+             # _fuse uses pred_kp_seq starting from 0?
+             
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq   # [1, seq_frames, dim]
             res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
@@ -210,34 +230,8 @@ class Audio2Motion:
             fuse_alpha_val = 1.0 if reset else None
             res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=fuse_alpha_val, step_len=step_len)
             
-            # [OPTIMIZATION] Apply Smooth Reset (Pose Blending)
-            # If we just Reset, the Head Pose snapped. We blend from last_pose to the new prediction.
-            if last_pose is not None:
-                # Blend over 20 frames (~0.8s) to cover Fuse Overlap (10) + New Frames (10)
-                blend_len = 20
-                
-                # Correct Start Index: Must include the Fuse Overlap region!
-                # resetting 'fuse_alpha' to 1.0 caused the overlap region to snap to Neutral too.
-                # So we must start blending from the beginning of the overlap.
-                fuse_len = self.fuse_length
-                start_idx = seq_len - step_len - fuse_len
-                
-                print(f"[Ditto Debug] Applying Smooth Reset. Start={start_idx}, Len={blend_len}")
-
-                for i in range(blend_len):
-                    curr_idx = start_idx + i
-                    if curr_idx >= seq_len: break
-                    
-                    # Cubic Ease-Out for smoother natural movement
-                    # t goes 0 -> 1
-                    t = (i + 1) / (blend_len + 1)
-                    alpha = 1 - (1 - t)**3  # Cubic Ease Out
-                    
-                    target_pose = res_kp_seq[0, curr_idx, :202]
-                    blended_pose = last_pose * (1 - alpha) + target_pose * alpha
-                    res_kp_seq[0, curr_idx, :202] = blended_pose
-                print(f"[Ditto Debug] Blending Done. Final Alpha={alpha:.2f}")
-
+            # Post-Fuse Smoothing removed in favor of Pre-Fuse Warping.
+            
             # Fix Bug: Originally only smoothed the fuse region (approx 1 frame?). 
             # We must smooth the entire newly added segment to enable smooth_motion consistency.
             res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - step_len - self.fuse_length, res_kp_seq.shape[1])
