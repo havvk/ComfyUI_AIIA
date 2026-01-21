@@ -334,10 +334,13 @@ class ComfyStreamSDK(StreamSDK):
         
         # Prepare Progress Bar
         from comfy.utils import ProgressBar
+        from tqdm import tqdm
         if total_frames > 0:
             self.pbar = ProgressBar(total_frames)
+            self.console_pbar = tqdm(total=total_frames, desc="[Ditto] Generating", unit="frame")
         else:
             self.pbar = None
+            self.console_pbar = None
             
         # ======== Setup queues and threads (Copied from StreamSDK.setup) ========
         # We need these because we are starting fresh threads every setup()
@@ -382,18 +385,21 @@ class ComfyStreamSDK(StreamSDK):
                 continue
 
             if item is None:
+                # Close progress bar on exit
+                if self.console_pbar:
+                    self.console_pbar.close()
                 break
             
             res_frame_rgb = item # This is numpy RGB array usually
             self.generated_frames.append(res_frame_rgb)
             
-            # Explicit Console Logging for ComfyUI
-            count = len(self.generated_frames)
-            if count % 10 == 0:
-                print(f"[Ditto] Processing frame {count}...")
-                
+            # ComfyUI Progress Bar
             if self.pbar:
                 self.pbar.update(1)
+                
+            # Console TQDM Progress Bar
+            if self.console_pbar:
+                self.console_pbar.update(1)
 
     def cleanup(self):
         pass
