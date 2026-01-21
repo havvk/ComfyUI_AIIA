@@ -549,10 +549,10 @@ class AIIA_DittoSampler:
                 current_val = target_alpha[0]
             # [FIX] VAD Gap Filling & Predictive Logic
             # "Don't start what you can't finish."
-            # Release animation takes ~33 frames (1.0 / 0.03).
+            # Release animation takes ~20 frames (1.0 / 0.05).
             # If silence is shorter than that, we force "Speech Mode" (1.0) and let LMDM handle it naturally.
-            # Only trigger Gentle Release for Long Pauses (>1.4s).
-            min_silence = 35 # 1.4s (Safe buffer > 33)
+            # Only trigger Gentle Release for Long Pauses (>0.88s).
+            min_silence = 22 # 0.88s (Safe buffer > 20)
             
             # Find Silence Segments (val == 0.0)
             segments = []
@@ -574,6 +574,7 @@ class AIIA_DittoSampler:
             
             # Re-calculate segments
             speech_segments = []
+            
             if num_frames > 0:
                 current_val = target_alpha[0]
                 start_idx = 0
@@ -603,10 +604,10 @@ class AIIA_DittoSampler:
             
             # Linear Ramp Logic
             # Attack: Very fast. Speech onset is explosive. 2 frames (0.08s).
-            # Release: Very slow and smooth. 33 frames (1.3s).
+            # Release: Standard Natural Speed. 20 frames (0.8s).
             
             attack_step = 0.50 # +0.5 per frame (Fast Attack)
-            release_step = 0.03 # -0.03 per frame (Slow Release)
+            release_step = 0.05 # -0.05 per frame (Standard Release)
             
             for i in range(num_frames):
                 target = target_alpha[i]
