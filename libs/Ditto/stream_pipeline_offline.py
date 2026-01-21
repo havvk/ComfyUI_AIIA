@@ -394,9 +394,10 @@ class StreamSDK:
                 
                 # Check for VAD Reset (Deep Silence)
                 do_reset = False
-                if self.vad_timeline is not None and idx < len(self.vad_timeline):
+                vad_timeline = getattr(self, "vad_timeline", None)
+                if vad_timeline is not None and idx < len(vad_timeline):
                     # If current frame is deep silence (< 0.1), trigger Hard Reset
-                    if self.vad_timeline[idx] < 0.1:
+                    if vad_timeline[idx] < 0.1:
                         do_reset = True
                         
                 aud_cond = aud_cond_all[idx:idx + seq_frames][None]
