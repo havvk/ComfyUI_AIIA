@@ -196,11 +196,11 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
             if vad_timeline is not None and cur_i < len(vad_timeline):
                  is_speaking = vad_timeline[cur_i] > 0.1
                  if is_speaking:
-                     # Speaking: Fast Blink (2.0s - 3.4s)
-                     cur_n = random.randint(50, 85)
+                     # Speaking: Moderate Blink (3.2s - 4.8s)
+                     cur_n = random.randint(80, 120)
                  else:
-                     # Silence: Slow Blink (3.6s - 6.0s)
-                     cur_n = random.randint(90, 150)
+                     # Silence: Relaxed Blink (4.8s - 7.2s)
+                     cur_n = random.randint(120, 180)
             else:
                  cur_n = random.randint(OPEN_MIN, OPEN_MAX)
 

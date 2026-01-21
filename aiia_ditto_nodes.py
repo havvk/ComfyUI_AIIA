@@ -634,9 +634,9 @@ class AIIA_DittoSampler:
         
         # Blink Settings
         delta_eye_open_n = 0 if chk_eye_blink else -1
-        # Normal Mode: tuned to ~23 bpm (Speaking Avg is 25, Silence is 17)
-        blink_min = 50  # 2.0s
-        blink_max = 85  # 3.4s
+        # Normal Mode: tuned to ~12-16 bpm (User pref: 4-6s)
+        blink_min = 90   # 3.6s
+        blink_max = 150  # 6.0s
         
         if blink_mode == "Fast":
              blink_min = 10
