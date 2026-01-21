@@ -125,6 +125,7 @@ class StreamSDK:
 
         self.ctrl_info = kwargs.get("ctrl_info", dict())
         self.overall_ctrl_info = kwargs.get("overall_ctrl_info", dict())
+        self.vad_timeline = kwargs.get("vad_timeline", None)
         """
         ctrl_info: list or dict
             {
