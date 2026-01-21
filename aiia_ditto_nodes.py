@@ -248,6 +248,7 @@ class ComfyStreamSDK(StreamSDK):
         self.ctrl_info = kwargs.get("ctrl_info", dict())
         self.overall_ctrl_info = kwargs.get("overall_ctrl_info", dict())
         self.vad_timeline = kwargs.get("vad_timeline", None) # Ensure vad_timeline is updated/created
+        self.seed = kwargs.get("seed", 0) # Store seed
         self.wav2feat = self.wav2feat # ensure exist? (Initialized in __init__)
         
         # Assert online mode support
