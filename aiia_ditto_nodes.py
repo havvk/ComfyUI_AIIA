@@ -435,6 +435,7 @@ class AIIA_DittoSampler:
                 "relax_on_silence": ("BOOLEAN", {"default": True, "label_on": "Relax Face on Silence", "label_off": "Disabled"}),
                 "ref_threshold": ("FLOAT", {"default": 0.005, "min": 0.0, "max": 1.0, "step": 0.001}),
                 "blink_mode": (["Random (Normal)", "Fast", "Slow", "None"], {"default": "Random (Normal)"}),
+                "silence_release": (["Natural (0.8s)", "Fast (0.5s)", "Deep (1.3s)"], {"default": "Natural (0.8s)"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
             }
         }
@@ -444,7 +445,7 @@ class AIIA_DittoSampler:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Ditto"
 
-    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, blink_amp, relax_on_silence, ref_threshold, blink_mode, seed):
+    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, blink_amp, relax_on_silence, ref_threshold, blink_mode, silence_release, seed):
         # pipe is the dict we returned in Loader
         master_sdk = pipe["sdk"]
         cfg_pkl = pipe["cfg_pkl"]
@@ -604,10 +605,26 @@ class AIIA_DittoSampler:
             
             # Linear Ramp Logic
             # Attack: Very fast. Speech onset is explosive. 2 frames (0.08s).
-            # Release: Standard Natural Speed. 20 frames (0.8s).
+            # Release: Dynamic based on user selection.
+            
+            silence_mode = kwargs.get("silence_release", "Natural (0.8s)")
+            
+            if silence_mode == "Fast (0.5s)":
+                # Quick, responsive closure. Good for fast talkers.
+                release_step = 0.08
+                min_silence = 14 # 0.56s
+            elif silence_mode == "Deep (1.3s)":
+                # Very slow, dreamy closure. Good for storytelling/emotional content.
+                release_step = 0.03
+                min_silence = 35 # 1.4s
+            else: 
+                # "Natural (0.8s)" - Default
+                # Balanced for most conversational speech.
+                release_step = 0.05
+                min_silence = 22 # 0.88s
             
             attack_step = 0.50 # +0.5 per frame (Fast Attack)
-            release_step = 0.05 # -0.05 per frame (Standard Release)
+            # release_step is set above
             
             for i in range(num_frames):
                 target = target_alpha[i]
@@ -727,6 +744,7 @@ class AIIA_DittoSampler:
                 vad_timeline=dataset_alpha,
                 seed=seed,
                 blink_amp=blink_amp,
+                silence_release=silence_release,
                 **ditto_config_kwargs
             )
             
