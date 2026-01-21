@@ -392,45 +392,46 @@ class StreamSDK:
             pbar = tqdm(desc="dit", disable=True)
             
             # State for Onset Detection
-            was_silence = False
+            silence_frames_count = 0
+            min_silence_for_reset = 15 # ~0.6s @ 25fps. Avoid resetting on short breaths.
             
             while idx < num_frames:
                 pbar.update()
                 
-                # Check for VAD Reset (Trigger ONLY at Recall/Speech Onset)
                 do_reset = False
                 vad_timeline = getattr(self, "vad_timeline", None)
                 if vad_timeline is not None:
-                     # Check VAD for current chunk
                      end_idx = min(idx + valid_clip_len, len(vad_timeline))
                      if idx < end_idx:
                          chunk_vad = vad_timeline[idx:end_idx]
                          chunk_max = np.max(chunk_vad)
-                         chunk_min = np.min(chunk_vad)
                          
-                         is_speech_chunk = chunk_max > 0.1
-                         is_silence_chunk = chunk_max < 0.1
-                         
-                         # Condition 1: Transition from Previous Full Silence
-                         if was_silence and is_speech_chunk:
-                             do_reset = True
-                             was_silence = False
-                             print(f"[Ditto] Reset Triggered at Frame {idx} (Post-Silence)")
+                         if chunk_max < 0.1:
+                             # Full Silence Chunk
+                             silence_frames_count += len(chunk_vad)
+                         else:
+                             # Speech Chunk (contains at least some speech)
+                             # Calculate silence prefix before onset
+                             is_active = chunk_vad > 0.1
+                             onset_idx = np.argmax(is_active) # First index where True
                              
-                         # Condition 2: Internal Onset (Mid-Chunk Transition)
-                         # If start is silence (<0.1) and end is speech (>0.1), and we haven't already reset
-                         elif not do_reset and chunk_vad[0] < 0.1 and chunk_vad[-1] > 0.1:
-                             do_reset = True
-                             was_silence = False
-                             print(f"[Ditto] Reset Triggered at Frame {idx} (Mid-Chunk Onset)")
+                             # Add prefix silence to counter
+                             silence_frames_count += onset_idx
+                             
+                             # Check if we should reset (Long Silence -> Speech)
+                             if silence_frames_count >= min_silence_for_reset:
+                                 do_reset = True
+                                 print(f"[Ditto] Speech Onset at Frame {idx + onset_idx} (After {silence_frames_count} frames silence). RESET triggered.")
+                             
+                             # Reset counter (we are in speech now)
+                             silence_frames_count = 0
+                             
+                             # Handle trailing silence for NEXT chunk
+                             # Find last active frame
+                             last_active_local_idx = len(chunk_vad) - 1 - np.argmax(is_active[::-1])
+                             trailing_silence = len(chunk_vad) - 1 - last_active_local_idx
+                             silence_frames_count = trailing_silence
 
-                         # Update State for Next Chunk
-                         if is_silence_chunk:
-                             was_silence = True
-                         elif is_speech_chunk and chunk_vad[-1] > 0.1:
-                             # If we end in speech, next chunk prefix is speech.
-                             was_silence = False
-                        
                 aud_cond = aud_cond_all[idx:idx + seq_frames][None]
                 if aud_cond.shape[1] < seq_frames:
                     pad = np.stack([aud_cond[:, -1]] * (seq_frames - aud_cond.shape[1]), 1)
