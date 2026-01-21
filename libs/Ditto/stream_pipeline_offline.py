@@ -202,6 +202,7 @@ class StreamSDK:
             d0=None,
             ch_info=self.ch_info,
             overall_ctrl_info=self.overall_ctrl_info,
+            vad_timeline=self.vad_timeline,
         )
 
         # ======== Video Writer ========

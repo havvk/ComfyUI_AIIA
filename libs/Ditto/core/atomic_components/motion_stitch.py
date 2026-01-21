@@ -100,7 +100,7 @@ def _mix_s_d_info(
     return x_d_info
 
 
-def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=100):
+def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=100, vad_timeline=None):
     """
     open_n:
         -1: no blink
@@ -159,13 +159,26 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
              cur_i += blink_n
 
         # Long Interval (Standard)
+        # Long Interval (Standard)
         if open_ns:
             cur_n = open_ns[cur_n_i % len(open_ns)]
             cur_n_i += 1
         else:
-            cur_n = random.randint(OPEN_MIN, OPEN_MAX)
+            # Dynamic Interval based on VAD
+            if vad_timeline is not None and cur_i < len(vad_timeline):
+                 is_speaking = vad_timeline[cur_i] > 0.1
+                 if is_speaking:
+                     # Speaking: Fast Blink (2.0s - 3.4s)
+                     cur_n = random.randint(50, 85)
+                 else:
+                     # Silence: Slow Blink (3.6s - 6.0s)
+                     cur_n = random.randint(90, 150)
+            else:
+                 cur_n = random.randint(OPEN_MIN, OPEN_MAX)
 
         cur_i += cur_n
+
+    return idx
 
     return idx
 
@@ -325,7 +338,10 @@ class MotionStitch:
         if self.drive_eye and self.delta_eye_arr is not None:
             N = 3000 if self.N_d == -1 else self.N_d
             self.delta_eye_idx_list = _set_eye_blink_idx(
-                N, len(self.delta_eye_arr), self.delta_eye_open_n
+                N, len(self.delta_eye_arr), self.delta_eye_open_n,
+                blink_interval_min=blink_interval_min,
+                blink_interval_max=blink_interval_max,
+                vad_timeline=self.vad_timeline if hasattr(self, 'vad_timeline') else None
             )
 
     def setup(
@@ -346,7 +362,9 @@ class MotionStitch:
         d0=None,
         ch_info=None,
         overall_ctrl_info=None,
+        vad_timeline=None,
     ):
+        self.vad_timeline = vad_timeline
         self.is_image_flag = is_image_flag
         if use_d_keys is None:
             if self.is_image_flag:
@@ -397,7 +415,8 @@ class MotionStitch:
                 len(self.delta_eye_arr), 
                 self.delta_eye_open_n,
                 interval_min=blink_interval_min,
-                interval_max=blink_interval_max
+                interval_max=blink_interval_max,
+                vad_timeline=self.vad_timeline
             )
 
         self.pose_s = None
