@@ -391,11 +391,21 @@ class StreamSDK:
             pbar = tqdm(desc="dit")
             while idx < num_frames:
                 pbar.update()
+                
+                # Check for VAD Reset (Deep Silence)
+                do_reset = False
+                if self.vad_timeline is not None and idx < len(self.vad_timeline):
+                    # If current frame is deep silence (< 0.1), trigger Hard Reset
+                    if self.vad_timeline[idx] < 0.1:
+                        do_reset = True
+                        
                 aud_cond = aud_cond_all[idx:idx + seq_frames][None]
                 if aud_cond.shape[1] < seq_frames:
                     pad = np.stack([aud_cond[:, -1]] * (seq_frames - aud_cond.shape[1]), 1)
                     aud_cond = np.concatenate([aud_cond, pad], 1)
-                res_kp_seq = self.audio2motion(aud_cond, res_kp_seq)
+                
+                # Call Audio2Motion with reset flag
+                res_kp_seq = self.audio2motion(aud_cond, res_kp_seq, reset=do_reset)
                 idx += valid_clip_len
 
             pbar.close()

@@ -109,7 +109,7 @@ class Audio2Motion:
 
         self.clip_idx = 0
 
-    def _fuse(self, res_kp_seq, pred_kp_seq):
+    def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None):
         ## ========================
         ## offline fuse mode
         ## last clip:  -------
@@ -131,7 +131,9 @@ class Audio2Motion:
 
         r1 = res_kp_seq[:, fuse_r1_s:fuse_r1_e]     # [1, fuse_len, dim]
         r2 = pred_kp_seq[:, fuse_r2_s: fuse_r2_e]   # [1, fuse_len, dim]
-        r_fuse = r1 * (1 - self.fuse_alpha) + r2 * self.fuse_alpha
+        
+        alpha = override_alpha if override_alpha is not None else self.fuse_alpha
+        r_fuse = r1 * (1 - alpha) + r2 * alpha
 
         res_kp_seq[:, fuse_r1_s:fuse_r1_e] = r_fuse    # fuse last
         res_kp_seq = np.concatenate([res_kp_seq, pred_kp_seq[:, fuse_r2_e:]], 1)  # len(res_kp_seq) + valid_clip_len
@@ -162,17 +164,22 @@ class Audio2Motion:
             res_kp_seq[:, i, :202] = np.mean(new_res_kp_seq[:, ss:ee, :202], axis=1)
         return res_kp_seq
     
-    def __call__(self, aud_cond, res_kp_seq=None):
+    def __call__(self, aud_cond, res_kp_seq=None, reset=False):
         """
         aud_cond: (1, seq_frames, dim)
         """
+        if reset:
+            # Force current conditioning to Reference (Neutral)
+            self.kp_cond = self.s_kp_cond.copy()
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq   # [1, seq_frames, dim]
             res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
         else:
-            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq)  # len(res_kp_seq) + valid_clip_len
+            # If reset, use alpha=1.0 to overwrite history with new clean prediction
+            fuse_alpha_val = 1.0 if reset else None
+            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=fuse_alpha_val)
             # Fix Bug: Originally only smoothed the fuse region (approx 1 frame?). 
             # We must smooth the entire newly added segment to enable smooth_motion consistency.
             res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - self.valid_clip_len - self.fuse_length, res_kp_seq.shape[1])
