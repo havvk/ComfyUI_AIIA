@@ -367,14 +367,13 @@ class AIIA_BodySway:
     NODE_NAME = "AIIA 身体微动 (Body Sway)"
     CATEGORY = "AIIA/视频"
     FUNCTION = "apply_sway"
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("images",)
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("images", "output_frames_dir")
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "images": ("IMAGE",),  # [B, H, W, C] tensor
                 "crop_ratio": ("FLOAT", {"default": 0.99, "min": 0.90, "max": 1.0, "step": 0.001,
                                           "tooltip": "Output size as ratio of input (0.99 = keep 99%, crop 1%)"}),
                 "rotation_amplitude": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 2.0, "step": 0.1,
@@ -382,28 +381,60 @@ class AIIA_BodySway:
                 "smoothness": ("FLOAT", {"default": 0.02, "min": 0.005, "max": 0.1, "step": 0.005,
                                           "tooltip": "Perlin noise smoothness (smaller = slower drift)"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+            },
+            "optional": {
+                "images": ("IMAGE",),  # [B, H, W, C] tensor
+                "frames_directory": ("STRING", {"default": "", "tooltip": "Path to directory containing frames (from Ditto disk mode)"}),
             }
         }
 
-    def apply_sway(self, images: torch.Tensor, crop_ratio: float, rotation_amplitude: float,
-                   smoothness: float, seed: int):
+    def apply_sway(self, crop_ratio: float, rotation_amplitude: float,
+                   smoothness: float, seed: int, images: torch.Tensor = None, frames_directory: str = ""):
         """
         Apply body sway effect using crop + rotation with Perlin noise.
         
-        images: [B, H, W, C] tensor (float32, 0-1 range)
+        images: [B, H, W, C] tensor (float32, 0-1 range) - optional
+        frames_directory: Path to directory containing frames - optional (for OOM-safe mode)
         crop_ratio: Output size as ratio of input (e.g., 0.99)
         smoothness: Perlin noise smoothness (smaller = slower drift)
         """
         import math
         from PIL import Image
         import random
+        import os
+        import glob
+        import tempfile
+        import gc
+        
+        # Validate inputs
+        frames_directory = frames_directory.strip() if frames_directory else ""
+        use_disk_mode = bool(frames_directory and os.path.isdir(frames_directory))
+        
+        if images is None and not use_disk_mode:
+            raise ValueError("必须提供 images 或 frames_directory 输入")
         
         # Limit seed to 32-bit for numpy compatibility
         seed_32 = seed % (2**32)
         random.seed(seed_32)
         np.random.seed(seed_32)
         
-        batch_size, in_h, in_w, channels = images.shape
+        # Determine input dimensions and frame count
+        if use_disk_mode:
+            # Get frame list from directory
+            frame_files = sorted(glob.glob(os.path.join(frames_directory, "*.png")))
+            if not frame_files:
+                frame_files = sorted(glob.glob(os.path.join(frames_directory, "*.jpg")))
+            if not frame_files:
+                raise ValueError(f"目录中未找到帧文件: {frames_directory}")
+            
+            batch_size = len(frame_files)
+            first_frame = Image.open(frame_files[0])
+            in_w, in_h = first_frame.size
+            channels = 3
+            first_frame.close()
+            logger.info(f"[BodySway] Disk mode: {batch_size} frames from {frames_directory}")
+        else:
+            batch_size, in_h, in_w, channels = images.shape
         
         # Auto-calculate target size and sway amplitude from crop_ratio
         target_width = int(in_w * crop_ratio)
@@ -496,73 +527,113 @@ class AIIA_BodySway:
         if target_width > (valid_right - valid_left) or target_height > (valid_bottom - valid_top):
             logger.warning(f"[BodySway] Target size ({target_width}x{target_height}) exceeds valid region. Consider reducing rotation_amplitude or crop_ratio.")
         
-        # Pre-allocate output tensor to avoid memory fragmentation
-        # Use same device as input to avoid extra memory copies
-        output_tensor = torch.zeros((batch_size, target_height, target_width, channels), 
-                                    dtype=torch.float32, device='cpu')
+        # Create output directory for disk mode
+        output_frames_dir = ""
+        if use_disk_mode:
+            import folder_paths
+            output_frames_dir = tempfile.mkdtemp(prefix="bodysway_frames_", dir=folder_paths.get_temp_directory())
+            logger.info(f"[BodySway] Output frames will be saved to: {output_frames_dir}")
         
-        # Move input to CPU if on GPU to free GPU memory
-        if images.device.type == 'cuda':
-            images = images.cpu()
-            torch.cuda.empty_cache()
-        
-        # Process frames in smaller batches to reduce peak memory usage
-        batch_chunk_size = 50  # Smaller batches for large images
-        
-        import gc
-        
-        for batch_start in range(0, batch_size, batch_chunk_size):
-            batch_end = min(batch_start + batch_chunk_size, batch_size)
-            
-            for i in range(batch_start, batch_end):
-                # Get frame as numpy array directly (avoid extra copy)
-                frame_np = (images[i].numpy() * 255).astype(np.uint8)
-                img = Image.fromarray(frame_np)
-                del frame_np  # Release immediately
+        # Process frames: disk mode or memory mode
+        if use_disk_mode:
+            # Disk mode: read, process, save each frame
+            for i, frame_path in enumerate(frame_files):
+                img = Image.open(frame_path)
                 
                 # Apply rotation if needed
                 if actual_rotation > 0:
                     rotated = img.rotate(traj_rot[i], resample=Image.BILINEAR, expand=False)
-                    del img
+                    img.close()
                     img = rotated
                 
-                # Calculate crop box (centered with X offset only)
+                # Calculate crop box
                 center_x = in_w / 2 + traj_x[i]
-                center_y = in_h / 2 + traj_y[i]  # traj_y is always 0
+                center_y = in_h / 2 + traj_y[i]
                 
                 left = int(center_x - target_width / 2)
                 top = int(center_y - target_height / 2)
                 right = left + target_width
                 bottom = top + target_height
                 
-                # Clamp to GLOBAL valid region
+                # Clamp to valid region
                 left = max(valid_left, min(left, valid_right - target_width))
                 top = max(valid_top, min(top, valid_bottom - target_height))
                 right = left + target_width
                 bottom = top + target_height
                 
-                # Crop and write directly to output tensor
+                # Crop and save
                 cropped = img.crop((left, top, right, bottom))
-                del img
+                img.close()
                 
-                # Convert to tensor and store
-                cropped_arr = np.array(cropped, dtype=np.float32)
-                del cropped
-                output_tensor[i] = torch.from_numpy(cropped_arr / 255.0)
-                del cropped_arr
+                output_path = os.path.join(output_frames_dir, f"frame_{i:08d}.png")
+                cropped.save(output_path)
+                cropped.close()
+                
+                # Periodic GC and progress
+                if i > 0 and i % 50 == 0:
+                    gc.collect()
+                    if batch_size > 200:
+                        logger.info(f"[BodySway] Progress: {i}/{batch_size} frames processed")
             
-            # Aggressive cleanup after each batch
-            gc.collect()
-            if torch.cuda.is_available():
+            # Return placeholder tensor for disk mode
+            output_tensor = torch.zeros((1, 1, 1, 3), dtype=torch.float32)
+            logger.info(f"[BodySway] Disk mode: Processed {batch_size} frames, saved to {output_frames_dir}")
+        
+        else:
+            # Memory mode: original logic with tensor input/output
+            output_tensor = torch.zeros((batch_size, target_height, target_width, channels), 
+                                        dtype=torch.float32, device='cpu')
+            
+            if images.device.type == 'cuda':
+                images = images.cpu()
                 torch.cuda.empty_cache()
             
-            # Log progress for long operations
-            if batch_size > 200:
-                logger.info(f"[BodySway] Progress: {batch_end}/{batch_size} frames processed")
+            batch_chunk_size = 50
+            
+            for batch_start in range(0, batch_size, batch_chunk_size):
+                batch_end = min(batch_start + batch_chunk_size, batch_size)
+                
+                for i in range(batch_start, batch_end):
+                    frame_np = (images[i].numpy() * 255).astype(np.uint8)
+                    img = Image.fromarray(frame_np)
+                    del frame_np
+                    
+                    if actual_rotation > 0:
+                        rotated = img.rotate(traj_rot[i], resample=Image.BILINEAR, expand=False)
+                        del img
+                        img = rotated
+                    
+                    center_x = in_w / 2 + traj_x[i]
+                    center_y = in_h / 2 + traj_y[i]
+                    
+                    left = int(center_x - target_width / 2)
+                    top = int(center_y - target_height / 2)
+                    right = left + target_width
+                    bottom = top + target_height
+                    
+                    left = max(valid_left, min(left, valid_right - target_width))
+                    top = max(valid_top, min(top, valid_bottom - target_height))
+                    right = left + target_width
+                    bottom = top + target_height
+                    
+                    cropped = img.crop((left, top, right, bottom))
+                    del img
+                    
+                    cropped_arr = np.array(cropped, dtype=np.float32)
+                    del cropped
+                    output_tensor[i] = torch.from_numpy(cropped_arr / 255.0)
+                    del cropped_arr
+                
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+                if batch_size > 200:
+                    logger.info(f"[BodySway] Progress: {batch_end}/{batch_size} frames processed")
+            
+            logger.info(f"[BodySway] Processed {batch_size} frames with Perlin noise (smoothness={smoothness})")
         
-        logger.info(f"[BodySway] Processed {batch_size} frames with Perlin noise (smoothness={smoothness})")
-        
-        return (output_tensor,)
+        return (output_tensor, output_frames_dir)
 
 
 NODE_CLASS_MAPPINGS = {
