@@ -369,8 +369,10 @@ class AIIA_BodySway:
         from PIL import Image
         import random
         
-        random.seed(seed)
-        np.random.seed(seed)
+        # Limit seed to 32-bit for numpy compatibility
+        seed_32 = seed % (2**32)
+        random.seed(seed_32)
+        np.random.seed(seed_32)
         
         batch_size, in_h, in_w, channels = images.shape
         
