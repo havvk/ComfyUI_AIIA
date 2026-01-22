@@ -597,12 +597,12 @@ class MotionStitch:
                 self.delta_eye_idx_list[self.idx % len(self.delta_eye_idx_list)]
             ][None] * self.blink_amp
             
-            # [Fix v1.9.56] Attenuate Squint (Indices 15,16,18)
-            # Problem: These indices control squint/brow but also pull the cheek/mouth in Mesh.
-            # Solution: We need them for Left Blink (it seems), but we must reduce their strength to avoid mouth twitch.
-            # 20% strength ensures the eye closes but the cheek doesn't pop.
-            squint_idx = [15, 16, 18]
-            if delta_eye.shape[-1] > 18:
+            # [Fix v1.9.57] Refined Blink: Removed 18 (Brow), Kept 15/16 (Squint) but attenuated.
+            # Index 18 (Brow Down) is the main culprit for Lip Pull (Levator Labii).
+            # Indices 15/16 (Squint) are needed for full eye closure but also pull cheeks.
+            # Attenuation 0.2 keeps the closure helper but kills the cheek motion.
+            squint_idx = [15, 16]
+            if delta_eye.shape[-1] > 16:
                 delta_eye[..., squint_idx] *= 0.2
             
         # [Feature v1.9.48] Apple Mouth Micro-Motion
