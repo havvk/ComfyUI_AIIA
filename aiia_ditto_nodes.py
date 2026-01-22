@@ -6,11 +6,14 @@ from PIL import Image
 import folder_paths
 import logging
 
+
 # Add Ditto library to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 ditto_path = os.path.join(current_dir, "libs", "Ditto")
 if ditto_path not in sys.path:
     sys.path.append(ditto_path)
+
+logger = logging.getLogger("AIIA_Ditto")
 
 # --- Logging Protection ---
 import logging
