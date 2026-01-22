@@ -382,13 +382,29 @@ class AIIA_BodySway:
         target_width = target_width - (target_width % 2)
         target_height = target_height - (target_height % 2)
         
-        # Calculate margin and sway amplitude (use 80% of margin for sway, 20% safety buffer)
+        # Calculate total available margin
         margin_x = (in_w - target_width) / 2
         margin_y = (in_h - target_height) / 2
-        sway_amplitude = min(margin_x, margin_y) * 0.8
+        total_margin = min(margin_x, margin_y)
+        
+        # Reserve margin for rotation (rotation introduces black corners)
+        # For small angles: corner displacement ≈ (diagonal/2) * sin(θ)
+        import math
+        diagonal = math.sqrt(in_w**2 + in_h**2)
+        rotation_margin = (diagonal / 2) * math.sin(math.radians(rotation_amplitude)) if rotation_amplitude > 0 else 0
+        
+        # Safe margin for sway = total margin - rotation margin - 20% safety buffer
+        safe_margin = max(0, total_margin - rotation_margin)
+        sway_amplitude = safe_margin * 0.8  # Use 80% of remaining safe margin
+        
+        # Clamp rotation to prevent exceeding available margin
+        max_safe_rotation = math.degrees(math.asin(min(1.0, total_margin * 0.5 / (diagonal / 2 + 0.001))))
+        actual_rotation = min(rotation_amplitude, max_safe_rotation)
+        if actual_rotation < rotation_amplitude:
+            logger.warning(f"[BodySway] Rotation clamped from {rotation_amplitude}° to {actual_rotation:.2f}° to prevent black corners")
         
         logger.info(f"[BodySway] Input: {in_w}x{in_h}, Output: {target_width}x{target_height}, "
-                    f"Margin: {margin_x:.1f}px, Sway: {sway_amplitude:.1f}px")
+                    f"Margin: {total_margin:.1f}px, RotMargin: {rotation_margin:.1f}px, Sway: {sway_amplitude:.1f}px")
         
         # Generate smooth noise trajectories using multi-sine superposition
         def generate_trajectory(n_frames: int, amplitude: float, freq_base: float, num_harmonics: int = 3):
@@ -416,7 +432,7 @@ class AIIA_BodySway:
         # Generate X, Y, Rotation trajectories
         traj_x = generate_trajectory(batch_size, sway_amplitude, base_freq * (0.8 + random.random() * 0.4))
         traj_y = generate_trajectory(batch_size, sway_amplitude * 0.6, base_freq * (0.6 + random.random() * 0.4))
-        traj_rot = generate_trajectory(batch_size, rotation_amplitude, base_freq * (0.5 + random.random() * 0.3))
+        traj_rot = generate_trajectory(batch_size, actual_rotation, base_freq * (0.5 + random.random() * 0.3))
         
         # Process each frame
         output_frames = []
