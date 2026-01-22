@@ -383,8 +383,15 @@ ComfyUI/models/EchoMimicV3/
     - **`Light`** (0.3): 轻微平滑，**推荐快语速使用**。
     - **`Normal`** (0.5) [默认]: 适中平滑，常规对话推荐。
     - **`Heavy`** (0.7): 强力平滑，适合低质量音频或模型输出抖动严重的情况。
+  - `save_to_disk`: (v1.9.24 New) **OOM 安全模式 (OOM-Safe Mode)**。
+    - **`Memory (Default)`**: 传统模式，所有帧保存在内存中。适合短视频（<1000帧）。
+    - **`Disk (OOM-Safe)`**: **长视频推荐**。边生成边保存到磁盘，无 OOM 风险。
+    - 选择 Disk 模式时，`frames_dir` 输出会包含帧保存路径，可直接连接 **AIIA Video Combine** 节点的 `frames_directory` 输入。
+    - ⚠️ Disk 模式下 `images` 输出为占位符，请使用 `frames_dir` 连接后续节点。
 - **输出**:
-  - `images`: 生成的视频帧序列。节点已对接 ComfyUI 原生进度条，可实时显示推理进度。
+  - `images`: 生成的视频帧序列（Memory 模式）或占位符（Disk 模式）。
+  - `audio`: 透传的音频。
+  - `frames_dir`: (v1.9.24 New) Disk 模式下的帧保存路径。Memory 模式下为空字符串。
 
 **🛠️ 模型下载指南 (Manual Download Guide)**
 
