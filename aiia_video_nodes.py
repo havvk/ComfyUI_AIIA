@@ -330,5 +330,133 @@ class AIIA_VideoCombine:
                 try: shutil.rmtree(temp_image_dir_to_delete); logger.info(f"已清理临时图像帧目录: {temp_image_dir_to_delete}")
                 except Exception as e_del: logger.error(f"清理临时图像帧目录失败: {e_del}")
 
-NODE_CLASS_MAPPINGS = { "AIIA_VideoCombine": AIIA_VideoCombine }
-NODE_DISPLAY_NAME_MAPPINGS = { "AIIA_VideoCombine": "视频合并 (AIIA, 图像或目录)" }
+
+class AIIA_BodySway:
+    """Simulate subtle body movement through crop-based pan and rotation."""
+    
+    NODE_NAME = "AIIA 身体微动 (Body Sway)"
+    CATEGORY = "AIIA/视频"
+    FUNCTION = "apply_sway"
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("images",)
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),  # [B, H, W, C] tensor, should be oversized
+                "target_width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8}),
+                "target_height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8}),
+                "sway_amplitude": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 20.0, "step": 0.5,
+                                              "tooltip": "Max horizontal/vertical shift in pixels"}),
+                "rotation_amplitude": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 5.0, "step": 0.1,
+                                                  "tooltip": "Max rotation in degrees"}),
+                "period_min": ("INT", {"default": 60, "min": 10, "max": 300, "step": 5,
+                                        "tooltip": "Min cycle length in frames (at 25fps, 60=2.4s)"}),
+                "period_max": ("INT", {"default": 150, "min": 20, "max": 500, "step": 5,
+                                        "tooltip": "Max cycle length in frames"}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+            }
+        }
+
+    def apply_sway(self, images: torch.Tensor, target_width: int, target_height: int,
+                   sway_amplitude: float, rotation_amplitude: float,
+                   period_min: int, period_max: int, seed: int):
+        """
+        Apply body sway effect using crop + rotation.
+        
+        images: [B, H, W, C] tensor (float32, 0-1 range)
+        """
+        import math
+        from PIL import Image
+        import random
+        
+        random.seed(seed)
+        np.random.seed(seed)
+        
+        batch_size, in_h, in_w, channels = images.shape
+        
+        # Check if input is large enough
+        required_padding = max(sway_amplitude * 2, rotation_amplitude * 5)  # rough estimate
+        if in_w < target_width + required_padding or in_h < target_height + required_padding:
+            logger.warning(f"[BodySway] Input size ({in_w}x{in_h}) may be too small for target ({target_width}x{target_height}) with sway. Consider adding padding.")
+        
+        # Generate smooth noise trajectories using multi-sine superposition
+        # This creates organic, non-repetitive motion
+        def generate_trajectory(n_frames: int, amplitude: float, freq_base: float, num_harmonics: int = 3):
+            """Generate smooth trajectory using sum of sine waves with different frequencies."""
+            trajectory = np.zeros(n_frames)
+            phases = [random.random() * 2 * math.pi for _ in range(num_harmonics)]
+            freq_ratios = [1.0, 0.618, 0.382]  # Golden ratio based for organic feel
+            amp_ratios = [1.0, 0.5, 0.25]
+            
+            for i in range(num_harmonics):
+                freq = freq_base * freq_ratios[i]
+                amp = amplitude * amp_ratios[i]
+                for t in range(n_frames):
+                    trajectory[t] += amp * math.sin(2 * math.pi * freq * t + phases[i])
+            
+            # Normalize to amplitude range
+            if np.max(np.abs(trajectory)) > 0:
+                trajectory = trajectory / np.max(np.abs(trajectory)) * amplitude
+            return trajectory
+        
+        # Compute base frequency from period
+        avg_period = (period_min + period_max) / 2
+        base_freq = 1.0 / avg_period
+        
+        # Generate X, Y, Rotation trajectories
+        traj_x = generate_trajectory(batch_size, sway_amplitude, base_freq * (0.8 + random.random() * 0.4))
+        traj_y = generate_trajectory(batch_size, sway_amplitude * 0.6, base_freq * (0.6 + random.random() * 0.4))  # Y is less pronounced
+        traj_rot = generate_trajectory(batch_size, rotation_amplitude, base_freq * (0.5 + random.random() * 0.3))
+        
+        # Process each frame
+        output_frames = []
+        
+        for i in range(batch_size):
+            # Get frame as PIL Image
+            frame_np = (images[i].cpu().numpy() * 255).astype(np.uint8)
+            img = Image.fromarray(frame_np)
+            
+            # Apply rotation if needed
+            if rotation_amplitude > 0:
+                img = img.rotate(traj_rot[i], resample=Image.BILINEAR, expand=False)
+            
+            # Calculate crop box (centered with offset)
+            center_x = in_w / 2 + traj_x[i]
+            center_y = in_h / 2 + traj_y[i]
+            
+            left = int(center_x - target_width / 2)
+            top = int(center_y - target_height / 2)
+            right = left + target_width
+            bottom = top + target_height
+            
+            # Clamp to valid range
+            left = max(0, min(left, in_w - target_width))
+            top = max(0, min(top, in_h - target_height))
+            right = left + target_width
+            bottom = top + target_height
+            
+            # Crop
+            cropped = img.crop((left, top, right, bottom))
+            
+            # Convert back to numpy
+            cropped_np = np.array(cropped).astype(np.float32) / 255.0
+            output_frames.append(cropped_np)
+        
+        # Stack to tensor
+        output_tensor = torch.from_numpy(np.stack(output_frames, axis=0))
+        
+        logger.info(f"[BodySway] Processed {batch_size} frames: amplitude={sway_amplitude}px, rotation={rotation_amplitude}°")
+        
+        return (output_tensor,)
+
+
+NODE_CLASS_MAPPINGS = {
+    "AIIA_VideoCombine": AIIA_VideoCombine,
+    "AIIA_BodySway": AIIA_BodySway,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIIA_VideoCombine": "视频合并 (AIIA, 图像或目录)",
+    "AIIA_BodySway": "身体微动 (AIIA Body Sway)",
+}
