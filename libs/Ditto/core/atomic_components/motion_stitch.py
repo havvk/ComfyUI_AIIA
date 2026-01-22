@@ -613,6 +613,15 @@ class MotionStitch:
         )
 
         x_d_info = ctrl_motion(x_d_info, **kwargs)
+        
+        # [Feature v1.9.52] Auto-Center Roll (Anti-Tilt)
+        # Problem: LMDM naturally drifts in the Roll axis over time.
+        # Solution: Post-process "Spring Force" pulling roll back to Reference Image angle.
+        # Strength 0.1 per frame (Strong Centering).
+        # Note: x_d_info['roll'] is now in Degrees (converted by ctrl_motion).
+        # x_s_info['roll'] is in Logits (Bin66), so we convert it first.
+        ref_roll = bin66_to_degree(x_s_info['roll'])
+        x_d_info['roll'] = x_d_info['roll'] * 0.9 + ref_roll * 0.1
 
         if self.fade_type == "d0" and self.fade_dst is None:
             self.fade_dst = copy.deepcopy(x_d_info)
