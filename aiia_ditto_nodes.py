@@ -791,24 +791,10 @@ class AIIA_DittoSampler:
         elif blink_mode == "Slow":
              blink_min = 120
              blink_max = 200
-        # Mouth Smoothing Logic [Fix v1.9.44]
-        # User requested Float Blend Factors (0.0 - 0.7)
-        # 0.0 = Raw, 0.5 = Normal Blend, 0.7 = Heavy Blend
-        if mouth_smoothing == "None (Raw)":
-            smo_k_d = 0.0 
-        elif mouth_smoothing == "Light":
-            smo_k_d = 0.3
-        elif mouth_smoothing == "Heavy":
-            smo_k_d = 0.7
-        elif mouth_smoothing == "Custom (Manual)":
-            # Respect the integer input
-            pass 
-        else: # Normal
-            smo_k_d = 0.5
-        # If "Normal" was default, we set 0.5. 
-        # Note: We are hijacking smo_k_d (int) to pass a float. 
-        # StreamSDK and Audio2Motion must be updated to handle this float.
-
+        # [Revert v1.9.46] Logic Separation
+        # smo_k_d: Controls Pose Smoothing Window (Audio2Motion). Uses direct INT input.
+        # mouth_smoothing: Controls Expression EMA Decay (MotionStitch). Passed via string.
+        # We no longer override smo_k_d based on mouth_smoothing.
         
         # Map emo string to int
         emo_map = {
@@ -823,6 +809,7 @@ class AIIA_DittoSampler:
             "delta_yaw": hd_rot_y,
             "delta_roll": hd_rot_r,
             "mouth_amp": mouth_amp,
+            "mouth_smoothing": mouth_smoothing, # [New] Pass string to trigger EMA logic in MotionStitch
         }
         
         

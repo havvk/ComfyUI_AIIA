@@ -166,45 +166,20 @@ class Audio2Motion:
                 self.kp_cond = res_kp_seq[:, idx-1]
 
     def _smo(self, res_kp_seq, s, e):
-        # [Upgrade v1.9.44] Support Float Factors (0.0 - 1.0) for Blending
-        # Legacy: Integers > 1 mean Window Size.
-        factor = float(self.smo_k_d)
-        
-        if factor <= 0.01:      # None (Raw) -> 0.0
-             return res_kp_seq
-        
-        # New Logic: Weighted Blend
-        if factor < 1.0:
-            # Base Smoothing Layer: Window 5
-            k = 5
-        else:
-            # Legacy Logic: Use input as kernel size (must be int)
-            k = int(factor)
-            if k <= 1: return res_kp_seq
-        
-        # Perform Smoothing
+        # [Revert v1.9.46] Back to Legacy Integer Window Smoothing (Pose Smoothing)
+        # Note: 'mouth_smoothing' (EMA) is now handled in MotionStitch, separate from this.
+        k = int(self.smo_k_d)
+        if k <= 1:
+            return res_kp_seq
+            
         new_res_kp_seq = res_kp_seq.copy()
         n = res_kp_seq.shape[1]
         half_k = k // 2
-        
-        # Store smoothed result in temp array
-        smoothed_seq = res_kp_seq.copy()
-        
         for i in range(s, e):
             ss = max(0, i - half_k)
             ee = min(n, i + half_k + 1)
-            # Calculate Mean for this frame
-            smoothed_seq[:, i, :202] = np.mean(new_res_kp_seq[:, ss:ee, :202], axis=1)
-            
-        # Apply Blend if using factor mode
-        if factor < 1.0:
-            # Output = Raw * (1 - factor) + Smooth * factor
-            # 0.3 -> 70% Raw + 30% Smooth
-            # 0.7 -> 30% Raw + 70% Smooth
-            return res_kp_seq * (1.0 - factor) + smoothed_seq * factor
-        else:
-            # Legacy mode: Return smoothed directly
-            return smoothed_seq
+            res_kp_seq[:, i, :202] = np.mean(new_res_kp_seq[:, ss:ee, :202], axis=1)
+        return res_kp_seq
     
     def __call__(self, aud_cond, res_kp_seq=None, reset=False, step_len=None, seed=None):
         """
