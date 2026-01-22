@@ -794,6 +794,17 @@ class AIIA_DittoSampler:
         elif blink_mode == "None":
              delta_eye_open_n = -1
         
+        # Mouth Smoothing Logic [Fix v1.9.43]
+        # Override raw smo_k_d input based on user-friendly dropdown
+        if mouth_smoothing == "None (Raw)":
+            smo_k_d = 1 # Disable smoothing
+        elif mouth_smoothing == "Light":
+            smo_k_d = 2
+        elif mouth_smoothing == "Heavy":
+            smo_k_d = 5
+        # If "Normal", we respect the smo_k_d INT input (default 3)
+
+        
         # Map emo string to int
         emo_map = {
             "Angry": 0, "Disgust": 1, "Fear": 2, "Happy": 3,
