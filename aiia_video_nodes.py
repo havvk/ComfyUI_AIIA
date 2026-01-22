@@ -285,8 +285,6 @@ class AIIA_VideoCombine:
                 # Intelligent Pattern Detection (Fix for v1.9.27 compatibility)
                 # If user workflow has old default (%06d) but files are new (%08d), auto-correct it.
                 try:
-                    import glob
-                    import re
                     # Look for frame_*.png files
                     search_glob = os.path.join(effective_frames_dir, "frame_*.png")
                     sample_files = sorted(glob.glob(search_glob))

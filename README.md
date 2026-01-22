@@ -454,6 +454,7 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 
 > [!TIP]
 > **OOM-Safe 工作流** (v1.9.24+): Ditto (`Disk`) → BodySway (`frames_directory`) → VideoCombine (`frames_directory`)，全流程无 OOM 风险。
+> **性能无损** (v1.9.28+): 采用并行 I/O 和零压缩策略，**Disk 模式生成速度与 Memory 模式完全一致** (~30fps+)，且极大降低 RAM 占用。强烈推荐长视频生成使用！
 
 ### 3. 音频智能处理 (Intelligent Audio Processing)
 
