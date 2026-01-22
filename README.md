@@ -434,7 +434,9 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 
 **AIIA Body Sway 节点**
 
-- **输入**: `images` (来自 Ditto 等节点的视频帧)
+- **输入**: 
+  - `images` (可选): 来自 Ditto 等节点的视频帧张量 (Memory 模式)
+  - `frames_directory` (可选, v1.9.25 New): 帧目录路径 (Disk 模式，连接 Ditto 的 `frames_dir` 输出)
 - **参数**:
   - `crop_ratio`: (默认 0.99) 输出尺寸占输入的比例。
     - 0.99 = 保留 99%，晃动幅度较小 (推荐)
@@ -443,10 +445,15 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
   - `rotation_amplitude`: (默认 0.1) 最大旋转角度 (度)。
   - `smoothness`: (默认 0.02) Perlin 噪声平滑度。数值越小，运动越缓慢。
   - `seed`: 控制随机轨迹。
-- **输出**: 应用了微动效果的 `images`。
+- **输出**: 
+  - `images`: 应用了微动效果的帧 (Memory 模式) 或占位符 (Disk 模式)。
+  - `output_frames_dir` (v1.9.25 New): Disk 模式下处理后的帧保存路径。
 
 > [!NOTE]
 > v1.9.17 改进：使用 **Perlin 噪声** 替代正弦波，运动更有机自然。**已移除垂直方向位移**，减少叠加 Ditto 头部运动时的"晕船"感。
+
+> [!TIP]
+> **OOM-Safe 工作流** (v1.9.24+): Ditto (`Disk`) → BodySway (`frames_directory`) → VideoCombine (`frames_directory`)，全流程无 OOM 风险。
 
 ### 3. 音频智能处理 (Intelligent Audio Processing)
 
