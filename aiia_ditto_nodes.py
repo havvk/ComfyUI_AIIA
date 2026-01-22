@@ -771,9 +771,27 @@ class AIIA_DittoSampler:
             raise RuntimeError("Ditto generated 0 frames.")
             
         # Convert List[np.array (H,W,C)] -> Batch Tensor (B,H,W,C)
-        # Note: generated frames are RGB (from writer_queue which usually gets RGB).
+        # Memory-optimized: pre-allocate tensor and release frames progressively
         import torch
-        video_tensor = torch.from_numpy(np.array(generated)).float() / 255.0
+        import gc
+        
+        num_frames = len(generated)
+        h, w, c = generated[0].shape
+        
+        # Pre-allocate output tensor
+        video_tensor = torch.zeros((num_frames, h, w, c), dtype=torch.float32)
+        
+        # Copy frames one by one and release original
+        for i in range(num_frames):
+            video_tensor[i] = torch.from_numpy(generated[i].astype(np.float32) / 255.0)
+            generated[i] = None  # Release original frame
+            if i > 0 and i % 100 == 0:
+                gc.collect()
+        
+        # Final cleanup
+        del generated
+        master_sdk.generated_frames = []
+        gc.collect()
         
         return (video_tensor, audio)
 
