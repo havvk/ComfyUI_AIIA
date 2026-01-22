@@ -490,7 +490,7 @@ class AIIA_DittoSampler:
                 "ref_threshold": ("FLOAT", {"default": 0.005, "min": 0.0, "max": 1.0, "step": 0.001}),
                 "blink_mode": (["Random (Normal)", "Fast", "Slow", "None"], {"default": "Random (Normal)"}),
                 "silence_release": (["Natural (0.8s)", "Fast (0.5s)", "Deep (1.3s)"], {"default": "Natural (0.8s)"}),
-                "mouth_smoothing": (["Normal", "None (Raw)", "Light", "Heavy"], {"default": "Normal"}),
+                "mouth_smoothing": (["Normal", "None (Raw)", "Light", "Heavy", "Custom (Manual)"], {"default": "Normal"}),
                 "save_to_disk": (["Memory (Default)", "Disk (OOM-Safe)", "Auto (Graph-Aware)"], {"default": "Memory (Default)",
                                   "tooltip": "Memory: Fast, all frames in RAM. Disk: Slower, but handles 1000+ frames without OOM. Auto: Uses Disk if 'frames_dir' output is connected."}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
@@ -800,6 +800,9 @@ class AIIA_DittoSampler:
             smo_k_d = 0.3
         elif mouth_smoothing == "Heavy":
             smo_k_d = 0.7
+        elif mouth_smoothing == "Custom (Manual)":
+            # Respect the integer input
+            pass 
         else: # Normal
             smo_k_d = 0.5
         # If "Normal" was default, we set 0.5. 
