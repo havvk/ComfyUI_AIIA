@@ -159,7 +159,8 @@ class Audio2Motion:
             # Problem: Autoregressive generation accumulates error, causing head to drift off-screen over time.
             # Solution: Gently pull the pose back towards the Reference Pose (s_kp_cond) every frame.
             # 5% pull per frame ensures we stay grounded without killing local motion.
-            gravity = 0.05 
+            # [Update v1.9.51] Increased to 20% (0.2) as 5% was too weak.
+            gravity = 0.2
             
             next_pose = last_pose + noise
             self.kp_cond = next_pose * (1.0 - gravity) + self.s_kp_cond * gravity

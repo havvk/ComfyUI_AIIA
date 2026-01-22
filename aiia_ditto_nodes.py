@@ -739,7 +739,7 @@ class AIIA_DittoSampler:
             # Micro-Motion: Inject subtle head sway during silence to prevent "dead static" look.
             # Only applied when alpha < 1.0.
             
-            idle_amp = 1.5 # Degrees [Boosted v1.9.50] (Was 0.5, too static)
+            idle_amp = 2.5 # Degrees [Boosted v1.9.51] (Was 1.5, user says still static)
             
             for i in range(num_frames):
                 alpha = float(dataset_alpha[i])
