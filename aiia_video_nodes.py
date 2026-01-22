@@ -467,22 +467,34 @@ class AIIA_BodySway:
             logger.warning(f"[BodySway] Target size ({target_width}x{target_height}) exceeds valid region. Consider reducing rotation_amplitude or crop_ratio.")
         
         # Pre-allocate output tensor to avoid memory fragmentation
-        output_tensor = torch.zeros((batch_size, target_height, target_width, channels), dtype=torch.float32)
+        # Use same device as input to avoid extra memory copies
+        output_tensor = torch.zeros((batch_size, target_height, target_width, channels), 
+                                    dtype=torch.float32, device='cpu')
         
-        # Process frames in batches to reduce peak memory usage
-        batch_chunk_size = 100  # Process 100 frames at a time
+        # Move input to CPU if on GPU to free GPU memory
+        if images.device.type == 'cuda':
+            images = images.cpu()
+            torch.cuda.empty_cache()
+        
+        # Process frames in smaller batches to reduce peak memory usage
+        batch_chunk_size = 50  # Smaller batches for large images
+        
+        import gc
         
         for batch_start in range(0, batch_size, batch_chunk_size):
             batch_end = min(batch_start + batch_chunk_size, batch_size)
             
             for i in range(batch_start, batch_end):
-                # Get frame as PIL Image - use numpy view to avoid copy
-                frame_np = (images[i].cpu().numpy() * 255).astype(np.uint8)
+                # Get frame as numpy array directly (avoid extra copy)
+                frame_np = (images[i].numpy() * 255).astype(np.uint8)
                 img = Image.fromarray(frame_np)
+                del frame_np  # Release immediately
                 
                 # Apply rotation if needed
                 if actual_rotation > 0:
-                    img = img.rotate(traj_rot[i], resample=Image.BILINEAR, expand=False)
+                    rotated = img.rotate(traj_rot[i], resample=Image.BILINEAR, expand=False)
+                    del img
+                    img = rotated
                 
                 # Calculate crop box (centered with X offset only)
                 center_x = in_w / 2 + traj_x[i]
@@ -501,14 +513,22 @@ class AIIA_BodySway:
                 
                 # Crop and write directly to output tensor
                 cropped = img.crop((left, top, right, bottom))
-                output_tensor[i] = torch.from_numpy(np.array(cropped, dtype=np.float32) / 255.0)
+                del img
                 
-                # Explicitly release PIL image
-                del img, cropped
+                # Convert to tensor and store
+                cropped_arr = np.array(cropped, dtype=np.float32)
+                del cropped
+                output_tensor[i] = torch.from_numpy(cropped_arr / 255.0)
+                del cropped_arr
             
-            # Force garbage collection after each batch
-            import gc
+            # Aggressive cleanup after each batch
             gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Log progress for long operations
+            if batch_size > 200:
+                logger.info(f"[BodySway] Progress: {batch_end}/{batch_size} frames processed")
         
         logger.info(f"[BodySway] Processed {batch_size} frames with Perlin noise (smoothness={smoothness})")
         
