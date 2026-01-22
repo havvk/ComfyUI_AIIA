@@ -587,11 +587,7 @@ class MotionStitch:
             if not hasattr(self, 'prev_exp_ema'):
                 self.prev_exp_ema = x_d_info["exp"].copy()
             
-            # [FIX] Reset EMA on Attack (Speech Onset) to prevent stale "Closed"
-            # state from bleeding into the new speech expression.
-            if is_attack:
-                self.prev_exp_ema = x_d_info["exp"].copy()
-            
+            # Apply EMA smoothing - let mouth opening transition naturally
             x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)
             self.prev_exp_ema = x_d_info["exp"].copy()
 
