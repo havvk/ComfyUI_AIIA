@@ -736,11 +736,10 @@ class AIIA_DittoSampler:
             non_silence_count = np.count_nonzero(target_alpha)
             logging.info(f"[Ditto] VAD Stats: {non_silence_count}/{num_frames} frames active. RMS Mean: {np.mean(rms):.4f}, Min: {np.min(rms):.4f}, Max: {np.max(rms):.4f}")
             
-            # 3. Populate ctrl_info with VAD Alpha and Micro-Motion
             # Micro-Motion: Inject subtle head sway during silence to prevent "dead static" look.
             # Only applied when alpha < 1.0.
             
-            idle_amp = 0.5 # Degrees
+            idle_amp = 1.5 # Degrees [Boosted v1.9.50] (Was 0.5, too static)
             
             for i in range(num_frames):
                 alpha = float(dataset_alpha[i])

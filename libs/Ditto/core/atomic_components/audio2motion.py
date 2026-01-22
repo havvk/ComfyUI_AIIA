@@ -154,7 +154,15 @@ class Audio2Motion:
             last_pose = res_kp_seq[:, idx-1]
             noise_scale = 0.002 # Subtle tremor
             noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
-            self.kp_cond = last_pose + noise
+            
+            # [Feature v1.9.50] Gravity Well (Anti-Drift)
+            # Problem: Autoregressive generation accumulates error, causing head to drift off-screen over time.
+            # Solution: Gently pull the pose back towards the Reference Pose (s_kp_cond) every frame.
+            # 5% pull per frame ensures we stay grounded without killing local motion.
+            gravity = 0.05 
+            
+            next_pose = last_pose + noise
+            self.kp_cond = next_pose * (1.0 - gravity) + self.s_kp_cond * gravity
             
         elif self.fix_kp_cond > 0:
             if self.clip_idx % self.fix_kp_cond == 0:  # 重置
