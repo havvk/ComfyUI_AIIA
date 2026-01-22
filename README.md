@@ -409,6 +409,34 @@ cd ComfyUI/models
 hf download digital-avatar/ditto-talkinghead --local-dir ditto
 ```
 
+#### 2.6 身体微动后处理 (Body Sway Post-Processing)
+
+这个轻量级后处理节点可以为 Ditto 等 Talking Head 模型的输出添加**模拟的身体晃动效果**，让人物看起来更加自然、有呼吸感。
+
+**工作原理**:
+*   通过**裁切平移 + 轻微旋转**模拟人体站立或坐着时的自然重心漂移和呼吸起伏。
+*   使用多频正弦波叠加（基于黄金比例）生成平滑、有机的运动轨迹。
+*   **纯裁切**方式，不放大图像，保持原始画质。
+
+**使用方法**:
+1.  让上游节点（如 Ditto）输出**比目标尺寸稍大**的图像（如目标 512x512，则输出 520x520）。
+2.  将输出接入 `AIIA_BodySway` 节点。
+3.  设置 `target_width` 和 `target_height` 为最终需要的尺寸。
+
+**AIIA Body Sway 节点**
+
+- **输入**: `images` (来自 Ditto 等节点的视频帧，需略大于目标尺寸)
+- **参数**:
+  - `target_width` / `target_height`: 输出画面尺寸。
+  - `sway_amplitude`: (默认 3.0) 最大平移位移 (像素)。建议 2-5px。
+  - `rotation_amplitude`: (默认 0.3) 最大旋转角度 (度)。建议 0.2-0.5°。
+  - `period_min` / `period_max`: (默认 60/150) 运动周期范围 (帧)。对应约 2.4s - 6s 的呼吸节奏。
+  - `seed`: 控制随机轨迹。
+- **输出**: 应用了微动效果的 `images`。
+
+> [!TIP]
+> 配合 Ditto 的 `crop_scale` 参数使用效果更佳。增大 `crop_scale` 可以让 Ditto 输出更大的画面，为 BodySway 提供裁切余量。
+
 ### 3. 音频智能处理 (Intelligent Audio Processing)
 
 #### 3.1 说话人日志 (Diarization)
