@@ -344,12 +344,10 @@ class AIIA_BodySway:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "images": ("IMAGE",),  # [B, H, W, C] tensor, should be oversized
-                "target_width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8}),
-                "target_height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8}),
-                "sway_amplitude": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 20.0, "step": 0.5,
-                                              "tooltip": "Max horizontal/vertical shift in pixels"}),
-                "rotation_amplitude": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 5.0, "step": 0.1,
+                "images": ("IMAGE",),  # [B, H, W, C] tensor
+                "crop_ratio": ("FLOAT", {"default": 0.98, "min": 0.90, "max": 1.0, "step": 0.01,
+                                          "tooltip": "Output size as ratio of input (0.98 = keep 98%, crop 2%)"}),
+                "rotation_amplitude": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0, "step": 0.1,
                                                   "tooltip": "Max rotation in degrees"}),
                 "period_min": ("INT", {"default": 60, "min": 10, "max": 300, "step": 5,
                                         "tooltip": "Min cycle length in frames (at 25fps, 60=2.4s)"}),
@@ -359,13 +357,13 @@ class AIIA_BodySway:
             }
         }
 
-    def apply_sway(self, images: torch.Tensor, target_width: int, target_height: int,
-                   sway_amplitude: float, rotation_amplitude: float,
+    def apply_sway(self, images: torch.Tensor, crop_ratio: float, rotation_amplitude: float,
                    period_min: int, period_max: int, seed: int):
         """
         Apply body sway effect using crop + rotation.
         
         images: [B, H, W, C] tensor (float32, 0-1 range)
+        crop_ratio: Output size as ratio of input (e.g., 0.98)
         """
         import math
         from PIL import Image
@@ -376,13 +374,23 @@ class AIIA_BodySway:
         
         batch_size, in_h, in_w, channels = images.shape
         
-        # Check if input is large enough
-        required_padding = max(sway_amplitude * 2, rotation_amplitude * 5)  # rough estimate
-        if in_w < target_width + required_padding or in_h < target_height + required_padding:
-            logger.warning(f"[BodySway] Input size ({in_w}x{in_h}) may be too small for target ({target_width}x{target_height}) with sway. Consider adding padding.")
+        # Auto-calculate target size and sway amplitude from crop_ratio
+        target_width = int(in_w * crop_ratio)
+        target_height = int(in_h * crop_ratio)
+        
+        # Ensure target is even (for compatibility with video encoders)
+        target_width = target_width - (target_width % 2)
+        target_height = target_height - (target_height % 2)
+        
+        # Calculate margin and sway amplitude (use 80% of margin for sway, 20% safety buffer)
+        margin_x = (in_w - target_width) / 2
+        margin_y = (in_h - target_height) / 2
+        sway_amplitude = min(margin_x, margin_y) * 0.8
+        
+        logger.info(f"[BodySway] Input: {in_w}x{in_h}, Output: {target_width}x{target_height}, "
+                    f"Margin: {margin_x:.1f}px, Sway: {sway_amplitude:.1f}px")
         
         # Generate smooth noise trajectories using multi-sine superposition
-        # This creates organic, non-repetitive motion
         def generate_trajectory(n_frames: int, amplitude: float, freq_base: float, num_harmonics: int = 3):
             """Generate smooth trajectory using sum of sine waves with different frequencies."""
             trajectory = np.zeros(n_frames)
@@ -407,7 +415,7 @@ class AIIA_BodySway:
         
         # Generate X, Y, Rotation trajectories
         traj_x = generate_trajectory(batch_size, sway_amplitude, base_freq * (0.8 + random.random() * 0.4))
-        traj_y = generate_trajectory(batch_size, sway_amplitude * 0.6, base_freq * (0.6 + random.random() * 0.4))  # Y is less pronounced
+        traj_y = generate_trajectory(batch_size, sway_amplitude * 0.6, base_freq * (0.6 + random.random() * 0.4))
         traj_rot = generate_trajectory(batch_size, rotation_amplitude, base_freq * (0.5 + random.random() * 0.3))
         
         # Process each frame
@@ -447,7 +455,7 @@ class AIIA_BodySway:
         # Stack to tensor
         output_tensor = torch.from_numpy(np.stack(output_frames, axis=0))
         
-        logger.info(f"[BodySway] Processed {batch_size} frames: amplitude={sway_amplitude}px, rotation={rotation_amplitude}°")
+        logger.info(f"[BodySway] Processed {batch_size} frames with crop_ratio={crop_ratio}")
         
         return (output_tensor,)
 
