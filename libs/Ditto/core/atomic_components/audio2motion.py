@@ -148,7 +148,14 @@ class Audio2Motion:
     
     def _update_kp_cond(self, res_kp_seq, idx):
         if self.fix_kp_cond == 0:  # 不重置
-            self.kp_cond = res_kp_seq[:, idx-1]
+            # [Vitality Fix v1.9.41]
+            # Problem: Feeding back smoothed output causes variance decay (EMA effect), leading to stasis.
+            # Solution: Inject micro-noise to keep the 'cascading generation' alive.
+            last_pose = res_kp_seq[:, idx-1]
+            noise_scale = 0.002 # Subtle tremor
+            noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
+            self.kp_cond = last_pose + noise
+            
         elif self.fix_kp_cond > 0:
             if self.clip_idx % self.fix_kp_cond == 0:  # 重置
                 self.kp_cond = self.s_kp_cond.copy()  # 重置所有
