@@ -216,7 +216,7 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
 
 
 def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
-    _eye = [11, 13] # [Fix v1.9.53/55] Removed 15,16,18 (Squint/Brow) to prevent "Mouth Twitch"
+    _eye = [11, 13, 15, 16, 18] # [Restored v1.9.56] Restored Squint indices but attenuated them in __call__.
     _lip = [6, 12, 14, 17, 19, 20]
     alpha = np.zeros((21, 3), dtype=x_d_info["exp"].dtype)
     alpha[_lip] = 1
@@ -424,7 +424,7 @@ class MotionStitch:
         self.fade_type = fade_type
         self.flag_stitching = flag_stitching
 
-        _eye = [11, 13] # [Fix v1.9.53] Removed 15,16,18 (Squint/Brow) to prevent "Mouth Twitch" (Cheek Pull) during blink.
+        _eye = [11, 13, 15, 16, 18] # [Restored v1.9.56] Used for mask generation.
         _lip = [6, 12, 14, 17, 19, 20]
         _a1 = np.zeros((21, 3), dtype=np.float32)
         _a1[_lip] = 1
@@ -597,6 +597,14 @@ class MotionStitch:
                 self.delta_eye_idx_list[self.idx % len(self.delta_eye_idx_list)]
             ][None] * self.blink_amp
             
+            # [Fix v1.9.56] Attenuate Squint (Indices 15,16,18)
+            # Problem: These indices control squint/brow but also pull the cheek/mouth in Mesh.
+            # Solution: We need them for Left Blink (it seems), but we must reduce their strength to avoid mouth twitch.
+            # 20% strength ensures the eye closes but the cheek doesn't pop.
+            squint_idx = [15, 16, 18]
+            if delta_eye.shape[-1] > 18:
+                delta_eye[..., squint_idx] *= 0.2
+            
         # [Feature v1.9.48] Apple Mouth Micro-Motion
         if "delta_mouth" in kwargs:
              _lip = [6, 12, 14, 17, 19, 20]
@@ -615,11 +623,7 @@ class MotionStitch:
         x_d_info = ctrl_motion(x_d_info, **kwargs)
         
         # [Feature v1.9.52] Auto-Center Roll (Anti-Tilt)
-        # Problem: LMDM naturally drifts in the Roll axis over time.
-        # Solution: Post-process "Spring Force" pulling roll back to Reference Image angle.
-        # Strength 0.1 per frame (Strong Centering).
-        # Note: x_d_info['roll'] is now in Degrees (converted by ctrl_motion).
-        # x_s_info['roll'] is in Logits (Bin66), so we convert it first.
+        # Strength increased to 0.3 (30%) in v1.9.56
         ref_roll = bin66_to_degree(x_s_info['roll'])
         
         # Diagnostic Logging (User Request v1.9.54)
@@ -628,7 +632,8 @@ class MotionStitch:
             r_roll = float(ref_roll.mean())
             print(f"[Ditto Tilt Diag] Frame {self.idx}: CurRoll={c_roll:.2f}° | RefRoll={r_roll:.2f}° | Drift={c_roll-r_roll:.2f}°")
             
-        x_d_info['roll'] = x_d_info['roll'] * 0.9 + ref_roll * 0.1
+        x_d_info['roll'] = x_d_info['roll'] * 0.7 + ref_roll * 0.3
+
 
         if self.fade_type == "d0" and self.fade_dst is None:
             self.fade_dst = copy.deepcopy(x_d_info)
