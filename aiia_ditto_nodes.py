@@ -193,12 +193,22 @@ class ComfyStreamSDK(StreamSDK):
     def __init__(self, cfg_pkl, data_root, **kwargs):
         # We delay thread start or we override methods to handle in-memory data
         super().__init__(cfg_pkl, data_root, **kwargs)
-        self.generated_frames = [] # Store result frames here
+        self.generated_frames = [] # Store result frames here (memory mode)
+        self.disk_mode = False
+        self.disk_output_dir = None
+        self.frame_counter = 0
         
         # NOTE: StreamSDK.__init__ does NOT start threads or create queues (they are created in setup).
         # So we do NOT need to call self.close() here. Calling it causes AttributeError because queues don't exist yet.
         # We just leave it as is. setup() will be called by the Sampler node.
         pass
+    
+    def set_disk_mode(self, enabled: bool, output_dir: str = None):
+        """Enable disk mode - frames will be saved to disk instead of memory."""
+        self.disk_mode = enabled
+        self.disk_output_dir = output_dir
+        self.frame_counter = 0
+        self.generated_frames = []  # Not used in disk mode, but reset for safety
         
     def setup(self, source_image_pil, total_frames=0, **kwargs):
         # Override setup to accept PIL Image instead of path
@@ -385,7 +395,10 @@ class ComfyStreamSDK(StreamSDK):
             thread.start()
         
     def _writer_worker(self):
-        # Override to append to list instead of writing to disk
+        # Override to append to list or save to disk
+        from PIL import Image
+        import os
+        
         while not self.stop_event.is_set():
             try:
                 item = self.writer_queue.get(timeout=1)
@@ -399,7 +412,17 @@ class ComfyStreamSDK(StreamSDK):
                 break
             
             res_frame_rgb = item # This is numpy RGB array usually
-            self.generated_frames.append(res_frame_rgb)
+            
+            if self.disk_mode and self.disk_output_dir:
+                # Disk mode: save to file immediately
+                img = Image.fromarray(res_frame_rgb.astype(np.uint8))
+                frame_path = os.path.join(self.disk_output_dir, f"frame_{self.frame_counter:08d}.png")
+                img.save(frame_path)
+                self.frame_counter += 1
+                del img, res_frame_rgb  # Release memory
+            else:
+                # Memory mode: append to list
+                self.generated_frames.append(res_frame_rgb)
             
             # ComfyUI Progress Bar
             if self.pbar:
@@ -437,20 +460,25 @@ class AIIA_DittoSampler:
                 "blink_mode": (["Random (Normal)", "Fast", "Slow", "None"], {"default": "Random (Normal)"}),
                 "silence_release": (["Natural (0.8s)", "Fast (0.5s)", "Deep (1.3s)"], {"default": "Natural (0.8s)"}),
                 "mouth_smoothing": (["Normal", "None (Raw)", "Light", "Heavy"], {"default": "Normal"}),
+                "save_to_disk": (["Memory (Default)", "Disk (OOM-Safe)"], {"default": "Memory (Default)",
+                                  "tooltip": "Memory: Fast, all frames in RAM. Disk: Slower, but handles 1000+ frames without OOM."}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
             }
         }
 
-    RETURN_TYPES = ("IMAGE", "AUDIO")
-    RETURN_NAMES = ("images", "audio")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING")
+    RETURN_NAMES = ("images", "audio", "frames_dir")
     FUNCTION = "generate"
     CATEGORY = "AIIA/Ditto"
 
-    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, blink_amp, relax_on_silence, ref_threshold, blink_mode, silence_release, mouth_smoothing, seed):
+    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, blink_amp, relax_on_silence, ref_threshold, blink_mode, silence_release, mouth_smoothing, save_to_disk, seed):
         # pipe is the dict we returned in Loader
         master_sdk = pipe["sdk"]
         cfg_pkl = pipe["cfg_pkl"]
         data_root = pipe["data_root"]
+        
+        # Determine if saving to disk
+        disk_mode = save_to_disk == "Disk (OOM-Safe)"
         
         import pickle
         with open(cfg_pkl, 'rb') as f:
@@ -725,6 +753,18 @@ class AIIA_DittoSampler:
         # Calling setup() creates fresh threads and queues
         # Wrap setup() with RestoreLogging to catch any init-time hijacking (e.g. MediaPipe/absl)
         # and restore it IMMEDIATELY before we start the long-running inference.
+        
+        # Set up disk mode if requested
+        frames_dir = ""
+        if disk_mode:
+            import tempfile
+            import folder_paths
+            frames_dir = tempfile.mkdtemp(prefix="ditto_frames_", dir=folder_paths.get_temp_directory())
+            master_sdk.set_disk_mode(True, frames_dir)
+            logger.info(f"[Ditto] Disk mode enabled. Saving frames to: {frames_dir}")
+        else:
+            master_sdk.set_disk_mode(False, None)
+        
         with RestoreLogging():
             master_sdk.setup(
                 source_path=None, 
@@ -765,35 +805,47 @@ class AIIA_DittoSampler:
              except: pass
              raise e
              
-        # 6. Retrieve frames
-        generated = master_sdk.generated_frames
-        if not generated:
-            raise RuntimeError("Ditto generated 0 frames.")
+        # 6. Retrieve frames or return frames_dir path
+        if disk_mode:
+            # Disk mode: frames already saved, return empty tensor and path
+            import torch
+            num_frames = master_sdk.frame_counter
+            if num_frames == 0:
+                raise RuntimeError("Ditto generated 0 frames.")
+            logger.info(f"[Ditto] Disk mode: {num_frames} frames saved to {frames_dir}")
+            # Return a placeholder IMAGE (1 empty frame) so downstream nodes don't break
+            video_tensor = torch.zeros((1, 1, 1, 3), dtype=torch.float32)
+            return (video_tensor, audio, frames_dir)
+        else:
+            # Memory mode: convert frames to tensor
+            generated = master_sdk.generated_frames
+            if not generated:
+                raise RuntimeError("Ditto generated 0 frames.")
+                
+            # Convert List[np.array (H,W,C)] -> Batch Tensor (B,H,W,C)
+            # Memory-optimized: pre-allocate tensor and release frames progressively
+            import torch
+            import gc
             
-        # Convert List[np.array (H,W,C)] -> Batch Tensor (B,H,W,C)
-        # Memory-optimized: pre-allocate tensor and release frames progressively
-        import torch
-        import gc
-        
-        num_frames = len(generated)
-        h, w, c = generated[0].shape
-        
-        # Pre-allocate output tensor
-        video_tensor = torch.zeros((num_frames, h, w, c), dtype=torch.float32)
-        
-        # Copy frames one by one and release original
-        for i in range(num_frames):
-            video_tensor[i] = torch.from_numpy(generated[i].astype(np.float32) / 255.0)
-            generated[i] = None  # Release original frame
-            if i > 0 and i % 100 == 0:
-                gc.collect()
-        
-        # Final cleanup
-        del generated
-        master_sdk.generated_frames = []
-        gc.collect()
-        
-        return (video_tensor, audio)
+            num_frames = len(generated)
+            h, w, c = generated[0].shape
+            
+            # Pre-allocate output tensor
+            video_tensor = torch.zeros((num_frames, h, w, c), dtype=torch.float32)
+            
+            # Copy frames one by one and release original
+            for i in range(num_frames):
+                video_tensor[i] = torch.from_numpy(generated[i].astype(np.float32) / 255.0)
+                generated[i] = None  # Release original frame
+                if i > 0 and i % 100 == 0:
+                    gc.collect()
+            
+            # Final cleanup
+            del generated
+            master_sdk.generated_frames = []
+            gc.collect()
+            
+            return (video_tensor, audio, "")
 
 
 NODE_CLASS_MAPPINGS = {
