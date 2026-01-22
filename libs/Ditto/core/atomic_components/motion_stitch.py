@@ -216,7 +216,7 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
 
 
 def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
-    _eye = [11, 13, 15, 16, 18]
+    _eye = [11, 13] # [Fix v1.9.53/55] Removed 15,16,18 (Squint/Brow) to prevent "Mouth Twitch"
     _lip = [6, 12, 14, 17, 19, 20]
     alpha = np.zeros((21, 3), dtype=x_d_info["exp"].dtype)
     alpha[_lip] = 1
@@ -603,13 +603,13 @@ class MotionStitch:
              # Broadcasting scalar to (1, 6, 3) or (1, 6)
              x_d_info["exp"][:, _lip] += kwargs["delta_mouth"]
 
-        x_d_info = _fix_exp_for_x_d_info_v2(
+        # [Revert v1.9.55] User reports "Original code didn't have twitch".
+        # Switching back to Legacy Function (but with [11,13] fix applied inside it).
+        x_d_info = _fix_exp_for_x_d_info(
             x_d_info,
             x_s_info,
             delta_eye,
-            self.fix_exp_a1,
-            self.fix_exp_a2,
-            self.fix_exp_a3,
+            self.drive_eye
         )
 
         x_d_info = ctrl_motion(x_d_info, **kwargs)
