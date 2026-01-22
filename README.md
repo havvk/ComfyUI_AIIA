@@ -1,6 +1,8 @@
 ![image](https://github.com/user-attachments/assets/7e38d3fd-2084-4d0c-bf86-4b500eba5ced)
 
-# <img src="https://raw.githubusercontent.com/havvk/ComfyUI_AIIA/main/assets/logo.png" width="48" height="48" alt="AIIA Logo" /> AIIA Nodes for ComfyUI
+![AIIA Logo](assets/logo_small.png)
+
+# AIIA Nodes for ComfyUI
 
 欢迎来到 AIIA Nodes for ComfyUI 仓库！这是一个旨在为 ComfyUI 提供一系列强大、直观且高度可定制的节点的集合。这些节点专注于简化复杂的工作流，并为创意工作者提供最大的灵活性。
 
@@ -13,6 +15,7 @@
 **还在费力地翻找 `output` 文件夹，或者对着一堆时间戳命名的文件猜内容吗？**
 
 我们隆重推出 **AIIA 媒体浏览器**——一个完全集成在 ComfyUI 内部的、功能完备的媒体文件管理中心。它的诞生，旨在彻底改变你管理和使用生成结果的方式，让整个过程变得高效、直观且充满乐趣。
+
 ![image](https://github.com/user-attachments/assets/358b9ca9-59c8-4433-b84c-c150503af04a)
 
 ### ✨ 为何选择 AIIA 浏览器？
