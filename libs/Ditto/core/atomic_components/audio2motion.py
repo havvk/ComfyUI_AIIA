@@ -179,68 +179,29 @@ class Audio2Motion:
             step_len = self.valid_clip_len
 
         if reset:
-            # Force current conditioning to Reference (Neutral)
-            # HARD RESET at Speech Onset to mimic "Clean Start"
-            self.kp_cond = self.s_kp_cond.copy()
-            # Reset clip_idx to 0 to mimic "First Segment" conditions derived from position (if any)
-            self.clip_idx = 0
+            # [SOFT RESET] Only reset random seed for lip-sync consistency.
+            # DO NOT reset kp_cond to reference - let model continue from current idle state.
+            # This allows natural transition from idle to speaking without visual discontinuity.
             
-            # Reset Random Seed to ensure Noise Sampling is consistent with the "First Segment" behavior
+            # Reset Random Seed to ensure Noise Sampling is consistent
             if seed is not None:
+                print(f"[Ditto Debug] Soft Reset: Seed={seed} (kp_cond preserved)")
                 torch.manual_seed(seed)
                 torch.cuda.manual_seed(seed)
                 torch.cuda.manual_seed_all(seed)
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [OPTIMIZATION] WARPING PREDICTION for Smooth Reset
-        # Instead of blending history after fusion, we warp the NEW prediction
-        # to align its start with the last historical pose.
-        if reset and res_kp_seq is not None:
-             print("[Ditto Debug] Reset Triggered. Calculation Delta for Warping...")
-             
-             # CRITICAL: The fuse region is NOT at pred_kp_seq[0], but at a specific offset!
-             # _fuse uses: pred_kp_seq[:, fuse_r2_s: fuse_r2_e] where fuse_r2_s = seq_frames - step_len - fuse_length
-             # So we must warp from fuse_r2_s, not from 0.
-             fuse_r2_s = self.seq_frames - step_len - self.fuse_length
-             
-             # Get FULL keypoint vector to include expression
-             kp_dim = res_kp_seq.shape[2]
-             last_pose = res_kp_seq[0, -1, :kp_dim].copy()  # Last frame of history
-             curr_pose = pred_kp_seq[0, fuse_r2_s, :kp_dim].copy()  # First frame of fuse region
-             
-             delta = last_pose - curr_pose
-             
-             # Apply Delta with Decay over 20 frames starting from fuse_r2_s
-             warp_len = 20
-             actual_len = pred_kp_seq.shape[1] - fuse_r2_s
-             
-             print(f"[Ditto Debug] Warping Prediction. Step={step_len}, WarpLen={warp_len}, KpDim={kp_dim}, FuseStart={fuse_r2_s}")
-             
-             for i in range(min(warp_len, actual_len)):
-                 # decay from 1.0 to 0.0
-                 # Cubic Ease Out
-                 t = i / warp_len
-                 decay = (1 - t)**3  # 1 -> 0
-                 
-                 pred_kp_seq[0, fuse_r2_s + i, :kp_dim] += delta * decay
-             
-             # Also need to handle the overlap region in fuse?
-             # _fuse uses pred_kp_seq starting from 0?
-             
+        # [Removed] Warping logic is no longer needed because we don't reset kp_cond.
+        # The model naturally continues from its current state, so no discontinuity exists.
+              
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq   # [1, seq_frames, dim]
             res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
         else:
-            # If reset (Onset), use alpha=1.0 to overwrite history (Silence) with new clean prediction
-            # This cuts off the drifted silence tail and starts fresh speech.
-            fuse_alpha_val = 1.0 if reset else None
-            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=fuse_alpha_val, step_len=step_len)
+            # [Removed] fuse_alpha=1.0 override. Use normal fusion for smooth blending.
+            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=None, step_len=step_len)
             
-            # Post-Fuse Smoothing removed in favor of Pre-Fuse Warping.
-            
-            # Fix Bug: Originally only smoothed the fuse region (approx 1 frame?). 
-            # We must smooth the entire newly added segment to enable smooth_motion consistency.
             res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - step_len - self.fuse_length, res_kp_seq.shape[1])
 
         self.clip_idx += 1
