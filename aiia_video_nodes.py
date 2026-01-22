@@ -288,9 +288,16 @@ class AIIA_VideoCombine:
                     import glob
                     import re
                     # Look for frame_*.png files
-                    sample_files = sorted(glob.glob(os.path.join(effective_frames_dir, "frame_*.png")))
-                    if sample_files:
+                    search_glob = os.path.join(effective_frames_dir, "frame_*.png")
+                    sample_files = sorted(glob.glob(search_glob))
+                    
+                    # Log detection status
+                    if not sample_files:
+                         logger.warning(f"[AIIA_VideoCombine] No 'frame_*.png' files found in {effective_frames_dir}. Detection skipped.")
+                    else:
                         first_file = os.path.basename(sample_files[0])
+                        logger.info(f"[AIIA_VideoCombine] Auto-detecting pattern from first file: {first_file}")
+                        
                         # Extract the numeric part: frame_00000123.png -> 00000123
                         match = re.search(r"frame_(\d+)\.png", first_file)
                         if match:
@@ -298,8 +305,16 @@ class AIIA_VideoCombine:
                             auto_pattern = f"frame_%0{digit_count}d.png"
                             
                             if auto_pattern != effective_filename_pattern:
-                                logger.warning(f"[AIIA_VideoCombine] Pattern Mismatch Detected! User Input: '{effective_filename_pattern}', Actual Files: '{auto_pattern}'. Auto-correcting to match files.")
+                                logger.warning(f"[AIIA_VideoCombine] Pattern Mismatch! User: '{effective_filename_pattern}', Actual: '{auto_pattern}'. Auto-correcting.")
                                 effective_filename_pattern = auto_pattern
+                                
+                                # Verification: Check if ffmpeg will find it
+                                test_glob = os.path.join(effective_frames_dir, f"frame_{'0'*digit_count}.png")
+                                if not os.path.exists(test_glob) and len(sample_files) > 0:
+                                     # Sometimes start index is not 0?
+                                     logger.warning(f"[AIIA_VideoCombine] Verify: frame_{'0'*digit_count}.png not found, but we found {len(sample_files)} files.")
+                        else:
+                            logger.warning(f"[AIIA_VideoCombine] Regex failed on {first_file}")
                 except Exception as e:
                     logger.warning(f"[AIIA_VideoCombine] Auto-pattern detection failed: {e}")
             else: raise ValueError("错误: 必须提供 'images' 或 'frames_directory' 输入。")
