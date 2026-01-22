@@ -443,8 +443,24 @@ class AIIA_BodySway:
             img = Image.fromarray(frame_np)
             
             # Apply rotation if needed
-            if rotation_amplitude > 0:
+            if actual_rotation > 0:
                 img = img.rotate(traj_rot[i], resample=Image.BILINEAR, expand=False)
+                
+                # Calculate the valid (non-black) region after rotation
+                # For a rectangle rotated by θ, the inscribed safe rectangle has margins:
+                # margin = (w * sin(θ) + h * sin(θ)) / 2 ≈ diagonal * sin(θ) / 2
+                rot_angle_rad = math.radians(abs(traj_rot[i]))
+                rot_margin_x = int(math.ceil((in_h * math.sin(rot_angle_rad) + in_w * (1 - math.cos(rot_angle_rad))) / 2))
+                rot_margin_y = int(math.ceil((in_w * math.sin(rot_angle_rad) + in_h * (1 - math.cos(rot_angle_rad))) / 2))
+                
+                # Valid region after rotation
+                valid_left = rot_margin_x
+                valid_top = rot_margin_y
+                valid_right = in_w - rot_margin_x
+                valid_bottom = in_h - rot_margin_y
+            else:
+                valid_left, valid_top = 0, 0
+                valid_right, valid_bottom = in_w, in_h
             
             # Calculate crop box (centered with offset)
             center_x = in_w / 2 + traj_x[i]
@@ -455,11 +471,15 @@ class AIIA_BodySway:
             right = left + target_width
             bottom = top + target_height
             
-            # Clamp to valid range
-            left = max(0, min(left, in_w - target_width))
-            top = max(0, min(top, in_h - target_height))
+            # Clamp to VALID region (not just image bounds)
+            left = max(valid_left, min(left, valid_right - target_width))
+            top = max(valid_top, min(top, valid_bottom - target_height))
             right = left + target_width
             bottom = top + target_height
+            
+            # Final safety check - if crop still exceeds valid region, warn once
+            if i == 0 and (right > valid_right or bottom > valid_bottom):
+                logger.warning(f"[BodySway] Crop box may exceed valid region. Consider reducing rotation_amplitude or crop_ratio.")
             
             # Crop
             cropped = img.crop((left, top, right, bottom))
