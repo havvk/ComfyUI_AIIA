@@ -345,25 +345,24 @@ class AIIA_BodySway:
         return {
             "required": {
                 "images": ("IMAGE",),  # [B, H, W, C] tensor
-                "crop_ratio": ("FLOAT", {"default": 0.98, "min": 0.90, "max": 1.0, "step": 0.01,
-                                          "tooltip": "Output size as ratio of input (0.98 = keep 98%, crop 2%)"}),
-                "rotation_amplitude": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0, "step": 0.1,
+                "crop_ratio": ("FLOAT", {"default": 0.99, "min": 0.90, "max": 1.0, "step": 0.001,
+                                          "tooltip": "Output size as ratio of input (0.99 = keep 99%, crop 1%)"}),
+                "rotation_amplitude": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 2.0, "step": 0.1,
                                                   "tooltip": "Max rotation in degrees"}),
-                "period_min": ("INT", {"default": 60, "min": 10, "max": 300, "step": 5,
-                                        "tooltip": "Min cycle length in frames (at 25fps, 60=2.4s)"}),
-                "period_max": ("INT", {"default": 150, "min": 20, "max": 500, "step": 5,
-                                        "tooltip": "Max cycle length in frames"}),
+                "smoothness": ("FLOAT", {"default": 0.02, "min": 0.005, "max": 0.1, "step": 0.005,
+                                          "tooltip": "Perlin noise smoothness (smaller = slower drift)"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
             }
         }
 
     def apply_sway(self, images: torch.Tensor, crop_ratio: float, rotation_amplitude: float,
-                   period_min: int, period_max: int, seed: int):
+                   smoothness: float, seed: int):
         """
-        Apply body sway effect using crop + rotation.
+        Apply body sway effect using crop + rotation with Perlin noise.
         
         images: [B, H, W, C] tensor (float32, 0-1 range)
-        crop_ratio: Output size as ratio of input (e.g., 0.98)
+        crop_ratio: Output size as ratio of input (e.g., 0.99)
+        smoothness: Perlin noise smoothness (smaller = slower drift)
         """
         import math
         from PIL import Image
@@ -390,8 +389,6 @@ class AIIA_BodySway:
         total_margin = min(margin_x, margin_y)
         
         # Reserve margin for rotation (rotation introduces black corners)
-        # For small angles: corner displacement ≈ (diagonal/2) * sin(θ)
-        import math
         diagonal = math.sqrt(in_w**2 + in_h**2)
         rotation_margin = (diagonal / 2) * math.sin(math.radians(rotation_amplitude)) if rotation_amplitude > 0 else 0
         
@@ -408,36 +405,50 @@ class AIIA_BodySway:
         logger.info(f"[BodySway] Input: {in_w}x{in_h}, Output: {target_width}x{target_height}, "
                     f"Margin: {total_margin:.1f}px, RotMargin: {rotation_margin:.1f}px, Sway: {sway_amplitude:.1f}px")
         
-        # Generate smooth noise trajectories using multi-sine superposition
-        def generate_trajectory(n_frames: int, amplitude: float, freq_base: float, num_harmonics: int = 3):
-            """Generate smooth trajectory using sum of sine waves with different frequencies."""
+        # Generate Perlin-like noise trajectory (1D)
+        def generate_perlin_trajectory(n_frames: int, amplitude: float, scale: float):
+            """Generate smooth organic trajectory using 1D Perlin-like noise."""
+            # Use cumulative random walk with smoothing
             trajectory = np.zeros(n_frames)
-            phases = [random.random() * 2 * math.pi for _ in range(num_harmonics)]
-            freq_ratios = [1.0, 0.618, 0.382]  # Golden ratio based for organic feel
-            amp_ratios = [1.0, 0.5, 0.25]
             
-            for i in range(num_harmonics):
-                freq = freq_base * freq_ratios[i]
-                amp = amplitude * amp_ratios[i]
+            # Generate multi-octave noise
+            octaves = 4
+            persistence = 0.5
+            
+            for octave in range(octaves):
+                freq = scale * (2 ** octave)
+                amp = amplitude * (persistence ** octave)
+                phase = random.random() * 1000
+                
                 for t in range(n_frames):
-                    trajectory[t] += amp * math.sin(2 * math.pi * freq * t + phases[i])
+                    # Smooth interpolated noise using sine-based sampling
+                    x = t * freq + phase
+                    # Interpolate between random values
+                    i = int(x)
+                    f = x - i
+                    # Smooth interpolation (cosine)
+                    f = (1 - math.cos(f * math.pi)) / 2
+                    
+                    # Get random values seeded by position
+                    random.seed(seed_32 + i + octave * 10000)
+                    v0 = random.random() * 2 - 1
+                    random.seed(seed_32 + i + 1 + octave * 10000)
+                    v1 = random.random() * 2 - 1
+                    
+                    trajectory[t] += (v0 * (1 - f) + v1 * f) * amp
             
             # Normalize to amplitude range
             if np.max(np.abs(trajectory)) > 0:
                 trajectory = trajectory / np.max(np.abs(trajectory)) * amplitude
+            
             return trajectory
         
-        # Compute base frequency from period
-        avg_period = (period_min + period_max) / 2
-        base_freq = 1.0 / avg_period
+        # Generate X and Rotation trajectories (NO Y translation to reduce dizziness)
+        traj_x = generate_perlin_trajectory(batch_size, sway_amplitude, smoothness)
+        traj_y = np.zeros(batch_size)  # No vertical movement
+        traj_rot = generate_perlin_trajectory(batch_size, actual_rotation, smoothness * 0.7)
         
-        # Generate X, Y, Rotation trajectories
-        traj_x = generate_trajectory(batch_size, sway_amplitude, base_freq * (0.8 + random.random() * 0.4))
-        traj_y = generate_trajectory(batch_size, sway_amplitude * 0.6, base_freq * (0.6 + random.random() * 0.4))
-        traj_rot = generate_trajectory(batch_size, actual_rotation, base_freq * (0.5 + random.random() * 0.3))
-        
-        # Calculate GLOBAL valid region based on MAX rotation angle (conservative approach)
-        # This ensures consistent sway range across all frames
+        # Calculate GLOBAL valid region based on MAX rotation angle
         if actual_rotation > 0:
             max_rot_rad = math.radians(actual_rotation)
             global_rot_margin_x = int(math.ceil((in_h * math.sin(max_rot_rad) + in_w * (1 - math.cos(max_rot_rad))) / 2))
@@ -467,16 +478,16 @@ class AIIA_BodySway:
             if actual_rotation > 0:
                 img = img.rotate(traj_rot[i], resample=Image.BILINEAR, expand=False)
             
-            # Calculate crop box (centered with offset)
+            # Calculate crop box (centered with X offset only)
             center_x = in_w / 2 + traj_x[i]
-            center_y = in_h / 2 + traj_y[i]
+            center_y = in_h / 2 + traj_y[i]  # traj_y is always 0
             
             left = int(center_x - target_width / 2)
             top = int(center_y - target_height / 2)
             right = left + target_width
             bottom = top + target_height
             
-            # Clamp to GLOBAL valid region (consistent across all frames)
+            # Clamp to GLOBAL valid region
             left = max(valid_left, min(left, valid_right - target_width))
             top = max(valid_top, min(top, valid_bottom - target_height))
             right = left + target_width
@@ -492,7 +503,7 @@ class AIIA_BodySway:
         # Stack to tensor
         output_tensor = torch.from_numpy(np.stack(output_frames, axis=0))
         
-        logger.info(f"[BodySway] Processed {batch_size} frames with crop_ratio={crop_ratio}")
+        logger.info(f"[BodySway] Processed {batch_size} frames with Perlin noise (smoothness={smoothness})")
         
         return (output_tensor,)
 
