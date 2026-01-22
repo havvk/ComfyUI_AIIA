@@ -209,7 +209,7 @@ class AIIA_VideoCombine:
             },
             "optional": {
                 "images": ("IMAGE",), "frames_directory": ("STRING", {"default": ""}),
-                "filename_pattern": ("STRING", {"default": "frame_%06d.png"}),
+                "filename_pattern": ("STRING", {"default": "frame_%08d.png"}),
                 "audio_tensor": ("AUDIO",), "audio_file_path": ("STRING", {"default": ""}),
                 # 【逻辑修改】将 'auto' 设为默认值
                 "audio_codec": (audio_codec_options, {"default": "auto"}),
