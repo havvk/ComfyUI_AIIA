@@ -233,37 +233,47 @@ class AIIA_VideoCombine:
         try:
             effective_frames_dir, effective_filename_pattern = None, filename_pattern
             if images is not None:
-                logger.info(f"检测到 {images.shape[0]} 帧的图像张量输入...")
+                num_frames = images.shape[0]
+                logger.info(f"检测到 {num_frames} 帧的图像张量输入...")
                 from tqdm import tqdm
                 import gc
                 temp_image_dir_to_delete = tempfile.mkdtemp(prefix="aiia_frames_")
                 effective_frames_dir, effective_filename_pattern = temp_image_dir_to_delete, "frame_%08d.png"
-                pbar = ProgressBar(images.shape[0])
+                pbar = ProgressBar(num_frames)
                 # Direct tqdm to stdout for console logs
-                console_pbar = tqdm(total=images.shape[0], desc="[AIIA Video] Saving Frames", unit="frame", file=sys.stdout)
+                console_pbar = tqdm(total=num_frames, desc="[AIIA Video] Saving Frames", unit="frame", file=sys.stdout)
                 
                 # Move to CPU if on GPU to free GPU memory
                 if images.device.type == 'cuda':
                     images = images.cpu()
                     torch.cuda.empty_cache()
                 
-                for i in range(images.shape[0]):
+                # Convert to list so we can delete individual frames to free memory
+                # This is crucial for large frame counts
+                frame_list = [images[i] for i in range(num_frames)]
+                del images  # Release the original tensor immediately
+                gc.collect()
+                
+                for i in range(num_frames):
                     # Get frame, convert, save, and release immediately
-                    frame_np = (images[i].numpy() * 255).astype(np.uint8)
+                    frame_np = (frame_list[i].numpy() * 255).astype(np.uint8)
+                    frame_list[i] = None  # Release this frame from the list
                     img = Image.fromarray(frame_np)
                     img.save(os.path.join(effective_frames_dir, effective_filename_pattern % (i + 1)))
                     del frame_np, img
                     pbar.update(1)
                     console_pbar.update(1)
                     
-                    # Periodic garbage collection every 100 frames
-                    if i > 0 and i % 100 == 0:
+                    # Periodic garbage collection every 50 frames
+                    if i > 0 and i % 50 == 0:
                         gc.collect()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
                 
                 console_pbar.close()
                 
-                # Release input tensor to free memory for ffmpeg
-                del images
+                # Final cleanup
+                del frame_list
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
