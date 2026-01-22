@@ -424,7 +424,7 @@ class MotionStitch:
         self.fade_type = fade_type
         self.flag_stitching = flag_stitching
 
-        _eye = [11, 13, 15, 16, 18]
+        _eye = [11, 13] # [Fix v1.9.53] Removed 15,16,18 (Squint/Brow) to prevent "Mouth Twitch" (Cheek Pull) during blink.
         _lip = [6, 12, 14, 17, 19, 20]
         _a1 = np.zeros((21, 3), dtype=np.float32)
         _a1[_lip] = 1
