@@ -415,8 +415,8 @@ class ComfyStreamSDK(StreamSDK):
             
             def save_frame_task(data, path, sem):
                 try:
-                    # compress_level=1 is much faster than default (6)
-                    Image.fromarray(data.astype(np.uint8)).save(path, format="PNG", compress_level=1)
+                    # compress_level=0 is NO compression (Store), maximizing I/O throughput
+                    Image.fromarray(data.astype(np.uint8)).save(path, format="PNG", compress_level=0)
                 except Exception as e:
                     logger.error(f"Error saving frame {path}: {e}")
                 finally:

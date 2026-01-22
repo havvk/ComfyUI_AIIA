@@ -574,7 +574,7 @@ class AIIA_BodySway:
                     img.close()
                     
                     # Fast save
-                    cropped.save(out_path, format="PNG", compress_level=1)
+                    cropped.save(out_path, format="PNG", compress_level=0)
                     cropped.close()
                 except Exception as e:
                     logger.error(f"[BodySway] Error processing frame {idx}: {e}")
