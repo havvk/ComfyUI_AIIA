@@ -791,18 +791,20 @@ class AIIA_DittoSampler:
         elif blink_mode == "Slow":
              blink_min = 120
              blink_max = 200
-        elif blink_mode == "None":
-             delta_eye_open_n = -1
-        
-        # Mouth Smoothing Logic [Fix v1.9.43]
-        # Override raw smo_k_d input based on user-friendly dropdown
+        # Mouth Smoothing Logic [Fix v1.9.44]
+        # User requested Float Blend Factors (0.0 - 0.7)
+        # 0.0 = Raw, 0.5 = Normal Blend, 0.7 = Heavy Blend
         if mouth_smoothing == "None (Raw)":
-            smo_k_d = 1 # Disable smoothing
+            smo_k_d = 0.0 
         elif mouth_smoothing == "Light":
-            smo_k_d = 2
+            smo_k_d = 0.3
         elif mouth_smoothing == "Heavy":
-            smo_k_d = 5
-        # If "Normal", we respect the smo_k_d INT input (default 3)
+            smo_k_d = 0.7
+        else: # Normal
+            smo_k_d = 0.5
+        # If "Normal" was default, we set 0.5. 
+        # Note: We are hijacking smo_k_d (int) to pass a float. 
+        # StreamSDK and Audio2Motion must be updated to handle this float.
 
         
         # Map emo string to int
