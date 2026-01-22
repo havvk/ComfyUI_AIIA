@@ -235,18 +235,38 @@ class AIIA_VideoCombine:
             if images is not None:
                 logger.info(f"检测到 {images.shape[0]} 帧的图像张量输入...")
                 from tqdm import tqdm
+                import gc
                 temp_image_dir_to_delete = tempfile.mkdtemp(prefix="aiia_frames_")
                 effective_frames_dir, effective_filename_pattern = temp_image_dir_to_delete, "frame_%08d.png"
                 pbar = ProgressBar(images.shape[0])
                 # Direct tqdm to stdout for console logs
                 console_pbar = tqdm(total=images.shape[0], desc="[AIIA Video] Saving Frames", unit="frame", file=sys.stdout)
                 
-                for i, frame_tensor in enumerate(images):
-                    Image.fromarray((frame_tensor.cpu().numpy() * 255).astype(np.uint8)).save(os.path.join(effective_frames_dir, effective_filename_pattern % (i + 1)))
+                # Move to CPU if on GPU to free GPU memory
+                if images.device.type == 'cuda':
+                    images = images.cpu()
+                    torch.cuda.empty_cache()
+                
+                for i in range(images.shape[0]):
+                    # Get frame, convert, save, and release immediately
+                    frame_np = (images[i].numpy() * 255).astype(np.uint8)
+                    img = Image.fromarray(frame_np)
+                    img.save(os.path.join(effective_frames_dir, effective_filename_pattern % (i + 1)))
+                    del frame_np, img
                     pbar.update(1)
                     console_pbar.update(1)
+                    
+                    # Periodic garbage collection every 100 frames
+                    if i > 0 and i % 100 == 0:
+                        gc.collect()
                 
                 console_pbar.close()
+                
+                # Release input tensor to free memory for ffmpeg
+                del images
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             elif frames_directory:
                 effective_frames_dir = strip_path_aiia(frames_directory)
                 if not validate_path_aiia(effective_frames_dir, check_is_dir=True):
