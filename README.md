@@ -1,6 +1,6 @@
 ![image](https://github.com/user-attachments/assets/7e38d3fd-2084-4d0c-bf86-4b500eba5ced)
 
-<h1><img src="assets/logo_small.png" alt="AIIA Logo" style="vertical-align: middle; margin-right: 10px;" /> AIIA Nodes for ComfyUI</h1>
+<h1><img src="assets/logo_small.png" alt="AIIA Logo" align="center" /> AIIA Nodes for ComfyUI</h1>
 
 欢迎来到 AIIA Nodes for ComfyUI 仓库！这是一个旨在为 ComfyUI 提供一系列强大、直观且高度可定制的节点的集合。这些节点专注于简化复杂的工作流，并为创意工作者提供最大的灵活性。
 
