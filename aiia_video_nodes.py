@@ -281,6 +281,27 @@ class AIIA_VideoCombine:
                 effective_frames_dir = strip_path_aiia(frames_directory)
                 if not validate_path_aiia(effective_frames_dir, check_is_dir=True):
                     raise ValueError(f"帧目录验证失败: {effective_frames_dir}")
+                
+                # Intelligent Pattern Detection (Fix for v1.9.27 compatibility)
+                # If user workflow has old default (%06d) but files are new (%08d), auto-correct it.
+                try:
+                    import glob
+                    import re
+                    # Look for frame_*.png files
+                    sample_files = sorted(glob.glob(os.path.join(effective_frames_dir, "frame_*.png")))
+                    if sample_files:
+                        first_file = os.path.basename(sample_files[0])
+                        # Extract the numeric part: frame_00000123.png -> 00000123
+                        match = re.search(r"frame_(\d+)\.png", first_file)
+                        if match:
+                            digit_count = len(match.group(1))
+                            auto_pattern = f"frame_%0{digit_count}d.png"
+                            
+                            if auto_pattern != effective_filename_pattern:
+                                logger.warning(f"[AIIA_VideoCombine] Pattern Mismatch Detected! User Input: '{effective_filename_pattern}', Actual Files: '{auto_pattern}'. Auto-correcting to match files.")
+                                effective_filename_pattern = auto_pattern
+                except Exception as e:
+                    logger.warning(f"[AIIA_VideoCombine] Auto-pattern detection failed: {e}")
             else: raise ValueError("错误: 必须提供 'images' 或 'frames_directory' 输入。")
 
             output_dir = folder_paths.get_output_directory() if save_output else folder_paths.get_temp_directory()
