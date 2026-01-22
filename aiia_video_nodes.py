@@ -466,42 +466,49 @@ class AIIA_BodySway:
         if target_width > (valid_right - valid_left) or target_height > (valid_bottom - valid_top):
             logger.warning(f"[BodySway] Target size ({target_width}x{target_height}) exceeds valid region. Consider reducing rotation_amplitude or crop_ratio.")
         
-        # Process each frame
-        output_frames = []
+        # Pre-allocate output tensor to avoid memory fragmentation
+        output_tensor = torch.zeros((batch_size, target_height, target_width, channels), dtype=torch.float32)
         
-        for i in range(batch_size):
-            # Get frame as PIL Image
-            frame_np = (images[i].cpu().numpy() * 255).astype(np.uint8)
-            img = Image.fromarray(frame_np)
-            
-            # Apply rotation if needed
-            if actual_rotation > 0:
-                img = img.rotate(traj_rot[i], resample=Image.BILINEAR, expand=False)
-            
-            # Calculate crop box (centered with X offset only)
-            center_x = in_w / 2 + traj_x[i]
-            center_y = in_h / 2 + traj_y[i]  # traj_y is always 0
-            
-            left = int(center_x - target_width / 2)
-            top = int(center_y - target_height / 2)
-            right = left + target_width
-            bottom = top + target_height
-            
-            # Clamp to GLOBAL valid region
-            left = max(valid_left, min(left, valid_right - target_width))
-            top = max(valid_top, min(top, valid_bottom - target_height))
-            right = left + target_width
-            bottom = top + target_height
-            
-            # Crop
-            cropped = img.crop((left, top, right, bottom))
-            
-            # Convert back to numpy
-            cropped_np = np.array(cropped).astype(np.float32) / 255.0
-            output_frames.append(cropped_np)
+        # Process frames in batches to reduce peak memory usage
+        batch_chunk_size = 100  # Process 100 frames at a time
         
-        # Stack to tensor
-        output_tensor = torch.from_numpy(np.stack(output_frames, axis=0))
+        for batch_start in range(0, batch_size, batch_chunk_size):
+            batch_end = min(batch_start + batch_chunk_size, batch_size)
+            
+            for i in range(batch_start, batch_end):
+                # Get frame as PIL Image - use numpy view to avoid copy
+                frame_np = (images[i].cpu().numpy() * 255).astype(np.uint8)
+                img = Image.fromarray(frame_np)
+                
+                # Apply rotation if needed
+                if actual_rotation > 0:
+                    img = img.rotate(traj_rot[i], resample=Image.BILINEAR, expand=False)
+                
+                # Calculate crop box (centered with X offset only)
+                center_x = in_w / 2 + traj_x[i]
+                center_y = in_h / 2 + traj_y[i]  # traj_y is always 0
+                
+                left = int(center_x - target_width / 2)
+                top = int(center_y - target_height / 2)
+                right = left + target_width
+                bottom = top + target_height
+                
+                # Clamp to GLOBAL valid region
+                left = max(valid_left, min(left, valid_right - target_width))
+                top = max(valid_top, min(top, valid_bottom - target_height))
+                right = left + target_width
+                bottom = top + target_height
+                
+                # Crop and write directly to output tensor
+                cropped = img.crop((left, top, right, bottom))
+                output_tensor[i] = torch.from_numpy(np.array(cropped, dtype=np.float32) / 255.0)
+                
+                # Explicitly release PIL image
+                del img, cropped
+            
+            # Force garbage collection after each batch
+            import gc
+            gc.collect()
         
         logger.info(f"[BodySway] Processed {batch_size} frames with Perlin noise (smoothness={smoothness})")
         
