@@ -536,44 +536,69 @@ class AIIA_BodySway:
         
         # Process frames: disk mode or memory mode
         if use_disk_mode:
-            # Disk mode: read, process, save each frame
-            for i, frame_path in enumerate(frame_files):
-                img = Image.open(frame_path)
-                
-                # Apply rotation if needed
-                if actual_rotation > 0:
-                    rotated = img.rotate(traj_rot[i], resample=Image.BILINEAR, expand=False)
+            from concurrent.futures import ThreadPoolExecutor
+            import threading
+            
+            # Disk mode: parallel processing and saving
+            # Use 4 workers to balance CPU usage (cropping/rotating is fast, saving is slow)
+            process_executor = ThreadPoolExecutor(max_workers=4)
+            write_sem = threading.Semaphore(50) # Limit pending writes
+            
+            def process_and_save_task(idx, in_path, out_path, sem):
+                try:
+                    img = Image.open(in_path)
+                    
+                    # Apply rotation
+                    if actual_rotation > 0:
+                        rotated = img.rotate(traj_rot[idx], resample=Image.BILINEAR, expand=False)
+                        img.close()
+                        img = rotated
+                    
+                    # Calculate crop box
+                    center_x = in_w / 2 + traj_x[idx]
+                    center_y = in_h / 2 + traj_y[idx] # traj_y is actually 0 but for consistency
+                    
+                    left = int(center_x - target_width / 2)
+                    top = int(center_y - target_height / 2)
+                    right = left + target_width
+                    bottom = top + target_height
+                    
+                    # Clamp
+                    left = max(valid_left, min(left, valid_right - target_width))
+                    top = max(valid_top, min(top, valid_bottom - target_height))
+                    right = left + target_width
+                    bottom = top + target_height
+                    
+                    # Crop and save
+                    cropped = img.crop((left, top, right, bottom))
                     img.close()
-                    img = rotated
-                
-                # Calculate crop box
-                center_x = in_w / 2 + traj_x[i]
-                center_y = in_h / 2 + traj_y[i]
-                
-                left = int(center_x - target_width / 2)
-                top = int(center_y - target_height / 2)
-                right = left + target_width
-                bottom = top + target_height
-                
-                # Clamp to valid region
-                left = max(valid_left, min(left, valid_right - target_width))
-                top = max(valid_top, min(top, valid_bottom - target_height))
-                right = left + target_width
-                bottom = top + target_height
-                
-                # Crop and save
-                cropped = img.crop((left, top, right, bottom))
-                img.close()
-                
+                    
+                    # Fast save
+                    cropped.save(out_path, format="PNG", compress_level=1)
+                    cropped.close()
+                except Exception as e:
+                    logger.error(f"[BodySway] Error processing frame {idx}: {e}")
+                finally:
+                    sem.release()
+
+            logger.info("[BodySway] Starting parallel disk processing...")
+            
+            for i, frame_path in enumerate(frame_files):
                 output_path = os.path.join(output_frames_dir, f"frame_{i:08d}.png")
-                cropped.save(output_path)
-                cropped.close()
                 
-                # Periodic GC and progress
-                if i > 0 and i % 50 == 0:
-                    gc.collect()
-                    if batch_size > 200:
-                        logger.info(f"[BodySway] Progress: {i}/{batch_size} frames processed")
+                # Wait for slot
+                write_sem.acquire()
+                
+                # Submit task
+                process_executor.submit(process_and_save_task, i, frame_path, output_path, write_sem)
+                
+                # Periodic logging
+                if i > 0 and i % 100 == 0:
+                     if batch_size > 200:
+                        logger.info(f"[BodySway] Submitted: {i}/{batch_size} frames")
+            
+            # Wait for all tasks to complete
+            process_executor.shutdown(wait=True)
             
             # Return placeholder tensor for disk mode
             output_tensor = torch.zeros((1, 1, 1, 3), dtype=torch.float32)

@@ -401,39 +401,67 @@ class ComfyStreamSDK(StreamSDK):
         # Override to append to list or save to disk
         from PIL import Image
         import os
+        from concurrent.futures import ThreadPoolExecutor
+        import threading
         
-        while not self.stop_event.is_set():
-            try:
-                item = self.writer_queue.get(timeout=1)
-            except Exception: # queue.Empty
-                continue
+        # Disk mode: setup async writer with backpressure
+        write_executor = None
+        write_sem = None
+        if self.disk_mode:
+            # Use 4 threads for parallel PNG compression
+            write_executor = ThreadPoolExecutor(max_workers=4)
+            # Limit pending frames to 50 to prevent memory explosion if disk is slow
+            write_sem = threading.Semaphore(50) 
+            
+            def save_frame_task(data, path, sem):
+                try:
+                    # compress_level=1 is much faster than default (6)
+                    Image.fromarray(data.astype(np.uint8)).save(path, format="PNG", compress_level=1)
+                except Exception as e:
+                    logger.error(f"Error saving frame {path}: {e}")
+                finally:
+                    sem.release() # Release slot
 
-            if item is None:
-                # Close progress bar on exit
-                if self.console_pbar:
-                    self.console_pbar.close()
-                break
-            
-            res_frame_rgb = item # This is numpy RGB array usually
-            
-            if self.disk_mode and self.disk_output_dir:
-                # Disk mode: save to file immediately
-                img = Image.fromarray(res_frame_rgb.astype(np.uint8))
-                frame_path = os.path.join(self.disk_output_dir, f"frame_{self.frame_counter:08d}.png")
-                img.save(frame_path)
-                self.frame_counter += 1
-                del img, res_frame_rgb  # Release memory
-            else:
-                # Memory mode: append to list
-                self.generated_frames.append(res_frame_rgb)
-            
-            # ComfyUI Progress Bar
-            if self.pbar:
-                self.pbar.update(1)
+        try:
+            while not self.stop_event.is_set():
+                try:
+                    item = self.writer_queue.get(timeout=1)
+                except Exception: # queue.Empty
+                    continue
+
+                if item is None:
+                    # Close progress bar on exit
+                    if self.console_pbar:
+                        self.console_pbar.close()
+                    break
                 
-            # Console TQDM Progress Bar
-            if self.console_pbar:
-                self.console_pbar.update(1)
+                res_frame_rgb = item 
+                
+                if self.disk_mode and self.disk_output_dir:
+                    # Disk mode: save to file asynchronously
+                    frame_path = os.path.join(self.disk_output_dir, f"frame_{self.frame_counter:08d}.png")
+                    self.frame_counter += 1
+                    
+                    # Wait for slot (backpressure)
+                    write_sem.acquire()
+                    
+                    # Submit to thread pool
+                    write_executor.submit(save_frame_task, res_frame_rgb, frame_path, write_sem)
+                    
+                else:
+                    # Memory mode: append to list
+                    self.generated_frames.append(res_frame_rgb)
+                
+                # ComfyUI Progress Bar
+                if self.pbar:
+                    self.pbar.update(1)
+                    
+                # Console TQDM Progress Bar
+                if self.console_pbar:
+                    self.console_pbar.update(1)
+        finally:
+            if write_executor:
+                write_executor.shutdown(wait=True)
 
     def cleanup(self):
         pass
