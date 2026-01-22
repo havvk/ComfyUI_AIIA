@@ -596,6 +596,13 @@ class MotionStitch:
             delta_eye = self.delta_eye_arr[
                 self.delta_eye_idx_list[self.idx % len(self.delta_eye_idx_list)]
             ][None] * self.blink_amp
+            
+        # [Feature v1.9.48] Apple Mouth Micro-Motion
+        if "delta_mouth" in kwargs:
+             _lip = [6, 12, 14, 17, 19, 20]
+             # Broadcasting scalar to (1, 6, 3) or (1, 6)
+             x_d_info["exp"][:, _lip] += kwargs["delta_mouth"]
+
         x_d_info = _fix_exp_for_x_d_info_v2(
             x_d_info,
             x_s_info,
