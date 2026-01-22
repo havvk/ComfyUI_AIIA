@@ -574,6 +574,7 @@ class AIIA_DittoSampler:
         
         # VAD / Volume Analysis
         ctrl_info = {}
+        dataset_alpha = None # [Fix v1.9.47] Prevent UnboundLocalError if relax_on_silence is False
         if relax_on_silence:
             # Calculate RMS per frame
             frame_len = 640 # 16000 / 25
