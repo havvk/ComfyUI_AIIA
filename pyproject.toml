@@ -23,5 +23,5 @@ Repository = "https://github.com/havvk/ComfyUI_AIIA"
 [tool.comfy]
 PublisherId = "hawk"
 DisplayName = "ComfyUI_AIIA"
-Icon = "https://github.com/user-attachments/assets/358b9ca9-59c8-4433-b84c-c150503af04a"
+Icon = "https://raw.githubusercontent.com/havvk/ComfyUI_AIIA/main/assets/logo.png"
 

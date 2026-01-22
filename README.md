@@ -1,6 +1,6 @@
 ![image](https://github.com/user-attachments/assets/7e38d3fd-2084-4d0c-bf86-4b500eba5ced)
 
-# AIIA Nodes for ComfyUI
+# ![1769046939096](image/README/1769046939096.png)AIIA Nodes for ComfyUI
 
 欢迎来到 AIIA Nodes for ComfyUI 仓库！这是一个旨在为 ComfyUI 提供一系列强大、直观且高度可定制的节点的集合。这些节点专注于简化复杂的工作流，并为创意工作者提供最大的灵活性。
 
@@ -195,23 +195,25 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **输出**: `STRING` (包含生成帧的目录路径) 和 `INT` (帧数)。
 - **最佳实践**: 将此节点的输出目录直接连接到 **AIIA Video Combine** 节点，即可实现从生成到合成的全流程 OOM-Safe。
 
-
 #### 2.4 EchoMimic V3 (AIIA Integrated)
 
 这组节点集成了最新的 **EchoMimic V3** (1.3B Parameters) 模型，它是目前开源界效果最惊艳的 Talking Head 解决方案之一。
 
 **特点**:
+
 - **多模态驱动**: 支持 **Audio Only** (仅音频驱动) 和 **Audio + Reference Pose** (音频+参考姿态) 驱动。
 - **自然度极高**: 相比 float 等早期模型，V3 在头部运动、表情微表情的自然度上有巨大提升。
 - **ComfyUI 原生**: 我们将其封装为标准的 Loader 和 Sampler 节点，支持流式生成和内存优化。
 
 **1. EchoMimic V3 Loader**
+
 - **用途**: 加载模型权重 (Transformer, VAE, Wav2Vec, etc.)。
-- **参数**: 
+- **参数**:
   - `model_subfolder`: 模型子目录名 (默认 `Wan2.1-Fun-V1.1-1.3B-InP`)。
   - `device`: 指定运行设备 (CUDA)。
 
 **2. EchoMimic V3 Sampler**
+
 - **用途**: 执行推理生成。
 - **输入**:
   - `ref_image`: 参考人物图片 (建议 1:1 比例，如 768x768)。
@@ -224,6 +226,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
   - `negative_prompt`: 已内置优化过的 **眼部修复 (Eye Correction)** 提示词，有效防止翻白眼和眼神飘忽。
 
 **🚀 性能优化 (Performance)**:
+
 - **Flash Attention 2**: 强烈推荐安装。检测到时会自动启用，大幅提升推理速度。
 - **TeaCache**: 默认启用。通过缓存部分 Transformer 层计算，大幅加速生成。
 - **Full GPU Mode**: 默认启用。适合显存充足 (24GB+) 用户，享受极致流畅的生成体验。
@@ -235,6 +238,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 目标目录: `ComfyUI/models/EchoMimicV3/`
 
 **目录结构**:
+
 ```text
 ComfyUI/models/EchoMimicV3/
 ├── Wan2.1-Fun-V1.1-1.3B-InP/     <-- 主模型目录
@@ -255,23 +259,25 @@ ComfyUI/models/EchoMimicV3/
 ```
 
 **下载地址**:
+
 1. **主模型 (EchoMimicV3)**:
+
    - HuggingFace: [BadToBest/EchoMimicV3](https://huggingface.co/BadToBest/EchoMimicV3)
    - **下载命令 (推荐)**:
      ```bash
      hf download BadToBest/EchoMimicV3 --local-dir models/EchoMimicV3/EchoMimicV3
      ```
    - *注意：此模型包含 EchoMimic 特有的 Transformer 权重，是生成嘴型的核心。*
-
 2. **底模 (Wan2.1-Fun-V1.1-1.3B-InP)**:
+
    - HuggingFace: [alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP](https://huggingface.co/alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP)
    - **下载命令**:
      ```bash
      hf download alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP --local-dir models/EchoMimicV3/Wan2.1-Fun-V1.1-1.3B-InP
      ```
    - *注意：作为 fallback 来源，提供 VAE、Text Encoder 和 Image Encoder权重。*
-
 3. **音频编码器 (wav2vec2-base-960h)**:
+
    - HuggingFace: [facebook/wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h)
    - **下载命令**:
      ```bash
@@ -279,25 +285,28 @@ ComfyUI/models/EchoMimicV3/
      ```
 
 **环境依赖**:
-- 请确保安装了 `requirements.txt` 中的依赖，如 `diffusers>=0.30.1`。节点加载时会尝试自动引用，但如果报错缺包，请手动安装。
 
+- 请确保安装了 `requirements.txt` 中的依赖，如 `diffusers>=0.30.1`。节点加载时会尝试自动引用，但如果报错缺包，请手动安装。
 
 #### 2.5 Ditto Talking Head (AIIA Integrated)
 
 这组节点集成了 [Ditto](https://github.com/antgroup/ditto-talkinghead) 数字人模型。我们采用了 **PyTorch** 原生实现，避免了复杂的 TensorRT 编译过程，让用户能够“开箱即用”地生成高质量的 Talking Head 视频。
 
 **特点**:
+
 - **PyTorch Native**: 无需安装 TensorRT，兼容性更好。
 - **In-Memory Pipeline**: 针对 ComfyUI 优化的内存内处理流程，无需生成中间视频文件。
 - **自动模型管理**: 支持自动下载模型权重。
 
 **1. AIIA Ditto Loader**
+
 - **用途**: 下载并加载 Ditto 模型 (约 1.2GB)。
 - **参数**:
   - `model_name`: 模型名称 (默认 `ditto-talkinghead`)。
   - `device`: 运行设备 (CUDA/CPU)。
 
 **2. AIIA Ditto Sampler**
+
 - **用途**: 执行推理生成。
 - **输入**:
   - `pipe`: 来自 Loader 的模型管道。
@@ -317,7 +326,7 @@ ComfyUI/models/EchoMimicV3/
     - **数值越小 (如 2.0)**: **特写视野**。模型聚焦于面部核心区域。
       - ✅ 优点：人脸占比大，五官细节极其清晰锐利。
       - ❌ 缺点：容易裁掉下巴或额头，头部大幅运动时可能会出现“断头”或伪影。
-    - **推荐值**: 
+    - **推荐值**:
       - 标准场景: **2.3**
       - 大动态/全身/半身: **2.5** (牺牲细节换稳定性)
       - 大头照/证件照: **2.0** (追求极致细节)
@@ -345,13 +354,13 @@ ComfyUI/models/EchoMimicV3/
       - **精密网格对齐 (Exact Onset Alignment)**: 将模型的时间步长精确对齐到语音的开始（Onset），而不是固定的处理块。
       - **状态重置 (State & RNG Reset)**: 在长静音后，强制重置模型状态和**随机种子**，确保每一句话的生成质量一致，彻底消除“长语音嘴型漂移”。
   - `silence_release`: (v1.9.2 New) **静音闭嘴速度 (Adsr Release Control)**。
-    - **Natural (0.8s) [默认]**: 
+    - **Natural (0.8s) [默认]**:
       - 自然平衡模式。适合大多数常速对话。
       - 触发阈值: >0.88s。
-    - **Fast (0.5s)**: 
+    - **Fast (0.5s)**:
       - 快速响应模式。适合语速极快、充满激情的演讲。
       - 触发阈值: >0.56s。
-    - **Deep (1.3s)**: 
+    - **Deep (1.3s)**:
       - 深沉模式。适合朗诵、讲故事或情感类内容。超长尾韵，极度平滑。
       - 触发阈值: >1.4s。
   - `ref_threshold`: (默认 0.005) **静音检测相对阈值 (Relative Silence Threshold)**。
@@ -374,6 +383,7 @@ ComfyUI/models/EchoMimicV3/
 如果自动下载失败，请手动下载模型并放入 `ComfyUI/models/ditto/` 目录。
 
 **目标目录结构**:
+
 ```text
 ComfyUI/models/ditto/
 ├── ditto_pytorch/
@@ -385,9 +395,11 @@ ComfyUI/models/ditto/
 ```
 
 **下载地址**:
+
 - HuggingFace: [digital-avatar/ditto-talkinghead](https://huggingface.co/digital-avatar/ditto-talkinghead)
 
 **下载命令**:
+
 ```bash
 # 进入 models 目录
 cd ComfyUI/models
@@ -395,8 +407,6 @@ cd ComfyUI/models
 # 下载模型 (直接下载到 ditto 目录，避免多层嵌套)
 hf download digital-avatar/ditto-talkinghead --local-dir ditto
 ```
-
-
 
 ### 3. 音频智能处理 (Intelligent Audio Processing)
 
@@ -902,13 +912,13 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 
 经过深度测试，我们在三个主流模型中整理了以下对比，助您选择最适合的引擎：
 
-| 维度                                     | **VoxCPM 1.5** (800M)                                                                                                                                                   | **CosyVoice 3.0** (0.5B/1.5B)                                         | **VibeVoice** (1.5B/7B)                                  |
-| :--------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------- | :------------------------------------------------------------- |
-| **音质 (Fidelity)**                | **44.1kHz 格式**`<br>`虽然物理格式为 44.1k，但因采用 **Neural Upsampling** (神经升频) 技术，听感上会有**含混 (Muffled)** 或**金属感**，且伴有底噪。 | **优秀**`<br>`听感最自然，但采样率稍低 (22/24kHz)，有时需 AI 增强。 | **良好**`<br>`主要强在语气自然度，纯音质略逊。         |
-| **推理速度 (Speed)**               | **🚀 冠军 (RTF ~0.17)**`<br>`得益于 Tokenizer-free，极其高效。                                                                                                        | **极快**`<br>`流式响应仅 150ms，且支持 TensorRT 加速。              | **一般/较慢**`<br>`7B 版本较重，更适合离线生成。       |
-| **克隆能力 (Cloning)**             | **SOTA** (Zero-Shot)`<br>`只需 3-10秒，对**音色质感**还原极高。                                                                                                 | **SOTA** (稳定性)`<br>`对**说话韵律/口音**的捕捉最准。        | **良好**`<br>`适合克隆特定语气，而非纯粹音色。         |
-| **多语言/方言**                    | **中/英** (双语优化)                                                                                                                                                    | **👑 霸主** (9种语言 + 18种方言)                                      | **中/英**                                                |
-| **语音转换 (VC)** (Audio-to-Audio) | ❌**不支持**`<br>`仅支持 TTS (Text-to-Speech)。无法改变已有音频的音色。                                                                                               | ✅**支持**`<br>`可以将任意音频转换为任意音色 (保留语调/停顿)。      | ❌**不支持**`<br>`纯 TTS 模型。仅支持 Text-to-Speech。 |
+| 维度                                     | **VoxCPM 1.5** (800M)                                                                                                                                                    | **CosyVoice 3.0** (0.5B/1.5B)                                          | **VibeVoice** (1.5B/7B)                                   |
+| :--------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------- | :-------------------------------------------------------------- |
+| **音质 (Fidelity)**                | **44.1kHz 格式** `<br>`虽然物理格式为 44.1k，但因采用 **Neural Upsampling** (神经升频) 技术，听感上会有**含混 (Muffled)** 或**金属感**，且伴有底噪。 | **优秀** `<br>`听感最自然，但采样率稍低 (22/24kHz)，有时需 AI 增强。 | **良好** `<br>`主要强在语气自然度，纯音质略逊。         |
+| **推理速度 (Speed)**               | **🚀 冠军 (RTF ~0.17)**`<br>`得益于 Tokenizer-free，极其高效。                                                                                                         | **极快** `<br>`流式响应仅 150ms，且支持 TensorRT 加速。              | **一般/较慢** `<br>`7B 版本较重，更适合离线生成。       |
+| **克隆能力 (Cloning)**             | **SOTA** (Zero-Shot)`<br>`只需 3-10秒，对**音色质感**还原极高。                                                                                                  | **SOTA** (稳定性)`<br>`对**说话韵律/口音**的捕捉最准。         | **良好** `<br>`适合克隆特定语气，而非纯粹音色。         |
+| **多语言/方言**                    | **中/英** (双语优化)                                                                                                                                                     | **👑 霸主** (9种语言 + 18种方言)                                       | **中/英**                                                 |
+| **语音转换 (VC)** (Audio-to-Audio) | ❌**不支持** `<br>`仅支持 TTS (Text-to-Speech)。无法改变已有音频的音色。                                                                                               | ✅**支持** `<br>`可以将任意音频转换为任意音色 (保留语调/停顿)。      | ❌**不支持** `<br>`纯 TTS 模型。仅支持 Text-to-Speech。 |
 
 **选型建议**:
 
@@ -980,18 +990,18 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 **[v1.8.1 New]** 将播客升级为视听同步的互动网页。支持“读写分离”的缓存优化，修改 Visual 标签无需重跑 TTS。
 
 - **工作流 (Workflow)**:
-    1.  `Script Parser` 输出 `tts_data` (连接到 TTS) 和 `full_script` (连接到 Merge)。
-    2.  `AIIA Dialogue TTS` 生成音频和 `segments_info`。
-    3.  `AIIA Segment Merge` 将 `full_script` 中的 Visual 标签重新贴回到 `segments_info` 时间轴上。
-    4.  `AIIA Web Export` 生成最终 HTML。
+  1. `Script Parser` 输出 `tts_data` (连接到 TTS) 和 `full_script` (连接到 Merge)。
+  2. `AIIA Dialogue TTS` 生成音频和 `segments_info`。
+  3. `AIIA Segment Merge` 将 `full_script` 中的 Visual 标签重新贴回到 `segments_info` 时间轴上。
+  4. `AIIA Web Export` 生成最终 HTML。
 - **Input**:
-    - `audio`: 音频信号。
-    - `segments_info`: 来自 Merge 节点的包含 Visual 信息的 JSON。
-    - `template`: `Split Screen` (适合宽屏) 或 `Presentation` (适合演示)。
+  - `audio`: 音频信号。
+  - `segments_info`: 来自 Merge 节点的包含 Visual 信息的 JSON。
+  - `template`: `Split Screen` (适合宽屏) 或 `Presentation` (适合演示)。
 - **Visual Tag 语法**:
-    - 在剧本中插入 `(Visual: url)`。
-    - 支持绝对 URL: `(Visual: https://example.com)`
-    - 支持相对路径: `(Visual: ./slides/01.jpg)` (相对于导出 HTML 的位置)
+  - 在剧本中插入 `(Visual: url)`。
+  - 支持绝对 URL: `(Visual: https://example.com)`
+  - 支持相对路径: `(Visual: ./slides/01.jpg)` (相对于导出 HTML 的位置)
 
 #### 💡 引擎选型与最佳实践 (Best Practices)
 
@@ -1091,16 +1101,16 @@ B: 太神奇了！那我们快去生成试试吧！
 ### [1.9.0] - 2026-01-20
 
 - **Ditto Talking Head**: 新增 Ditto 模型支持 (PyTorch 版)。
-    - **AIIA Ditto Loader**: 支持自动下载与加载。
-    - **AIIA Ditto Sampler**: 支持内存内流式生成。
+  - **AIIA Ditto Loader**: 支持自动下载与加载。
+  - **AIIA Ditto Sampler**: 支持内存内流式生成。
 - **EchoMimic V3**: 优化了音频同步逻辑，修复了唇形漂移问题。
 
 ### [1.8.4] - 2026-01-19
 
 - **VibeVoice Speed Control**: 实现了基于系统 `sox` 命令的**变速不变调**（Time Stretching）。
-- **稳定性修复**: 
-    - 修复了 VibeVoice 在调整速度时由于张量类型不匹配（Half vs Float）导致的崩溃。
-    - 强制所有音频输出为 `float32`，解决了在 `speed=1.0` 且有参考音频时，下游节点（如 Resemble Enhance）报错的问题。
+- **稳定性修复**:
+  - 修复了 VibeVoice 在调整速度时由于张量类型不匹配（Half vs Float）导致的崩溃。
+  - 强制所有音频输出为 `float32`，解决了在 `speed=1.0` 且有参考音频时，下游节点（如 Resemble Enhance）报错的问题。
 - **依赖更新**: 新增 `sox` 依赖。Linux 服务器用户请确保安装系统库：`sudo apt-get install libsox-dev sox`。
 
 ### [1.8.3] - 2026-01-07
