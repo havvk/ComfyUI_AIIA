@@ -491,10 +491,14 @@ class AIIA_DittoSampler:
                 "blink_mode": (["Random (Normal)", "Fast", "Slow", "None"], {"default": "Random (Normal)"}),
                 "silence_release": (["Natural (0.8s)", "Fast (0.5s)", "Deep (1.3s)"], {"default": "Natural (0.8s)"}),
                 "mouth_smoothing": (["Normal", "None (Raw)", "Light", "Heavy"], {"default": "Normal"}),
-                "save_to_disk": (["Memory (Default)", "Disk (OOM-Safe)"], {"default": "Memory (Default)",
-                                  "tooltip": "Memory: Fast, all frames in RAM. Disk: Slower, but handles 1000+ frames without OOM."}),
+                "save_to_disk": (["Memory (Default)", "Disk (OOM-Safe)", "Auto (Graph-Aware)"], {"default": "Memory (Default)",
+                                  "tooltip": "Memory: Fast, all frames in RAM. Disk: Slower, but handles 1000+ frames without OOM. Auto: Uses Disk if 'frames_dir' output is connected."}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
-            }
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+                "unique_id": "UNIQUE_ID",
+            },
         }
 
     RETURN_TYPES = ("IMAGE", "AUDIO", "STRING")
@@ -502,14 +506,44 @@ class AIIA_DittoSampler:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Ditto"
 
-    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, blink_amp, relax_on_silence, ref_threshold, blink_mode, silence_release, mouth_smoothing, save_to_disk, seed):
+    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, blink_amp, relax_on_silence, ref_threshold, blink_mode, silence_release, mouth_smoothing, save_to_disk, seed, prompt=None, unique_id=None):
         # pipe is the dict we returned in Loader
         master_sdk = pipe["sdk"]
         cfg_pkl = pipe["cfg_pkl"]
         data_root = pipe["data_root"]
         
         # Determine if saving to disk
-        disk_mode = save_to_disk == "Disk (OOM-Safe)"
+        disk_mode = False
+        if save_to_disk == "Disk (OOM-Safe)":
+            disk_mode = True
+        elif save_to_disk == "Auto (Graph-Aware)":
+            # Check connectivity
+            is_connected = False
+            if prompt is not None and unique_id is not None:
+                # Iterate over all nodes to see if anyone uses our output
+                my_id = str(unique_id)
+                # Output slot index for 'frames_dir' is 2 (based on RETURN_NAMES)
+                target_slot = 2 
+                
+                for node_id, node_data in prompt.items():
+                    if "inputs" not in node_data: continue
+                    for input_name, input_val in node_data["inputs"].items():
+                        # Link format: [source_node_id, source_output_idx]
+                        if isinstance(input_val, list) and len(input_val) == 2:
+                            src_id = str(input_val[0])
+                            src_slot = int(input_val[1])
+                            if src_id == my_id and src_slot == target_slot:
+                                is_connected = True
+                                break
+                    if is_connected: break
+            
+            disk_mode = is_connected
+            if disk_mode:
+                print(f"[Ditto] Auto-Mode: Detected downstream connection to 'frames_dir'. Switching to Disk Mode.")
+            else:
+                print(f"[Ditto] Auto-Mode: No downstream connection to 'frames_dir'. Using Memory Mode.")
+        else:
+            disk_mode = False
         
         import pickle
         with open(cfg_pkl, 'rb') as f:
