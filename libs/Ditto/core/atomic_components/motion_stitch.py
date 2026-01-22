@@ -621,6 +621,13 @@ class MotionStitch:
         # Note: x_d_info['roll'] is now in Degrees (converted by ctrl_motion).
         # x_s_info['roll'] is in Logits (Bin66), so we convert it first.
         ref_roll = bin66_to_degree(x_s_info['roll'])
+        
+        # Diagnostic Logging (User Request v1.9.54)
+        if self.idx % 25 == 0:
+            c_roll = float(x_d_info['roll'].mean())
+            r_roll = float(ref_roll.mean())
+            print(f"[Ditto Tilt Diag] Frame {self.idx}: CurRoll={c_roll:.2f}° | RefRoll={r_roll:.2f}° | Drift={c_roll-r_roll:.2f}°")
+            
         x_d_info['roll'] = x_d_info['roll'] * 0.9 + ref_roll * 0.1
 
         if self.fade_type == "d0" and self.fade_dst is None:
