@@ -767,10 +767,14 @@ class AIIA_DittoSampler:
                     d_pitch = math.cos(t * 1.5) * idle_amp * idle_weight
                     d_yaw = math.sin(t * 1.2) * idle_amp * idle_weight
                     
-                    # [Feature v1.9.48] Mouth Micro-Motion (Breathing)
-                    # Add tiny sine wave to mouth to prevent "Rigid Frozen" look.
-                    # Amplitude 0.005 is subtle enough to look like breathing/micro-tremor.
-                    d_mouth = math.sin(t * 2.5) * 0.005 * idle_weight
+                    # [Feature v1.9.49] Mouth Micro-Motion (Breathing)
+                    # Refined: Positive-Only sine wave to prevent "Pursed Lips" (Negative Offset).
+                    # Slower freq (2.0) and lower amp (0.004 peak) for subtlety.
+                    # Formula: (sin + 1) * 0.5 ranges 0 to 1. 
+                    # Max opening = 0.005 * idle_weight.
+                    d_mouth = (math.sin(t * 2.0) + 1.0) * 0.5 * 0.005 * idle_weight
+                    
+                    # We need to ADD this to the global controls (hd_rot_p, etc.)
                     
                     # We need to ADD this to the global controls (hd_rot_p, etc.)
                     # But ctrl_info overrides per frame.
