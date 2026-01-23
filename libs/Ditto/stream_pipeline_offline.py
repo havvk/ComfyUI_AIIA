@@ -397,7 +397,7 @@ class StreamSDK:
             
             # State for Onset Detection
             silence_frames_count = 0
-            min_silence_for_reset = 15 # ~0.6s @ 25fps. Avoid resetting on short breaths.
+            min_silence_for_reset = 30 # ~1.2s @ 25fps. Avoid resetting on standard sentence pauses.
             
             while idx < num_frames:
                 pbar.update()

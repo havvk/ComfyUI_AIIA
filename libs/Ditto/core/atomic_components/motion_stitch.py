@@ -655,7 +655,9 @@ class MotionStitch:
         # 3. Apply Logic
         # Calculate effective alpha for expression blending
         # If we are attacking, force 1.0 to avoid "Weak/Half-Closed" ghosting.
-        exp_blend_alpha = 1.0 if is_attack else vad_current
+        # [Update v1.9.103] Softer Onset: Remove hard 1.0 override.
+        # This allows the VAD slope to naturally transition the expression.
+        exp_blend_alpha = vad_current
 
         if exp_blend_alpha < 1.0:
             # If releasing (and not attacking), use frozen frame if available
@@ -680,8 +682,14 @@ class MotionStitch:
             exp_decay = 0.5
         
         if exp_decay > 0:
-            if not hasattr(self, 'prev_exp_ema'):
+            if not hasattr(self, 'prev_exp_ema') or self.prev_exp_ema is None:
                 self.prev_exp_ema = x_d_info["exp"].copy()
+            
+            # [Update v1.9.103] Soft Reset EMA during Attack
+            # If we are starting to speak, reset the EMA to the current frame 
+            # to prevent the "Mouth Opening Lag" caused by long silence history.
+            if is_attack:
+                 self.prev_exp_ema = x_d_info["exp"].copy()
             
             # Apply EMA smoothing - let mouth opening transition naturally
             x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)

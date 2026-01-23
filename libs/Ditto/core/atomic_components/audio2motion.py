@@ -152,17 +152,16 @@ class Audio2Motion:
             # Problem: Feeding back smoothed output causes variance decay (EMA effect), leading to stasis.
             # Solution: Inject micro-noise to keep the 'cascading generation' alive.
             last_pose = res_kp_seq[:, idx-1]
-            # [Debug v1.9.57] Disabled Noise Injection to verify if it causes Left Drift.
-            # noise_scale = 0.002 
-            # noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
-            noise = 0
+            # [Update v1.9.103] Re-enabled noise injection to keep motion alive
+            noise_scale = 0.002 
+            noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
             
             # [Feature v1.9.50] Gravity Well (Anti-Drift)
             # Problem: Autoregressive generation accumulates error, causing head to drift off-screen over time.
             # Solution: Gently pull the pose back towards the Reference Pose (s_kp_cond) every frame.
-            # [Update v1.9.51] Increased to 20% (0.2).
             # [Update v1.9.58] Increased to 50% (0.5) because valid_clip_len is long (~70 frames), so correction is infrequent.
-            gravity = 0.5
+            # [Update v1.9.103] Reduced to 10% (0.1) to allow more natural secondary motion.
+            gravity = 0.1
             
             next_pose = last_pose + noise
             self.kp_cond = next_pose * (1.0 - gravity) + self.s_kp_cond * gravity

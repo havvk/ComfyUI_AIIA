@@ -766,13 +766,12 @@ class AIIA_DittoSampler:
                 if alpha < 1.0:
                     idle_weight = (1.0 - alpha)
                     
-                    # Periodic sway
-                    # t = i / 25.0
-                    # Pitch: slower, cos wave
-                    # Yaw: slightly faster, sin wave
                     t = i / 25.0
-                    d_pitch = math.cos(t * 1.5) * idle_amp * idle_weight
-                    d_yaw = math.sin(t * 1.2) * idle_amp * idle_weight
+                    # [Update v1.9.103] Dual-Frequency Sway (Biological noise)
+                    # Pitch: Slower Base (0.8) + Faster Overlay (1.8)
+                    d_pitch = (math.cos(t * 0.8) * 0.7 + math.cos(t * 1.8) * 0.3) * idle_amp * idle_weight
+                    # Yaw: Slower Base (0.6) + Faster Overlay (2.2)
+                    d_yaw = (math.sin(t * 0.6) * 0.8 + math.sin(t * 2.2) * 0.2) * idle_amp * idle_weight
                     
                     # [Feature v1.9.49] Mouth Micro-Motion (Breathing)
                     # Refined: Positive-Only sine wave to prevent "Pursed Lips" (Negative Offset).
