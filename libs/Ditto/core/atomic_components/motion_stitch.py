@@ -449,8 +449,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.68] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.68. Anti-Twitch 1.2x + Runtime Logging.")
+        # [Debug v1.9.69] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.69. Deep Suppression (Post-Ctrl).")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -673,15 +673,15 @@ class MotionStitch:
             self.drive_eye
         )
         
-        # [Feature v1.9.66] Apply Mechanical Counter-Force (Anti-Twitch)
-        # Apply strict downward force to mouth corners proportional to blink strength.
-        if hasattr(self, 'anti_twitch_correction') and isinstance(self.anti_twitch_correction, (int, float, np.ndarray)):
-             if np.any(self.anti_twitch_correction != 0):
-                x_d_info["exp"][:, 6] -= self.anti_twitch_correction
-                x_d_info["exp"][:, 12] -= self.anti_twitch_correction
-
-
         x_d_info = ctrl_motion(x_d_info, **kwargs)
+        
+        # [Fix v1.9.69] Deep Suppression (Post-Inference)
+        # Problem: ctrl_motion (LMDM) runs AFTER _fix_exp, so it re-introduces the twitch (15/16/18).
+        # Fix: We suppress them HERE (at the very end) to guarantee they are killed.
+        # We reset them to the Source Image's value (Rest Position).
+        suppress_idx = [15, 16, 18]
+        x_d_info["exp"][:, suppress_idx] = x_s_info["exp"][:, suppress_idx]
+
         
         # [Moved v1.9.59] Auto-Center Moved to end of function.
 
