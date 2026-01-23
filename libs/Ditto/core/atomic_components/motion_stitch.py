@@ -613,25 +613,27 @@ class MotionStitch:
             if self.idx % 30 == 0:
                 print(f"[AIIA SHAPE] Frame {self.idx}: delta_eye shape = {delta_eye.shape}")
 
-            # [Fix v1.9.70 Logic] Adjusted to handle small shapes
-            # If shape has indices 11 and 13 (Size > 13)
-            if delta_eye.shape[-1] > 13: 
-                 delta_eye[..., [11, 13]] *= 1.5
-                 if delta_eye.shape[-1] > 18:
-                     delta_eye[..., [15, 16, 18]] *= 0.5
+            # [Diagnostic v1.9.73] Find Active Channels
+            # Scan all channels to find which one is actually blinking.
+            # We suspect Index 11 is NOT the eyelid in this 63-channel model.
+            max_idx = int(np.argmax(delta_eye))
+            max_val = float(delta_eye.flat[max_idx])
             
-            # [Diagnostic v1.9.72] Event Logger (Safe Access)
-            if delta_eye.shape[-1] > 13: # Has 11, 13
-                eye_l_in = float(delta_eye[..., 11].mean())
-                if eye_l_in > 0.01: # Lower threshold to catch anything
-                     s_val = float(delta_eye[..., 15].mean()) if delta_eye.shape[-1] > 15 else 0.0
-                     print(f"\n[AIIA DIAG] Frame {self.idx} BLINK EVENT (Shape {delta_eye.shape}):")
-                     print(f"  > Input: EyeL={eye_l_in:.3f}, SquintL={s_val:.3f}")
-                     self._log_blink_output = True
-                else:
-                     self._log_blink_output = False
+            if max_val > 0.01:
+                # Find top 5 active indices in the (1, 63) array
+                # Note: using flatten() to handle (1, 63) or (63,)
+                flat_arr = delta_eye.flatten()
+                top_indices = np.argsort(flat_arr)[-5:][::-1]
+                
+                print(f"\n[AIIA BLINK DETECT] Frame {self.idx} (Shape {delta_eye.shape})")
+                for i in top_indices:
+                    val = float(flat_arr[i])
+                    if val > 0.001: # Only print significant ones
+                        print(f"  > Index {i}: {val:.4f}")
+                
+                self._log_blink_output = True
             else:
-                 self._log_blink_output = False
+                self._log_blink_output = False
 
 
 
