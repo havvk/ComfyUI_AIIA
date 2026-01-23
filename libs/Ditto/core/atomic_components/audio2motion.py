@@ -111,6 +111,8 @@ class Audio2Motion:
         self.clip_idx = 0
         self.warp_offset = None
         self.brownian_pos = np.zeros_like(self.kp_cond)
+        self.last_kp_frame = None # [v1.9.107] Persistence bridging
+        self.global_time = 0 # [v1.9.107] For procedural breathing
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         ## ========================
@@ -158,16 +160,38 @@ class Audio2Motion:
             noise_scale = 0.005 
             noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
             
-            # Brownian Drift: Cumulative random walk to prevent long-term stasis
-            # We use a very small scale (0.0005) so it doesn't walk off screen too fast
-            drift = np.random.normal(0, 0.0005, last_pose.shape).astype(np.float32)
+            # [Update v1.9.107] Vitality 2.0:
+            # 1. Brownian Drift Tuning (Restored restricted Pitch)
+            # 0.001 for Yaw/Roll, but only 0.0003 for Pitch to prevent "Uptilt".
+            drift_scales = np.ones_like(last_pose) * 0.0005
+            # We assume dim mapping: [..., Pitch, Yaw, Roll, ...] based on LMDM structure.
+            # Usually Pitch is at index 0-2 (Euler/Rot). 
+            # Actually kp_cond is often points, but if it has rot info:
+            drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
             self.brownian_pos += drift
+            
+            # 2. Reference Pose Breathing (Anchor Sway)
+            # Gently sway the target anchor s_kp_cond to simulate chest/neck breathing.
+            self.global_time += 1
+            t = self.global_time * 0.04 # ~1 Hz cycle
+            sway = (np.sin(t) * 0.002).astype(np.float32)
+            current_s_kp = self.s_kp_cond + sway
+            
+            # 3. Micro-Brow Jitters (Indices 15, 16, 18)
+            # These are critical for avoiding "wax figure" look.
+            brow_indices = [15, 16, 18]
+            brow_jitter = np.random.normal(0, 0.015, (len(brow_indices), 3)).astype(np.float32)
             
             # [Update v1.9.103] Reduced to 10% (0.1) to allow more natural secondary motion.
             gravity = 0.1
             
             next_pose = last_pose + noise + self.brownian_pos
-            self.kp_cond = next_pose * (1.0 - gravity) + self.s_kp_cond * gravity
+            # Inject jitter into specific points
+            for i, idx_in_kp in enumerate(brow_indices):
+                if idx_in_kp < next_pose.shape[1]:
+                    next_pose[:, idx_in_kp] += brow_jitter[i]
+
+            self.kp_cond = next_pose * (1.0 - gravity) + current_s_kp * gravity
             
         elif self.fix_kp_cond > 0:
             if self.clip_idx % self.fix_kp_cond == 0:  # 重置
@@ -216,26 +240,28 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.104] Pose Warping (Anti-Teleport)
-        # If we are appending to a sequence, check for jumps
-        if res_kp_seq is not None:
+        # [v1.9.104/107] Persistence & Pose Warping (Anti-Teleport)
+        # Check for global continuity (even across audio batches)
+        effective_res_kp_seq = res_kp_seq
+        if effective_res_kp_seq is None and self.last_kp_frame is not None:
+             effective_res_kp_seq = self.last_kp_frame # Mock sequence for offset calc
+             
+        if effective_res_kp_seq is not None:
              # Calculate offset between last real frame and first new predicted frame
              # pred_kp_seq shape: [1, seq_frames, dim]
-             actual_last = res_kp_seq[:, -1:] # [1, 1, dim]
+             actual_last = effective_res_kp_seq[:, -1:] # [1, 1, dim]
              predicted_first = pred_kp_seq[:, 0:1] # [1, 1, dim]
              
              offset = actual_last - predicted_first # [1, 1, dim]
              
              # Apply decaying warp to the new sequence
-             # We want to return to the model's path over ~40 frames
-             warp_len = min(40, pred_kp_seq.shape[1])
+             # We want to return to the model's path over ~50 frames (v1.9.107: longer decay)
+             decay_len = 50
+             warp_len = min(decay_len, pred_kp_seq.shape[1])
              weights = np.linspace(1.0, 0.0, warp_len).reshape(1, -1, 1)
              
              # Apply offset to warp zone
              pred_kp_seq[:, :warp_len] += offset * weights
-             # For frames after warp_len, offset is 0. 
-             # But offset affects ALL coordinates equally to maintain trajectory.
-             # Actually, applying it only to the beginning is enough to bridge the gap.
 
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq   # [1, seq_frames, dim]
@@ -245,6 +271,9 @@ class Audio2Motion:
             res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=None, step_len=step_len)
             
             res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - step_len - self.fuse_length, res_kp_seq.shape[1])
+        
+        # Store for next batch
+        self.last_kp_frame = res_kp_seq[:, -1:]
 
         self.clip_idx += 1
 

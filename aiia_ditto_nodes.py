@@ -747,11 +747,17 @@ class AIIA_DittoSampler:
             # Micro-Motion: Inject subtle head sway during silence to prevent "dead static" look.
             # Only applied when alpha < 1.0.
             
-            idle_amp = 4.5 # Degrees [v1.9.105] (Was 4.0, but Pitch removed, so boosting others)
+            idle_amp = 4.5 
+            
+            # [v1.9.107] Persistence state for Sway Continuity
+            last_idle_pitch = 0.0
+            last_idle_yaw = 0.0
+            last_idle_roll = 0.0
+            sway_decay_remaining = 0
+            DECAY_FRAMES = 25 # ~1.0s
             
             for i in range(num_frames):
                 alpha = float(dataset_alpha[i])
-                # Clip just in case
                 alpha = max(0.0, min(1.0, alpha))
                 
                 info_dict = {}
@@ -767,13 +773,20 @@ class AIIA_DittoSampler:
                     idle_weight = (1.0 - alpha)
                     
                     t = i / 25.0
-                    # [Update v1.9.105] Sway Decouppling:
-                    # Pitch is removed from idle sway to prevent "Uptilt" (昂首) during silence.
-                    d_pitch = 0.0
+                    # [Update v1.9.107] Restricted Pitch Sway:
+                    # Slow (0.3Hz) and shallow (-2.0 to +0.5 range) to simulate breathing.
+                    d_pitch = (math.sin(t * 0.3) - 0.5) * 1.5 * idle_weight
+                    
                     # Yaw: Slower Base (0.6) + Faster Overlay (2.2)
                     d_yaw = (math.sin(t * 0.6) * 0.8 + math.sin(t * 2.2) * 0.2) * idle_amp * idle_weight
                     # Roll: Tiny tilted breathing (0.4 frequency)
                     d_roll = math.cos(t * 0.4) * 0.5 * idle_weight 
+                    
+                    # Store for continuity
+                    last_idle_pitch = d_pitch
+                    last_idle_yaw = d_yaw
+                    last_idle_roll = d_roll
+                    sway_decay_remaining = DECAY_FRAMES
                     
                     # [Feature v1.9.49] Mouth Micro-Motion (Breathing)
                     # Refined: Positive-Only sine wave to prevent "Pursed Lips" (Negative Offset).
@@ -795,6 +808,19 @@ class AIIA_DittoSampler:
                     info_dict["delta_yaw"] = hd_rot_y + d_yaw
                     info_dict["delta_roll"] = hd_rot_r + d_roll
                     info_dict["delta_mouth"] = d_mouth # Additive offset for mouth
+                else:
+                    # [v1.9.107] Sway Continuity: Decay last idle offset during speech onset
+                    if sway_decay_remaining > 0:
+                        decay_alpha = sway_decay_remaining / float(DECAY_FRAMES)
+                        info_dict["delta_pitch"] = hd_rot_p + last_idle_pitch * decay_alpha
+                        info_dict["delta_yaw"] = hd_rot_y + last_idle_yaw * decay_alpha
+                        info_dict["delta_roll"] = hd_rot_r + last_idle_roll * decay_alpha
+                        sway_decay_remaining -= 1
+                    else:
+                        # Standard Speech (No idle influence)
+                        info_dict["delta_pitch"] = hd_rot_p
+                        info_dict["delta_yaw"] = hd_rot_y
+                        info_dict["delta_roll"] = hd_rot_r
                     
                 if info_dict:
                      ctrl_info[i] = info_dict
