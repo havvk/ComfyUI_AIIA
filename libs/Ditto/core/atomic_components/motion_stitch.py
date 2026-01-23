@@ -628,6 +628,14 @@ class MotionStitch:
                 delta_eye[..., 34] = safe_right_blink * 1.0
                 delta_eye[..., 46] = safe_right_blink * 1.0
                 
+                # [Diagnostic v1.9.88] Mesh Coupling Test
+                # DISABLE BLINK to see if twitch stops.
+                # If twitch stops -> Blink KP is dragging mouth mesh (Mesh Coupling).
+                # If twitch persists -> Twitch is from elsewhere.
+                delta_eye[..., 34] = 0.0
+                delta_eye[..., 46] = 0.0
+                print(f"[AIIA DIAG] Frame {self.idx}: BLINK DISABLED for Mesh Coupling Test")
+                
                 # 4. Restore Gaze (Original Strength)
                 delta_eye[..., 39:42] = safe_gaze
 
