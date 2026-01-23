@@ -613,27 +613,39 @@ class MotionStitch:
             if self.idx % 30 == 0:
                 print(f"[AIIA SHAPE] Frame {self.idx}: delta_eye shape = {delta_eye.shape}")
 
-            # [Diagnostic v1.9.73] Find Active Channels
-            # Scan all channels to find which one is actually blinking.
-            # We suspect Index 11 is NOT the eyelid in this 63-channel model.
-            max_idx = int(np.argmax(delta_eye))
-            max_val = float(delta_eye.flat[max_idx])
+            # [Fix v1.9.74] Targeted Twitch Removal & Blink Boost
+            # Diagnostics revealed:
+            # - Index 46 (KP 15 Squint): ~0.018 (Too Strong -> Twitch)
+            # - Index 34 (KP 11 EyeL): ~0.015 (Too Weak -> Partial Blink)
+            #
+            # Solution:
+            # 1. Kill Squint (KP 15 / Indices 45-47)
+            # 2. Boost Eyelid (KP 11 / Indices 33-35)
+            # 3. Apply to KP 13 (EyeR) just in case (Indices 39-41)
             
-            if max_val > 0.01:
-                # Find top 5 active indices in the (1, 63) array
-                # Note: using flatten() to handle (1, 63) or (63,)
-                flat_arr = delta_eye.flatten()
-                top_indices = np.argsort(flat_arr)[-5:][::-1]
-                
-                print(f"\n[AIIA BLINK DETECT] Frame {self.idx} (Shape {delta_eye.shape})")
-                for i in top_indices:
-                    val = float(flat_arr[i])
-                    if val > 0.001: # Only print significant ones
-                        print(f"  > Index {i}: {val:.4f}")
-                
-                self._log_blink_output = True
-            else:
-                self._log_blink_output = False
+            # --- Suppression ---
+            # Suppress KP 15 (indices 45, 46, 47)
+            if delta_eye.shape[-1] > 47:
+                delta_eye[..., 45:48] *= 0.0
+            
+            # Suppress KP 16 (indices 48-50) & KP 18 (indices 54-56) if present
+            if delta_eye.shape[-1] > 56:
+                delta_eye[..., 48:51] *= 0.0
+                delta_eye[..., 54:57] *= 0.0
+
+            # --- Boosting ---
+            # Boost KP 11 (EyeL, indices 33-35)
+            if delta_eye.shape[-1] > 35:
+                delta_eye[..., 33:36] *= 2.5 
+            
+            # Boost KP 13 (EyeR, indices 39-41)
+            if delta_eye.shape[-1] > 41:
+                delta_eye[..., 39:42] *= 2.5
+
+            # [AIIA] Minimal Logging to confirm fix
+            if self.idx % 60 == 0:
+                 max_val = float(delta_eye.max())
+                 print(f"[AIIA v1.9.74] Frame {self.idx}: Blink Fix Applied. Max Signal: {max_val:.4f}")
 
 
 
