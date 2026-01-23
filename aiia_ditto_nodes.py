@@ -363,7 +363,7 @@ class ComfyStreamSDK(StreamSDK):
         if total_frames > 0:
             self.pbar = ProgressBar(total_frames)
             # Force tqdm to stdout so it appears in ComfyUI console logs
-            self.console_pbar = tqdm(total=total_frames, desc="[Ditto] Generating", unit="frame", file=sys.stdout)
+            self.console_pbar = tqdm(total=total_frames, desc="[Ditto] Generating", unit="frame", file=sys.stdout, disable=True)
         else:
             self.pbar = None
             self.console_pbar = None

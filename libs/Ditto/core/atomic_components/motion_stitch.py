@@ -726,11 +726,11 @@ class MotionStitch:
         elif drift_val < -1.5:
             x_d_info['roll'] = ref_roll - 1.5
             
-        # Diagnostic Logging
-        if self.idx % 25 == 0:
-            c_roll = float(np.mean(x_d_info['roll']))
-            r_roll = float(np.mean(ref_roll))
-            print(f"[Ditto Tilt Diag] Frame {self.idx}: CurRoll={c_roll:.2f}° | RefRoll={r_roll:.2f}° | Drift={c_roll-r_roll:.2f}°")
+        # Diagnostic Logging (Supressed v1.9.78 for Scanner Clarity)
+        # if self.idx % 25 == 0:
+        #     c_roll = float(np.mean(x_d_info['roll']))
+        #     r_roll = float(np.mean(ref_roll))
+        #     print(f"[Ditto Tilt Diag] Frame {self.idx}: CurRoll={c_roll:.2f}° | RefRoll={r_roll:.2f}° | Drift={c_roll-r_roll:.2f}°")
 
         if self.x_s is not None:
             x_s = self.x_s
