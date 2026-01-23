@@ -638,22 +638,26 @@ class MotionStitch:
                 # Detect Blink Strength (Avg of Index 34)
                 blink_strength = float(safe_right_blink.mean())
                 
-                # [Fix v1.9.86] Statue Mode v2 (Exp Locked, Pose Free)
-                # Issue: Freezing Pose/Trans causes "Snap to Ref" if head moved.
-                # Solution: Freeze EXPRESSION only (Mouth/Jaw) to Reference.
-                #           Allow Head Pose (Yaw/Pitch/Roll) to move naturally.
+                # [Fix v1.9.87] Statue Mode v3 (Motion Hold)
+                # Issue: v1.9.85 snapped to Reference (Jarring). v1.9.86 had twitch (Head Jitter).
+                # Solution: Freeze Pose/Trans to PREVIOUS FRAME (T-1) during blink.
+                #           Freeze Expression to REFERENCE (Stable Mouth).
+
+                # Init state if missing (runtime safety)
+                if not hasattr(self, 'last_safe_pose'):
+                    self.last_safe_pose = None
 
                 if blink_strength > 0.002: 
                      # Ratio logic
                      ratio = (blink_strength - 0.002) / 0.008 
                      ratio = min(max(ratio, 0.0), 1.0)
                      
-                     # Dampen Strength: 95%
+                     # 95% Lock strength
                      damp_strength = ratio * 0.95
                      
-                     # 1. EXP FREEZE: Freezing Gaze (39-41) too. Only Blink Moves.
+                     # 1. EXP FREEZE: Lock Mouth/Jaw to REFERENCE (Stable)
                      all_indices = np.arange(63)
-                     protected = [34, 46] # ONLY 34 and 46 are safe.
+                     protected = [34, 46] # ONLY 34 and 46 can move
                      target_indices = np.setdiff1d(all_indices, protected)
                      
                      ref_exp = x_s_info["exp"]
@@ -661,12 +665,32 @@ class MotionStitch:
                      ref_vals = ref_exp[:, target_indices] if ref_exp.ndim == 2 else ref_exp[target_indices]
                      x_d_info["exp"][:, target_indices] = current_vals * (1.0 - damp_strength) + ref_vals * damp_strength
 
-                     # 2. POSE RELEASED (v1.9.86): Removed Pose Freezing Loop.
-                     # This prevents the "Snap to Reference" artifact.
+                     # 2. POSE MOTION HOLD: Lock Head to T-1 (Previous Safe Frame)
+                     if self.last_safe_pose is not None:
+                         keys_to_freeze = ["yaw", "pitch", "roll", "t", "root_pose"]
+                         for k in keys_to_freeze:
+                             if k in x_d_info and k in self.last_safe_pose:
+                                 # Blend towards T-1 Pose
+                                 curr_k = x_d_info[k]
+                                 prev_k = self.last_safe_pose[k]
+                                 x_d_info[k] = curr_k * (1.0 - damp_strength) + prev_k * damp_strength
 
-                     # Debug Log
+                     # Log
                      if damp_strength > 0.1:
-                         print(f"[AIIA FREEZE] Frame {self.idx}: Blink={blink_strength:.4f} | Exp Locked to Ref x{damp_strength:.2f}")
+                         print(f"[AIIA FREEZE] Frame {self.idx}: Blink={blink_strength:.4f} | Motion Hold Active x{damp_strength:.2f}")
+                
+                else:
+                    # NOT Blinking: Update Last Safe Pose
+                    # Store deep copy of current pose variables
+                    self.last_safe_pose = {}
+                    keys_to_store = ["yaw", "pitch", "roll", "t", "root_pose"]
+                    for k in keys_to_store:
+                        if k in x_d_info:
+                             # detach/cpu/numpy copy just in case, though x_d_info is usually numpy/tensor
+                             val = x_d_info[k]
+                             if hasattr(val, 'clone'): val = val.clone()
+                             if hasattr(val, 'copy'): val = val.copy()
+                             self.last_safe_pose[k] = val
                      
                      # Also dampen "Sneer" or other cheek muscles if possible (Index 8/9?)
                      # For now, targeting corners (6/12) is most critical.
