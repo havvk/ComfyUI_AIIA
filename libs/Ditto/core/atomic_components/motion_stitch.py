@@ -630,15 +630,16 @@ class MotionStitch:
             self.drive_eye
         )
         
-        # [Fix v1.9.90] Post-Fix Mirror: Copy Right Eye (KP 11) -> Left Eye (KP 15)
-        # _eye is now [11, 13] only, which produces Right Eye blink with NO mouth twitch.
-        # Here we copy the final Right Eye expression to the Left Eye position.
+        # [Fix v1.9.91] Surgical Blink Mirror: Copy ONLY Index 34 -> Index 46
+        # v1.9.90 copied entire KP 11 (33-35) -> KP 15 (45-47), causing gaze artifact.
+        # This version copies ONLY the blink component (Y = Index 34,46).
+        # Indices 45, 47 (gaze X, Z for Left Eye) are preserved from original.
         # KP 11 = indices 33, 34, 35 (Right Eye)
         # KP 15 = indices 45, 46, 47 (Left Eye)
         if self.drive_eye:
-            x_d_info["exp"][:, 45:48] = x_d_info["exp"][:, 33:36].copy()
+            x_d_info["exp"][:, 46] = x_d_info["exp"][:, 34].copy()  # Blink Y only
             if self.idx % 100 == 0:
-                print(f"[AIIA v1.9.90] Frame {self.idx}: Right Eye -> Left Eye Mirror Applied")
+                print(f"[AIIA v1.9.91] Frame {self.idx}: Blink Mirror (34->46) Applied")
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 
