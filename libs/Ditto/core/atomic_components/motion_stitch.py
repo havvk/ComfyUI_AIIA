@@ -449,8 +449,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.67] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.67. Anti-Twitch 2.0x active.")
+        # [Debug v1.9.68] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.68. Anti-Twitch 1.2x + Runtime Logging.")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -633,7 +633,14 @@ class MotionStitch:
                 # We apply a negative force to Mouth Corners (6/12) proportional to Blink Strength.
                 # Note: We modify x_d_info directly because we want this to layer ON TOP of whatever the mouth is doing.
                 blink_strength = (delta_eye[..., 11] + delta_eye[..., 13]) * 0.5 # Average blink strength
-                correction = blink_strength * 2.0 # [Fix v1.9.67] Boosted to 2.0 (Triple Force)
+                correction = blink_strength * 1.2 # [Fix v1.9.68] Tuned to 1.2 (Search for "Goldilocks" zone)
+                
+                # Debug v1.9.68
+                if self.idx % 15 == 0 and np.any(correction != 0):
+                    b_val = float(blink_strength.mean()) if hasattr(blink_strength, 'mean') else float(blink_strength)
+                    c_val = float(correction.mean()) if hasattr(correction, 'mean') else float(correction)
+                    print(f"[AIIA BlinkFix] Frame {self.idx}: BlinkStr={b_val:.3f} -> CounterForce={c_val:.3f}")
+
 
                 
                 # Apply DOWNWARD push to corners to counteract the blink's upward pull
