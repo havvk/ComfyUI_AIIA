@@ -117,6 +117,12 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
     """
     OPEN_MIN = interval_min
     OPEN_MAX = interval_max
+    
+    # [AIIA Diagnostic] Log parameter flow
+    print(f"[AIIA Blink Logic] _set_eye_blink_idx: N={N}, interval={OPEN_MIN}-{OPEN_MAX}, speech_only={speech_only_blink}, VAD={'Set' if vad_timeline is not None else 'None'}")
+    if vad_timeline is not None:
+        vad_sum = np.sum(vad_timeline > 0.1)
+        print(f"  > VAD Stats: {vad_sum} frames of speech / {len(vad_timeline)} total")
 
     idx = [0] * N
     if isinstance(open_n, int):
@@ -138,7 +144,8 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
         scan_start = 0
         while scan_start < len(vad_timeline) and vad_timeline[scan_start] <= 0.1:
             scan_start += 1
-        cur_i = scan_start + random.randint(12, 36)
+        # First blink: User expectation or random start
+        cur_i = scan_start + random.randint(OPEN_MIN, OPEN_MAX)
     else:
         start_n = open_ns[0] if open_ns else random.randint(OPEN_MIN, OPEN_MAX)
         cur_i = start_n
@@ -211,28 +218,27 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
             if vad_timeline is not None:
                 if speech_only_blink:
                     # Speech-Only Mode: Scan ahead to find next speech segment
+                    # IMPORTANT: After finding speech, we MUST add the random interval.
                     scan_start = cur_i
                     while scan_start < len(vad_timeline) and vad_timeline[scan_start] <= 0.1:
-                        scan_start += 1  # Skip silence
+                        scan_start += 1
                     
                     if scan_start >= len(vad_timeline):
-                        # No more speech, stop inserting blinks
                         break
                     
-                    # Jump to speech segment, then add short delay (0.5-1.5s = 12-36 frames)
-                    cur_i = scan_start + random.randint(12, 36)
-                    cur_n = 0  # Already jumped, no additional interval
+                    # Next blink: interval_min to interval_max
+                    cur_i = scan_start + random.randint(OPEN_MIN, OPEN_MAX)
+                    cur_n = 0 
                 else:
-                    # Natural Mode: Use different intervals for speech/silence
+                    # Natural Mode: Scale user intervals based on speech
                     is_speaking = vad_timeline[cur_i] > 0.1 if cur_i < len(vad_timeline) else False
                     if is_speaking:
-                        # Speaking: Moderate Blink (3.2s - 4.8s)
-                        cur_n = random.randint(80, 120)
+                        # Speaking: Standard Interval (e.g. 2.4s - 4.0s)
+                        cur_n = random.randint(OPEN_MIN, OPEN_MAX)
                     else:
-                        # Silence: Relaxed Blink (4.8s - 7.2s)
-                        cur_n = random.randint(120, 180)
+                        # Silence: Relaxed Interval (1.5x longer)
+                        cur_n = random.randint(int(OPEN_MIN * 1.5), int(OPEN_MAX * 1.5))
             else:
-                # No VAD, use standard interval
                 cur_n = random.randint(OPEN_MIN, OPEN_MAX)
 
         cur_i += cur_n
