@@ -220,7 +220,7 @@ def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
 
 
 
-    _lip = [] # [Fix v1.9.65] DIAGNOSTIC: Total Lip Suppression. Disable Talk to isolate twitch.
+    _lip = [6, 12, 14, 17, 19, 20] # [Restored v1.9.66] Re-enable Talking.
 
     alpha = np.zeros((21, 3), dtype=x_d_info["exp"].dtype)
     alpha[_lip] = 1
@@ -431,7 +431,7 @@ class MotionStitch:
         _eye = [11, 13, 15, 16, 18] # [Fix v1.9.63] Restore Full Mask.
 
 
-        _lip = [] # [Fix v1.9.65] DIAGNOSTIC: Total Lip Suppression.
+        _lip = [6, 12, 14, 17, 19, 20] # [Restored v1.9.66] Re-enable Talking.
 
         _a1 = np.zeros((21, 3), dtype=np.float32)
         _a1[_lip] = 1
@@ -449,8 +449,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.65] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.65. _lip={_lip} (Should be []), _eye={_eye}")
+        # [Debug v1.9.66] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.66. _lip={_lip} (Restored), _eye={_eye}")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -627,6 +627,25 @@ class MotionStitch:
                 delta_eye[..., 15] = 0
                 delta_eye[..., 16] = 0
                 delta_eye[..., 18] = 0
+                
+                # [Feature v1.9.66] Mechanical Counter-Force (Anti-Twitch)
+                # Since twitch persists even when Lip Indices are 0, it is a geometric side-effect of Blink (11/13).
+                # We apply a negative force to Mouth Corners (6/12) proportional to Blink Strength.
+                # Note: We modify x_d_info directly because we want this to layer ON TOP of whatever the mouth is doing.
+                blink_strength = (delta_eye[..., 11] + delta_eye[..., 13]) * 0.5 # Average blink strength
+                correction = blink_strength * 0.5 # Factor 0.5 (Tune this: 0.3 to 0.8)
+                
+                # Apply DOWNWARD push to corners to counteract the blink's upward pull
+                # We apply this to the deltas or pre-blend?
+                # Actually, delta_eye is applied inside _fix_exp. We prefer to modify the *input* to _fix_exp?
+                # No, better to modify delta_mouth? No, delta_mouth is outside.
+                # Let's modify x_d_info['exp'] after _fix_exp.
+                # But wait, we are INSIDE the blink block here. We have access to delta_eye.
+                # We can store this correction and apply it later.
+                self.anti_twitch_correction = correction
+            else:
+                self.anti_twitch_correction = 0
+
 
 
 
@@ -645,6 +664,14 @@ class MotionStitch:
             delta_eye,
             self.drive_eye
         )
+        
+        # [Feature v1.9.66] Apply Mechanical Counter-Force (Anti-Twitch)
+        # Apply strict downward force to mouth corners proportional to blink strength.
+        if hasattr(self, 'anti_twitch_correction') and isinstance(self.anti_twitch_correction, (int, float, np.ndarray)):
+             if np.any(self.anti_twitch_correction != 0):
+                x_d_info["exp"][:, 6] -= self.anti_twitch_correction
+                x_d_info["exp"][:, 12] -= self.anti_twitch_correction
+
 
         x_d_info = ctrl_motion(x_d_info, **kwargs)
         
