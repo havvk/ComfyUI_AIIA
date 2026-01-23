@@ -623,9 +623,10 @@ class MotionStitch:
                 # 2. NUKE THE BOARD (Zero out pure twitch/noise)
                 delta_eye[...] *= 0.0
                 
-                # 3. Restore & Mirror Blink (Soft Boost 1.8x)
-                delta_eye[..., 34] = safe_right_blink * 1.8
-                delta_eye[..., 46] = safe_right_blink * 1.8
+                # 3. Restore & Mirror Blink (Native Strength 1.0x)
+                # User confirmed original strength was fine, just one-eyed.
+                delta_eye[..., 34] = safe_right_blink * 1.0
+                delta_eye[..., 46] = safe_right_blink * 1.0
                 
                 # 4. Restore Gaze (Original Strength)
                 delta_eye[..., 39:42] = safe_gaze
@@ -637,14 +638,18 @@ class MotionStitch:
                 # Detect Blink Strength (Avg of Index 34)
                 blink_strength = float(safe_right_blink.mean())
                 
-                if blink_strength > 0.1: # If blinking
-                     # Dampen Factor: Stronger dampening for stronger blink.
-                     # Max dampening 0.2 (retain 20% motion)
-                     damp_factor = max(0.2, 1.0 - (blink_strength * 4.0)) 
+                # [Fix v1.9.82] Lower Threshold significantly (0.1 -> 0.005)
+                # Actual signals are ~0.02, so 0.1 never triggered.
+                if blink_strength > 0.005: 
+                     # Dampen Logic: Stronger blink = Stronger dampening.
+                     # Scale: 0.005 -> 0.02 range mapping to 1.0 -> 0.2 factor
+                     ratio = (blink_strength - 0.005) / 0.015 # 0.0 to 1.0
+                     ratio = min(max(ratio, 0.0), 1.0)
+                     
+                     damp_factor = 1.0 - (ratio * 0.8) # 1.0 down to 0.2
                      
                      # Indices to Dampen:
                      # 6 (CornerL), 12 (CornerR), 14 (Lip), 17, 19, 20 (Mouth)
-                     # (KP 15/16/18 are eyes, so we skip them)
                      mouth_indices = [6, 12, 14, 17, 19, 20]
                      
                      x_d_info["exp"][:, mouth_indices] *= damp_factor
