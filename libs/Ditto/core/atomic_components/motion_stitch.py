@@ -638,40 +638,41 @@ class MotionStitch:
                 # Detect Blink Strength (Avg of Index 34)
                 blink_strength = float(safe_right_blink.mean())
                 
-                # [Fix v1.9.84] Nuclear Mouth Dampening (Fade to Reference)
-                # Issue: Multiplying by ~0 forces Generic Neutral, causing "Smile -> Neutral -> Smile" twitch.
-                # Solution: Blend towards x_s_info (Reference Face) to FREEZE expression in place.
-                # Scope: ALL Indices except Eyes (to catch jaw/cheeks).
+                # [Fix v1.9.85] Total Facial Freeze (The "Statue" Fix)
+                # Issue: Mouth twitch persists. Suspect Pose Jitter or Cheek Coupling.
+                # Solution: Freeze EVERYTHING (Exp, Pose, Trans) to Reference during blink.
+                # Only Indices 34 & 46 (Blink) are allowed to move.
 
                 if blink_strength > 0.002: 
                      # Ratio logic
                      ratio = (blink_strength - 0.002) / 0.008 
                      ratio = min(max(ratio, 0.0), 1.0)
                      
-                     # Dampening Strength (0.0 to 0.95)
-                     # 0.95 means "95% Reference, 5% Motion"
+                     # Dampen Strength: 95%
                      damp_strength = ratio * 0.95
                      
-                     # INDICES TO FREEZE:
-                     # All 63 coefficients...
+                     # 1. EXP FREEZE: Freezing Gaze (39-41) too. Only Blink Moves.
                      all_indices = np.arange(63)
-                     # ...EXCEPT the ones we are actively driving/protecting:
-                     # 34 (Right Blink), 46 (Left Blink), 39,40,41 (Gaze)
-                     protected = [34, 46, 39, 40, 41]
+                     protected = [34, 46] # ONLY 34 and 46 are safe.
                      target_indices = np.setdiff1d(all_indices, protected)
                      
-                     # Blend: Current = Current * (1-S) + Reference * S
-                     # Note: x_s_info['exp'] might be (1, 63) or (63,)
                      ref_exp = x_s_info["exp"]
-                     
                      current_vals = x_d_info["exp"][:, target_indices]
                      ref_vals = ref_exp[:, target_indices] if ref_exp.ndim == 2 else ref_exp[target_indices]
-                     
                      x_d_info["exp"][:, target_indices] = current_vals * (1.0 - damp_strength) + ref_vals * damp_strength
+
+                     # 2. POSE FREEZE: Freeze Head Rotation & Translation to Reference
+                     # This stops "Nodding Twitch"
+                     keys_to_freeze = ["yaw", "pitch", "roll", "t", "root_pose"]
+                     for k in keys_to_freeze:
+                         if k in x_d_info and k in x_s_info:
+                             curr_k = x_d_info[k]
+                             ref_k = x_s_info[k]
+                             x_d_info[k] = curr_k * (1.0 - damp_strength) + ref_k * damp_strength
 
                      # Debug Log
                      if damp_strength > 0.1:
-                         print(f"[AIIA DAMP] Frame {self.idx}: Blink={blink_strength:.4f} | Freezing Face to Ref x{damp_strength:.2f}")
+                         print(f"[AIIA FREEZE] Frame {self.idx}: Blink={blink_strength:.4f} | Statue Mode x{damp_strength:.2f}")
                      
                      # Also dampen "Sneer" or other cheek muscles if possible (Index 8/9?)
                      # For now, targeting corners (6/12) is most critical.
