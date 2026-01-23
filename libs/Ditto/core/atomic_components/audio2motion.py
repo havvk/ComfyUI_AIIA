@@ -109,6 +109,8 @@ class Audio2Motion:
         self.lmdm.setup(sampling_timesteps)
 
         self.clip_idx = 0
+        self.warp_offset = None
+        self.brownian_pos = np.zeros_like(self.kp_cond)
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         ## ========================
@@ -152,18 +154,19 @@ class Audio2Motion:
             # Problem: Feeding back smoothed output causes variance decay (EMA effect), leading to stasis.
             # Solution: Inject micro-noise to keep the 'cascading generation' alive.
             last_pose = res_kp_seq[:, idx-1]
-            # [Update v1.9.103] Re-enabled noise injection to keep motion alive
-            noise_scale = 0.002 
+            # [Update v1.9.104] Dynamic Vitality: Increased noise (0.005) + Brownian Drift
+            noise_scale = 0.005 
             noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
             
-            # [Feature v1.9.50] Gravity Well (Anti-Drift)
-            # Problem: Autoregressive generation accumulates error, causing head to drift off-screen over time.
-            # Solution: Gently pull the pose back towards the Reference Pose (s_kp_cond) every frame.
-            # [Update v1.9.58] Increased to 50% (0.5) because valid_clip_len is long (~70 frames), so correction is infrequent.
+            # Brownian Drift: Cumulative random walk to prevent long-term stasis
+            # We use a very small scale (0.001) so it doesn't walk off screen too fast
+            drift = np.random.normal(0, 0.001, last_pose.shape).astype(np.float32)
+            self.brownian_pos += drift
+            
             # [Update v1.9.103] Reduced to 10% (0.1) to allow more natural secondary motion.
             gravity = 0.1
             
-            next_pose = last_pose + noise
+            next_pose = last_pose + noise + self.brownian_pos
             self.kp_cond = next_pose * (1.0 - gravity) + self.s_kp_cond * gravity
             
         elif self.fix_kp_cond > 0:
@@ -213,9 +216,27 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [Removed] Warping logic is no longer needed because we don't reset kp_cond.
-        # The model naturally continues from its current state, so no discontinuity exists.
-              
+        # [v1.9.104] Pose Warping (Anti-Teleport)
+        # If we are appending to a sequence, check for jumps
+        if res_kp_seq is not None:
+             # Calculate offset between last real frame and first new predicted frame
+             # pred_kp_seq shape: [1, seq_frames, dim]
+             actual_last = res_kp_seq[:, -1:] # [1, 1, dim]
+             predicted_first = pred_kp_seq[:, 0:1] # [1, 1, dim]
+             
+             offset = actual_last - predicted_first # [1, 1, dim]
+             
+             # Apply decaying warp to the new sequence
+             # We want to return to the model's path over ~40 frames
+             warp_len = min(40, pred_kp_seq.shape[1])
+             weights = np.linspace(1.0, 0.0, warp_len).reshape(1, -1, 1)
+             
+             # Apply offset to warp zone
+             pred_kp_seq[:, :warp_len] += offset * weights
+             # For frames after warp_len, offset is 0. 
+             # But offset affects ALL coordinates equally to maintain trajectory.
+             # Actually, applying it only to the beginning is enough to bridge the gap.
+
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq   # [1, seq_frames, dim]
             res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
