@@ -126,6 +126,7 @@ class StreamSDK:
         self.ctrl_info = kwargs.get("ctrl_info", dict())
         self.overall_ctrl_info = kwargs.get("overall_ctrl_info", dict())
         self.vad_timeline = kwargs.get("vad_timeline", None)
+        self.speech_only_blink = kwargs.get("speech_only_blink", False)
         self.seed = kwargs.get("seed", 42)
         """
         ctrl_info: list or dict
@@ -203,6 +204,7 @@ class StreamSDK:
             ch_info=self.ch_info,
             overall_ctrl_info=self.overall_ctrl_info,
             vad_timeline=self.vad_timeline,
+            speech_only_blink=getattr(self, 'speech_only_blink', False),
         )
 
         # ======== Video Writer ========

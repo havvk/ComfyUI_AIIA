@@ -104,13 +104,16 @@ def _mix_s_d_info(
     return x_d_info
 
 
-def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=100, vad_timeline=None):
+def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=100, vad_timeline=None, speech_only_blink=False):
     """
     open_n:
         -1: no blink
         0: random open_n
         >0: fix open_n
         list: loop open_n
+    speech_only_blink:
+        True: Only insert blinks during speech segments (VAD > 0.1)
+        False: Use natural intervals (faster during speech, slower during silence)
     """
     OPEN_MIN = interval_min
     OPEN_MAX = interval_max
@@ -190,27 +193,40 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
              idx[cur_i : cur_i + full_len_2] = full_blink_seq_2
              cur_i += full_len_2
 
-        # Long Interval (Standard)
-        # Long Interval (Standard)
+        # [v1.9.92] Speech-Only Blink: Only insert blinks during speech.
+        # This masks mesh coupling artifacts naturally.
         if open_ns:
             cur_n = open_ns[cur_n_i % len(open_ns)]
             cur_n_i += 1
         else:
-            # Dynamic Interval based on VAD
-            if vad_timeline is not None and cur_i < len(vad_timeline):
-                 is_speaking = vad_timeline[cur_i] > 0.1
-                 if is_speaking:
-                     # Speaking: Moderate Blink (3.2s - 4.8s)
-                     cur_n = random.randint(80, 120)
-                 else:
-                     # Silence: Relaxed Blink (4.8s - 7.2s)
-                     cur_n = random.randint(120, 180)
+            if vad_timeline is not None:
+                if speech_only_blink:
+                    # Speech-Only Mode: Scan ahead to find next speech segment
+                    scan_start = cur_i
+                    while scan_start < len(vad_timeline) and vad_timeline[scan_start] <= 0.1:
+                        scan_start += 1  # Skip silence
+                    
+                    if scan_start >= len(vad_timeline):
+                        # No more speech, stop inserting blinks
+                        break
+                    
+                    # Jump to speech segment, then add short delay (0.5-1.5s = 12-36 frames)
+                    cur_i = scan_start + random.randint(12, 36)
+                    cur_n = 0  # Already jumped, no additional interval
+                else:
+                    # Natural Mode: Use different intervals for speech/silence
+                    is_speaking = vad_timeline[cur_i] > 0.1 if cur_i < len(vad_timeline) else False
+                    if is_speaking:
+                        # Speaking: Moderate Blink (3.2s - 4.8s)
+                        cur_n = random.randint(80, 120)
+                    else:
+                        # Silence: Relaxed Blink (4.8s - 7.2s)
+                        cur_n = random.randint(120, 180)
             else:
-                 cur_n = random.randint(OPEN_MIN, OPEN_MAX)
+                # No VAD, use standard interval
+                cur_n = random.randint(OPEN_MIN, OPEN_MAX)
 
         cur_i += cur_n
-
-    return idx
 
     return idx
 
@@ -400,8 +416,10 @@ class MotionStitch:
         overall_ctrl_info=None,
         vad_timeline=None,
         blink_amp=1.0,
+        speech_only_blink=False,
     ):
         self.blink_amp = blink_amp
+        self.speech_only_blink = speech_only_blink
         self.vad_timeline = vad_timeline
         self.is_image_flag = is_image_flag
         if use_d_keys is None:
@@ -461,7 +479,8 @@ class MotionStitch:
                 self.delta_eye_open_n,
                 interval_min=blink_interval_min,
                 interval_max=blink_interval_max,
-                vad_timeline=self.vad_timeline
+                vad_timeline=self.vad_timeline,
+                speech_only_blink=self.speech_only_blink
             )
 
         self.pose_s = None
@@ -630,16 +649,9 @@ class MotionStitch:
             self.drive_eye
         )
         
-        # [Fix v1.9.91] Surgical Blink Mirror: Copy ONLY Index 34 -> Index 46
-        # v1.9.90 copied entire KP 11 (33-35) -> KP 15 (45-47), causing gaze artifact.
-        # This version copies ONLY the blink component (Y = Index 34,46).
-        # Indices 45, 47 (gaze X, Z for Left Eye) are preserved from original.
-        # KP 11 = indices 33, 34, 35 (Right Eye)
-        # KP 15 = indices 45, 46, 47 (Left Eye)
-        if self.drive_eye:
-            x_d_info["exp"][:, 46] = x_d_info["exp"][:, 34].copy()  # Blink Y only
-            if self.idx % 100 == 0:
-                print(f"[AIIA v1.9.91] Frame {self.idx}: Blink Mirror (34->46) Applied")
+        # [v1.9.92] Speech-Only Blink: Blink mirror removed.
+        # With blinks only occurring during speech, the mesh coupling artifact
+        # (slight mouth twitch) is naturally masked by speaking motion.
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 
