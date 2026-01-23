@@ -216,8 +216,12 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
 
 
 def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
-    _eye = [11, 13, 15, 16, 18] # [Restored v1.9.56] Restored Squint indices but attenuated them in __call__.
-    _lip = [6, 12, 14, 17, 19, 20]
+    _eye = [11, 13, 15, 16, 18] # [Fix v1.9.63] Restore Full Mask to Overwrite LMDM's twitchy output.
+
+
+
+    _lip = [] # [Fix v1.9.65] DIAGNOSTIC: Total Lip Suppression. Disable Talk to isolate twitch.
+
     alpha = np.zeros((21, 3), dtype=x_d_info["exp"].dtype)
     alpha[_lip] = 1
     if delta_eye is None and drive_eye:  # use d eye
@@ -424,8 +428,11 @@ class MotionStitch:
         self.fade_type = fade_type
         self.flag_stitching = flag_stitching
 
-        _eye = [11, 13, 15, 16, 18] # [Restored v1.9.56] Used for mask generation.
-        _lip = [6, 12, 14, 17, 19, 20]
+        _eye = [11, 13, 15, 16, 18] # [Fix v1.9.63] Restore Full Mask.
+
+
+        _lip = [] # [Fix v1.9.65] DIAGNOSTIC: Total Lip Suppression.
+
         _a1 = np.zeros((21, 3), dtype=np.float32)
         _a1[_lip] = 1
         _a2 = 0
@@ -441,6 +448,10 @@ class MotionStitch:
         self.fix_exp_a1 = _a1 * (1 - _a2)
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
+        
+        # [Debug v1.9.65] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.65. _lip={_lip} (Should be []), _eye={_eye}")
+
 
         if self.drive_eye and self.delta_eye_arr is not None:
             N = 3000 if self.N_d == -1 else self.N_d
@@ -597,13 +608,28 @@ class MotionStitch:
                 self.delta_eye_idx_list[self.idx % len(self.delta_eye_idx_list)]
             ][None] * self.blink_amp
             
-            # [Fix v1.9.57] Refined Blink: Removed 18 (Brow), Kept 15/16 (Squint) but attenuated.
-            # Index 18 (Brow Down) is the main culprit for Lip Pull (Levator Labii).
-            # Indices 15/16 (Squint) are needed for full eye closure but also pull cheeks.
-            # Attenuation 0.2 keeps the closure helper but kills the cheek motion.
-            squint_idx = [15, 16]
-            if delta_eye.shape[-1] > 16:
-                delta_eye[..., squint_idx] *= 0.2
+            # [Fix v1.9.63] Active Suppression & Teleportation.
+            # Problem: LMDM naturally outputs Twitch (15/16) with Blink. Masking them allowed LMDM to twitch.
+            # Fix: 
+            # 1. Restore Mask [11,13,15,16,18] to Overwrite LMDM.
+            # 2. Teleport Signal 15->11 and 16->13 (Use Squint energy to drive Eyelid).
+            # 3. Kill Signal 15/16/18 (Clamp Squint/Brow to Source).
+            if delta_eye.shape[-1] > 18:
+                # Capture Squint Energy (Factor 1.0)
+                s_l = delta_eye[..., 15] * 1.0
+                s_r = delta_eye[..., 16] * 1.0
+                
+                # Apply to Eyelid (Force Close)
+                delta_eye[..., 11] += s_l
+                delta_eye[..., 13] += s_r
+                
+                # Kill Squint & Brow (Force Static)
+                delta_eye[..., 15] = 0
+                delta_eye[..., 16] = 0
+                delta_eye[..., 18] = 0
+
+
+
             
         # [Feature v1.9.48] Apple Mouth Micro-Motion
         if "delta_mouth" in kwargs:
@@ -622,17 +648,7 @@ class MotionStitch:
 
         x_d_info = ctrl_motion(x_d_info, **kwargs)
         
-        # [Feature v1.9.52] Auto-Center Roll (Anti-Tilt)
-        # Strength increased to 0.3 (30%) in v1.9.56
-        ref_roll = bin66_to_degree(x_s_info['roll'])
-        
-        # Diagnostic Logging (User Request v1.9.54)
-        if self.idx % 25 == 0:
-            c_roll = float(x_d_info['roll'].mean())
-            r_roll = float(ref_roll.mean())
-            print(f"[Ditto Tilt Diag] Frame {self.idx}: CurRoll={c_roll:.2f}° | RefRoll={r_roll:.2f}° | Drift={c_roll-r_roll:.2f}°")
-            
-        x_d_info['roll'] = x_d_info['roll'] * 0.7 + ref_roll * 0.3
+        # [Moved v1.9.59] Auto-Center Moved to end of function.
 
 
         if self.fade_type == "d0" and self.fade_dst is None:
@@ -659,6 +675,32 @@ class MotionStitch:
                 pitch_s = bin66_to_degree(x_s_info['pitch']).item()
                 self.pose_s = [yaw_s, pitch_s]
             x_d_info = _fix_gaze(self.pose_s, x_d_info)
+
+        # [Feature v1.9.59] Auto-Center Roll (Anti-Tilt) + Hard Clamp (Late Stage)
+        # Applied at the very end of motion calculation (before transform) to ensure it sticks.
+        ref_roll = bin66_to_degree(x_s_info['roll'])
+        
+        # Spring Force (30%)
+        x_d_info['roll'] = x_d_info['roll'] * 0.7 + ref_roll * 0.3
+        
+        # Hard Clamp (Max 1.5 deg drift)
+        drift = x_d_info['roll'] - ref_roll
+        # Fix dimensions
+        if isinstance(drift, np.ndarray):
+            drift_val = drift.item() if drift.size == 1 else drift.mean()
+        else:
+            drift_val = drift
+            
+        if drift_val > 1.5:
+            x_d_info['roll'] = ref_roll + 1.5
+        elif drift_val < -1.5:
+            x_d_info['roll'] = ref_roll - 1.5
+            
+        # Diagnostic Logging
+        if self.idx % 25 == 0:
+            c_roll = float(np.mean(x_d_info['roll']))
+            r_roll = float(np.mean(ref_roll))
+            print(f"[Ditto Tilt Diag] Frame {self.idx}: CurRoll={c_roll:.2f}° | RefRoll={r_roll:.2f}° | Drift={c_roll-r_roll:.2f}°")
 
         if self.x_s is not None:
             x_s = self.x_s
