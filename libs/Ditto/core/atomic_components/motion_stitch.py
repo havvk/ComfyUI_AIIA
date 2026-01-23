@@ -614,14 +614,7 @@ class MotionStitch:
                 print(f"[AIIA SHAPE] Frame {self.idx}: delta_eye shape = {delta_eye.shape}")
 
             # [Fix v1.9.80] Surgical Blink Reconstruction (The "Clean Slate" Fix)
-            # Problem: Model's "Blink" leaks into KP 8, 14, 15 causing mouth twitch.
-            #          Previous fix only killed KP 15.
-            # Solution: 
-            # 1. Capture clean signals: Right Blink (Idx 34) & Gaze (Idx 39-41).
-            # 2. WIPE EVERYTHING (delta_eye *= 0) to guarantee no mouth leakage.
-            # 3. Restore & Mirror Clean Blink (1.8x soft boost).
-            # 4. Restore Gaze (1.0x).
-
+            # ... (Existing Clean Slate Logic) ...
             if delta_eye.shape[-1] > 47:
                 # 1. Capture Safe Signals
                 safe_right_blink = delta_eye[..., 34].copy() # KP 11
@@ -631,13 +624,33 @@ class MotionStitch:
                 delta_eye[...] *= 0.0
                 
                 # 3. Restore & Mirror Blink (Soft Boost 1.8x)
-                # Right Eye
                 delta_eye[..., 34] = safe_right_blink * 1.8
-                # Left Eye (Mirror) -> Vertical Channel (Index 46 from KP 15)
                 delta_eye[..., 46] = safe_right_blink * 1.8
                 
                 # 4. Restore Gaze (Original Strength)
                 delta_eye[..., 39:42] = safe_gaze
+
+                # [Fix v1.9.81] Active Mouth Dampener
+                # Issue: Mouth twitches even with Clean Slate. Source is x_d_info (Audio).
+                # Solution: If Blink is strong, dampen mouth expression in x_d_info.
+                
+                # Detect Blink Strength (Avg of Index 34)
+                blink_strength = float(safe_right_blink.mean())
+                
+                if blink_strength > 0.1: # If blinking
+                     # Dampen Factor: Stronger dampening for stronger blink.
+                     # Max dampening 0.2 (retain 20% motion)
+                     damp_factor = max(0.2, 1.0 - (blink_strength * 4.0)) 
+                     
+                     # Indices to Dampen:
+                     # 6 (CornerL), 12 (CornerR), 14 (Lip), 17, 19, 20 (Mouth)
+                     # (KP 15/16/18 are eyes, so we skip them)
+                     mouth_indices = [6, 12, 14, 17, 19, 20]
+                     
+                     x_d_info["exp"][:, mouth_indices] *= damp_factor
+                     
+                     # Also dampen "Sneer" or other cheek muscles if possible (Index 8/9?)
+                     # For now, targeting corners (6/12) is most critical.
 
 
 
