@@ -613,40 +613,37 @@ class MotionStitch:
             if self.idx % 30 == 0:
                 print(f"[AIIA SHAPE] Frame {self.idx}: delta_eye shape = {delta_eye.shape}")
 
-            # [Diagnostic v1.9.77] Keypoint Calibration Scanner
-            # Goal: Visually identify the Left Eye index.
-            # Strategy: Pulse each Keypoint (KP 5 to KP 19) sequentially every 30 frames.
-            # User checks video: "At Frame X, the Left Eye blinked."
+            # [Fix v1.9.79] Cross-Mirror Blink Fix (Final)
+            # Diagnosis from Scanner:
+            # - KP 11 (Indices 33-35) = Right Eye Blink (Clean).
+            # - KP 15 (Indices 45-47) = Left Eye Blink + SIDE EFFECTS (Twitch/Eye Pop).
+            # - KP 13 (Indices 39-41) = Eyeballs (Gaze).
+            #
+            # Solution:
+            # 1. Suppress KP 15 fully (45-47) to kill artifacts.
+            # 2. Cross-Mirror: Copy Clean Right (Index 34) to Left (Index 46).
+            # 3. Apply Boost (2.5x) to both.
             
-            # Reset delta_eye to pure input (remove previous fixes)
-            # (delta_eye is already passed in)
+            # --- 1. Suppression ---
+            if delta_eye.shape[-1] > 47:
+                delta_eye[..., 45:48] *= 0.0 # Kill KP 15 (Twitch Source)
             
-            # --- Scanner Logic ---
-            # Pulse duration: 10 frames
-            # Interval: 30 frames
-            scan_interval = 40
-            frame_in_cycle = self.idx % scan_interval
-            
-            if frame_in_cycle < 10: # Active Pulse Phase
-                cycle_num = self.idx // scan_interval
-                # Test KPs from 5 to 20 (Indices 15 to 60)
-                test_kp = 5 + (cycle_num % 16) # Testing KP 5, 6, ..., 20
+            # Kill KP 16 & 18 (Just in case)
+            if delta_eye.shape[-1] > 56:
+                delta_eye[..., 48:51] *= 0.0
+                delta_eye[..., 54:57] *= 0.0
+
+            # --- 2. Cross-Mirror & Boost ---
+            if delta_eye.shape[-1] > 46:
+                # KP 11 Main Index is 34 (33, 34, 35).
+                # KP 15 Main Index is 46 (45, 46, 47).
                 
-                # Injection Indices (x, y, z for this KP)
-                start_idx = test_kp * 3
-                end_idx = start_idx + 3
+                # Copy Right (34) -> Left (46)
+                delta_eye[..., 46] = delta_eye[..., 34]
                 
-                if delta_eye.shape[-1] > end_idx:
-                    # Inject strong signal (1.0)
-                    # We add to existing signal to see effect
-                    delta_eye[..., start_idx:end_idx] += 0.05 
-                    
-                    if frame_in_cycle == 0:
-                        print(f"[AIIA SCAN] Frame {self.idx}: Testing KP {test_kp} (Indices {start_idx}-{start_idx+2})")
-            
-            # [AIIA] Minimal Logging of regular blink (just to track context)
-            if self.idx % 60 == 0:
-                 pass
+                # Boost Both
+                delta_eye[..., 34] *= 2.5
+                delta_eye[..., 46] *= 2.5
 
 
 
