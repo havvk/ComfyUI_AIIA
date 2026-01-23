@@ -264,8 +264,11 @@ class ComfyStreamSDK(StreamSDK):
 
         self.ctrl_info = kwargs.get("ctrl_info", dict())
         self.overall_ctrl_info = kwargs.get("overall_ctrl_info", dict())
-        self.vad_timeline = kwargs.get("vad_timeline", None) # Ensure vad_timeline is updated/created
-        self.seed = kwargs.get("seed", 0) # Store seed
+        self.vad_timeline = kwargs.get("vad_timeline", None) 
+        self.blink_interval_min = kwargs.get("blink_interval_min", 60)
+        self.blink_interval_max = kwargs.get("blink_interval_max", 100)
+        self.speech_only_blink = kwargs.get("speech_only_blink", False)
+        self.seed = kwargs.get("seed", 0) 
         self.wav2feat = self.wav2feat # ensure exist? (Initialized in __init__)
         
         # Assert online mode support
@@ -343,7 +346,11 @@ class ComfyStreamSDK(StreamSDK):
             d0=None,
             ch_info=self.ch_info,
             overall_ctrl_info=self.overall_ctrl_info,
-            blink_amp=self.blink_amp, # Pass blink_amp
+            blink_amp=self.blink_amp,
+            blink_interval_min=self.blink_interval_min,
+            blink_interval_max=self.blink_interval_max,
+            vad_timeline=self.vad_timeline,
+            speech_only_blink=self.speech_only_blink,
         )
 
         # ======== Video Writer Bypass ========
