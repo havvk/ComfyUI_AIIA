@@ -146,9 +146,11 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
             scan_start += 1
         # First blink: User expectation or random start
         cur_i = scan_start + random.randint(OPEN_MIN, OPEN_MAX)
+        print(f"  [Blink Init] Speech-Only: First speech at {scan_start}, scheduling first blink at {cur_i}")
     else:
         start_n = open_ns[0] if open_ns else random.randint(OPEN_MIN, OPEN_MAX)
         cur_i = start_n
+        print(f"  [Blink Init] Natural: Scheduling first blink at {cur_i}")
 
     end_n = open_ns[-1] if open_ns else random.randint(OPEN_MIN, OPEN_MAX)
     max_i = N - max(end_n, blink_n)
@@ -222,28 +224,32 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
             if vad_timeline is not None:
                 if speech_only_blink:
                     # Speech-Only Mode: Scan ahead to find next speech segment
-                    # IMPORTANT: After finding speech, we MUST add the random interval.
                     scan_start = cur_i
                     while scan_start < len(vad_timeline) and vad_timeline[scan_start] <= 0.1:
                         scan_start += 1
                     
                     if scan_start >= len(vad_timeline):
+                        print(f"  [Blink Loop] No more speech found after frame {cur_i}. Stopping.")
                         break
                     
                     # Next blink: interval_min to interval_max
-                    cur_i = scan_start + random.randint(OPEN_MIN, OPEN_MAX)
+                    jump = random.randint(OPEN_MIN, OPEN_MAX)
+                    cur_i = scan_start + jump
                     cur_n = 0 
+                    print(f"  [Blink Loop] Speech-Only: Next speech at {scan_start}, jumping +{jump} to {cur_i}")
                 else:
                     # Natural Mode: Scale user intervals based on speech
                     is_speaking = vad_timeline[cur_i] > 0.1 if cur_i < len(vad_timeline) else False
                     if is_speaking:
-                        # Speaking: Standard Interval (e.g. 2.4s - 4.0s)
                         cur_n = random.randint(OPEN_MIN, OPEN_MAX)
+                        print(f"  [Blink Loop] Natural: Speaking at {cur_i}, next in {cur_n}")
                     else:
                         # Silence: Relaxed Interval (1.5x longer)
                         cur_n = random.randint(int(OPEN_MIN * 1.5), int(OPEN_MAX * 1.5))
+                        print(f"  [Blink Loop] Natural: Silence at {cur_i}, next in {cur_n} (1.5x Relaxed)")
             else:
                 cur_n = random.randint(OPEN_MIN, OPEN_MAX)
+                print(f"  [Blink Loop] Standard (No VAD): Next in {cur_n}")
 
         cur_i += cur_n
 

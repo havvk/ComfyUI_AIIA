@@ -802,15 +802,26 @@ class AIIA_DittoSampler:
         elif blink_mode == "Slow":
              blink_min = 120
              blink_max = 200
+        else: # "Random (Normal)" or "None" (fallback)
+             blink_min = 90
+             blink_max = 150
         
         # [v1.9.97] FPS Scaling: Adjust interval based on actual FPS
-        # Original logic assumed 25 FPS (90/25 = 3.6s).
-        # If user runs at 50 FPS, we must double the intervals to maintain the same timing.
         fps_scale = fps / 25.0
         blink_min = int(blink_min * fps_scale)
         blink_max = int(blink_max * fps_scale)
         
-        print(f"[AIIA Debug] Generate: FPS={fps}, Mode={blink_mode}, SpeechOnly={speech_only_blink}, Interval={blink_min}-{blink_max}")
+        # [v1.9.98] Enhanced Node Diagnostics
+        print(f"[AIIA Node Debug] Generate Parameters:")
+        print(f"  > FPS: {fps}")
+        print(f"  > Blink Mode: {blink_mode} (Raw chk_eye_blink={chk_eye_blink})")
+        print(f"  > Speech Only Blink: {speech_only_blink}")
+        print(f"  > Effective Interval: {blink_min}-{blink_max} frames")
+        
+        # If mode is None, we should force chk_eye_blink to False
+        if blink_mode == "None":
+             chk_eye_blink = False
+             print(f"  > Note: Blink Mode is 'None', disabling chk_eye_blink.")
         # [Revert v1.9.46] Logic Separation
         # smo_k_d: Controls Pose Smoothing Window (Audio2Motion). Uses direct INT input.
         # mouth_smoothing: Controls Expression EMA Decay (MotionStitch). Passed via string.
