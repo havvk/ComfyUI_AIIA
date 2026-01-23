@@ -449,8 +449,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.69] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.69. Deep Suppression (Post-Ctrl).")
+        # [Debug v1.9.70] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.70. InputConditioning (Eye*1.5, Squint*0.5).")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -608,54 +608,20 @@ class MotionStitch:
                 self.delta_eye_idx_list[self.idx % len(self.delta_eye_idx_list)]
             ][None] * self.blink_amp
             
-            # [Fix v1.9.63] Active Suppression & Teleportation.
-            # Problem: LMDM naturally outputs Twitch (15/16) with Blink. Masking them allowed LMDM to twitch.
-            # Fix: 
-            # 1. Restore Mask [11,13,15,16,18] to Overwrite LMDM.
-            # 2. Teleport Signal 15->11 and 16->13 (Use Squint energy to drive Eyelid).
-            # 3. Kill Signal 15/16/18 (Clamp Squint/Brow to Source).
+            # [Fix v1.9.70] Input Signal Conditioning (Clean Slate)
+            # Instead of hacking the output or teleporting energy, we Clean the Input Signal.
+            # 1. Boost Eyelid (11/13) to ensure full closure (since Model 11 is weak).
+            # 2. Dampen Squint (15/16/18) to reduce Twitch trigger (but don't kill it, let it breathe).
             if delta_eye.shape[-1] > 18:
-                # Capture Squint Energy (Factor 1.0)
-                s_l = delta_eye[..., 15] * 1.0
-                s_r = delta_eye[..., 16] * 1.0
+                delta_eye[..., [11, 13]] *= 1.5  # Stronger Eyelid Signal
+                delta_eye[..., [15, 16, 18]] *= 0.5 # Weaker Squint Signal (Anti-Twitch)
                 
-                # Apply to Eyelid (Force Close)
-                delta_eye[..., 11] += s_l
-                delta_eye[..., 13] += s_r
-                
-                # Kill Squint & Brow (Force Static)
-                delta_eye[..., 15] = 0
-                delta_eye[..., 16] = 0
-                delta_eye[..., 18] = 0
-                
-                # [Feature v1.9.66] Mechanical Counter-Force (Anti-Twitch)
-                # Since twitch persists even when Lip Indices are 0, it is a geometric side-effect of Blink (11/13).
-                # We apply a negative force to Mouth Corners (6/12) proportional to Blink Strength.
-                # Note: We modify x_d_info directly because we want this to layer ON TOP of whatever the mouth is doing.
-                blink_strength = (delta_eye[..., 11] + delta_eye[..., 13]) * 0.5 # Average blink strength
-                correction = blink_strength * 1.2 # [Fix v1.9.68] Tuned to 1.2 (Search for "Goldilocks" zone)
-                
-                # Debug v1.9.68
-                if self.idx % 15 == 0 and np.any(correction != 0):
-                    b_val = float(blink_strength.mean()) if hasattr(blink_strength, 'mean') else float(blink_strength)
-                    c_val = float(correction.mean()) if hasattr(correction, 'mean') else float(correction)
-                    print(f"[AIIA BlinkFix] Frame {self.idx}: BlinkStr={b_val:.3f} -> CounterForce={c_val:.3f}")
-
-
-                
-                # Apply DOWNWARD push to corners to counteract the blink's upward pull
-                # We apply this to the deltas or pre-blend?
-                # Actually, delta_eye is applied inside _fix_exp. We prefer to modify the *input* to _fix_exp?
-                # No, better to modify delta_mouth? No, delta_mouth is outside.
-                # Let's modify x_d_info['exp'] after _fix_exp.
-                # But wait, we are INSIDE the blink block here. We have access to delta_eye.
-                # We can store this correction and apply it later.
-                self.anti_twitch_correction = correction
-            else:
-                self.anti_twitch_correction = 0
-
-
-
+                # Debug v1.9.70
+                if self.idx % 20 == 0:
+                   e_val = float(delta_eye[..., 11].mean())
+                   s_val = float(delta_eye[..., 15].mean())
+                   if e_val > 0.01:
+                       print(f"[AIIA Blink] Frame {self.idx}: InputEye={e_val:.3f}, InputSquint={s_val:.3f}")
 
             
         # [Feature v1.9.48] Apple Mouth Micro-Motion
@@ -674,13 +640,7 @@ class MotionStitch:
         )
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
-        
-        # [Fix v1.9.69] Deep Suppression (Post-Inference)
-        # Problem: ctrl_motion (LMDM) runs AFTER _fix_exp, so it re-introduces the twitch (15/16/18).
-        # Fix: We suppress them HERE (at the very end) to guarantee they are killed.
-        # We reset them to the Source Image's value (Rest Position).
-        suppress_idx = [15, 16, 18]
-        x_d_info["exp"][:, suppress_idx] = x_s_info["exp"][:, suppress_idx]
+
 
         
         # [Moved v1.9.59] Auto-Center Moved to end of function.
