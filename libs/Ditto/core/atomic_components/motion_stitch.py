@@ -449,8 +449,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.66] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.66. _lip={_lip} (Restored), _eye={_eye}")
+        # [Debug v1.9.67] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.67. Anti-Twitch 2.0x active.")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -633,7 +633,8 @@ class MotionStitch:
                 # We apply a negative force to Mouth Corners (6/12) proportional to Blink Strength.
                 # Note: We modify x_d_info directly because we want this to layer ON TOP of whatever the mouth is doing.
                 blink_strength = (delta_eye[..., 11] + delta_eye[..., 13]) * 0.5 # Average blink strength
-                correction = blink_strength * 0.5 # Factor 0.5 (Tune this: 0.3 to 0.8)
+                correction = blink_strength * 2.0 # [Fix v1.9.67] Boosted to 2.0 (Triple Force)
+
                 
                 # Apply DOWNWARD push to corners to counteract the blink's upward pull
                 # We apply this to the deltas or pre-blend?
