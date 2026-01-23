@@ -216,7 +216,7 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
 
 
 def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
-    _eye = [11, 13, 15, 16, 18] # [Fix v1.9.63] Restore Full Mask to Overwrite LMDM's twitchy output.
+    _eye = [11, 13] # [Fix v1.9.90] Only use clean KP 11/13. KP 15/16/18 cause mouth twitch (Mesh Coupling).
 
 
 
@@ -608,93 +608,9 @@ class MotionStitch:
                 self.delta_eye_idx_list[self.idx % len(self.delta_eye_idx_list)]
             ][None] * self.blink_amp
             
-            # [Diagnostic v1.9.72] Unconditional Shape Logging
-            # We suspect previous fixes were skipped because shape < 19.
-            if self.idx % 30 == 0:
-                print(f"[AIIA SHAPE] Frame {self.idx}: delta_eye shape = {delta_eye.shape}")
-
-            # [Fix v1.9.80] Surgical Blink Reconstruction (The "Clean Slate" Fix)
-            # ... (Existing Clean Slate Logic) ...
-            if delta_eye.shape[-1] > 47:
-                # 1. Capture Safe Signals
-                safe_right_blink = delta_eye[..., 34].copy() # KP 11
-                safe_gaze = delta_eye[..., 39:42].copy()     # KP 13
-                
-                # 2. NUKE THE BOARD (Zero out pure twitch/noise)
-                delta_eye[...] *= 0.0
-                
-                # 3. Restore & Mirror Blink (Reduced Amplitude 0.4x)
-                # [Fix v1.9.89] Confirmed Mesh Coupling. 1.0x blink drags mouth mesh.
-                # Solution: Reduce amplitude to 0.4x to minimize coupling.
-                delta_eye[..., 34] = safe_right_blink * 0.4
-                delta_eye[..., 46] = safe_right_blink * 0.4
-                
-                # 4. Restore Gaze (Original Strength)
-                delta_eye[..., 39:42] = safe_gaze
-
-                # [Fix v1.9.81] Active Mouth Dampener
-                # Issue: Mouth twitches even with Clean Slate. Source is x_d_info (Audio).
-                # Solution: If Blink is strong, dampen mouth expression in x_d_info.
-                
-                # Detect Blink Strength (Avg of Index 34)
-                blink_strength = float(safe_right_blink.mean())
-                
-                # [Fix v1.9.87] Statue Mode v3 (Motion Hold)
-                # Issue: v1.9.85 snapped to Reference (Jarring). v1.9.86 had twitch (Head Jitter).
-                # Solution: Freeze Pose/Trans to PREVIOUS FRAME (T-1) during blink.
-                #           Freeze Expression to REFERENCE (Stable Mouth).
-
-                # Init state if missing (runtime safety)
-                if not hasattr(self, 'last_safe_pose'):
-                    self.last_safe_pose = None
-
-                if blink_strength > 0.002: 
-                     # Ratio logic
-                     ratio = (blink_strength - 0.002) / 0.008 
-                     ratio = min(max(ratio, 0.0), 1.0)
-                     
-                     # 95% Lock strength
-                     damp_strength = ratio * 0.95
-                     
-                     # 1. EXP FREEZE: Lock Mouth/Jaw to REFERENCE (Stable)
-                     all_indices = np.arange(63)
-                     protected = [34, 46] # ONLY 34 and 46 can move
-                     target_indices = np.setdiff1d(all_indices, protected)
-                     
-                     ref_exp = x_s_info["exp"]
-                     current_vals = x_d_info["exp"][:, target_indices]
-                     ref_vals = ref_exp[:, target_indices] if ref_exp.ndim == 2 else ref_exp[target_indices]
-                     x_d_info["exp"][:, target_indices] = current_vals * (1.0 - damp_strength) + ref_vals * damp_strength
-
-                     # 2. POSE MOTION HOLD: Lock Head to T-1 (Previous Safe Frame)
-                     if self.last_safe_pose is not None:
-                         keys_to_freeze = ["yaw", "pitch", "roll", "t", "root_pose"]
-                         for k in keys_to_freeze:
-                             if k in x_d_info and k in self.last_safe_pose:
-                                 # Blend towards T-1 Pose
-                                 curr_k = x_d_info[k]
-                                 prev_k = self.last_safe_pose[k]
-                                 x_d_info[k] = curr_k * (1.0 - damp_strength) + prev_k * damp_strength
-
-                     # Log
-                     if damp_strength > 0.1:
-                         print(f"[AIIA FREEZE] Frame {self.idx}: Blink={blink_strength:.4f} | Motion Hold Active x{damp_strength:.2f}")
-                
-                else:
-                    # NOT Blinking: Update Last Safe Pose
-                    # Store deep copy of current pose variables
-                    self.last_safe_pose = {}
-                    keys_to_store = ["yaw", "pitch", "roll", "t", "root_pose"]
-                    for k in keys_to_store:
-                        if k in x_d_info:
-                             # detach/cpu/numpy copy just in case, though x_d_info is usually numpy/tensor
-                             val = x_d_info[k]
-                             if hasattr(val, 'clone'): val = val.clone()
-                             if hasattr(val, 'copy'): val = val.copy()
-                             self.last_safe_pose[k] = val
-                     
-                     # Also dampen "Sneer" or other cheek muscles if possible (Index 8/9?)
-                     # For now, targeting corners (6/12) is most critical.
+            # [v1.9.90] Removed all delta_eye manipulation (Clean Slate, Motion Hold).
+            # delta_eye is passed through unmodified to _fix_exp_for_x_d_info.
+            # Post-processing mirror (Right Eye -> Left Eye) is applied AFTER _fix_exp.
 
 
 
@@ -713,6 +629,16 @@ class MotionStitch:
             delta_eye,
             self.drive_eye
         )
+        
+        # [Fix v1.9.90] Post-Fix Mirror: Copy Right Eye (KP 11) -> Left Eye (KP 15)
+        # _eye is now [11, 13] only, which produces Right Eye blink with NO mouth twitch.
+        # Here we copy the final Right Eye expression to the Left Eye position.
+        # KP 11 = indices 33, 34, 35 (Right Eye)
+        # KP 15 = indices 45, 46, 47 (Left Eye)
+        if self.drive_eye:
+            x_d_info["exp"][:, 45:48] = x_d_info["exp"][:, 33:36].copy()
+            if self.idx % 100 == 0:
+                print(f"[AIIA v1.9.90] Frame {self.idx}: Right Eye -> Left Eye Mirror Applied")
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 
