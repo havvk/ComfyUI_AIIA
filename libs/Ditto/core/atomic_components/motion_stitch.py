@@ -140,13 +140,34 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
     blink_idx = list(range(blink_n))
 
     if speech_only_blink and vad_timeline is not None:
-        # Start scanning for speech from framing 0
+        # Start scanning for speech from frame 0
         scan_start = 0
         while scan_start < len(vad_timeline) and vad_timeline[scan_start] <= 0.1:
             scan_start += 1
+            
+        if scan_start >= len(vad_timeline):
+            print(f"  [Blink Init] Speech-Only: No speech found in entire timeline. Exit.")
+            return idx
+            
+        # Find end of first segment
+        scan_end = scan_start
+        while scan_end < len(vad_timeline) and vad_timeline[scan_end] > 0.1:
+            scan_end += 1
+            
         # First blink: User expectation or random start
-        cur_i = scan_start + random.randint(OPEN_MIN, OPEN_MAX)
-        print(f"  [Blink Init] Speech-Only: First speech at {scan_start}, scheduling first blink at {cur_i}")
+        jump = random.randint(OPEN_MIN, OPEN_MAX)
+        target_i = scan_start + jump
+        
+        if target_i + blink_n <= scan_end:
+             cur_i = target_i
+        else:
+             if (scan_end - scan_start) >= blink_n:
+                 cur_i = random.randint(scan_start, scan_end - blink_n)
+             else:
+                 # Skip short segment, let loop handle it
+                 cur_i = scan_end
+                 
+        print(f"  [Blink Init] Speech-Only: First speech at {scan_start}-{scan_end}, scheduling first blink at {cur_i}")
     else:
         start_n = open_ns[0] if open_ns else random.randint(OPEN_MIN, OPEN_MAX)
         cur_i = start_n
@@ -232,11 +253,29 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
                         print(f"  [Blink Loop] No more speech found after frame {cur_i}. Stopping.")
                         break
                     
+                    # Find end of this segment
+                    scan_end = scan_start
+                    while scan_end < len(vad_timeline) and vad_timeline[scan_end] > 0.1:
+                        scan_end += 1
+                        
                     # Next blink: interval_min to interval_max
                     jump = random.randint(OPEN_MIN, OPEN_MAX)
-                    cur_i = scan_start + jump
+                    target_i = scan_start + jump
+                    
+                    if target_i + blink_n <= scan_end:
+                         cur_i = target_i
+                         print(f"  [Blink Loop] Speech-Only: Next speech at {scan_start}-{scan_end}, jumping +{jump} to {cur_i}")
+                    else:
+                         if (scan_end - scan_start) >= blink_n:
+                             cur_i = random.randint(scan_start, scan_end - blink_n)
+                             print(f"  [Blink Loop] Speech-Only: Target {target_i} overshot segment end {scan_end}. Pulling back to {cur_i}")
+                         else:
+                             print(f"  [Blink Loop] Speech-Only: Segment at {scan_start}-{scan_end} too short (<{blink_n}). Skipping.")
+                             cur_i = scan_end
+                             cur_n = 0
+                             continue # Try next segment
+                    
                     cur_n = 0 
-                    print(f"  [Blink Loop] Speech-Only: Next speech at {scan_start}, jumping +{jump} to {cur_i}")
                 else:
                     # Natural Mode: Scale user intervals based on speech
                     is_speaking = vad_timeline[cur_i] > 0.1 if cur_i < len(vad_timeline) else False
