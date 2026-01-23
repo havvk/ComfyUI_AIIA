@@ -638,21 +638,31 @@ class MotionStitch:
                 # Detect Blink Strength (Avg of Index 34)
                 blink_strength = float(safe_right_blink.mean())
                 
-                # [Fix v1.9.82] Lower Threshold significantly (0.1 -> 0.005)
-                # Actual signals are ~0.02, so 0.1 never triggered.
-                if blink_strength > 0.005: 
-                     # Dampen Logic: Stronger blink = Stronger dampening.
-                     # Scale: 0.005 -> 0.02 range mapping to 1.0 -> 0.2 factor
-                     ratio = (blink_strength - 0.005) / 0.015 # 0.0 to 1.0
+                # [Fix v1.9.83] High-Sensitivity Blink Detection & Dampening
+                # User reports mouth twitch persists.
+                # Strategy:
+                # 1. Threshold -> 0.002 (Capture even micro-blinks).
+                # 2. Dampening -> Stronger active suppression (up to 95%).
+                # 3. Log -> Print "[AIIA DAMP]" to confirm trigger.
+
+                if blink_strength > 0.002: 
+                     # Ratio logic: 0.002 -> 0.01 mapping to 0.0 -> 1.0
+                     ratio = (blink_strength - 0.002) / 0.008 
                      ratio = min(max(ratio, 0.0), 1.0)
                      
-                     damp_factor = 1.0 - (ratio * 0.8) # 1.0 down to 0.2
+                     # Max Dampening: 0.05 (retain only 5% motion)
+                     # Damp factor goes from 1.0 (no damp) to 0.05 (freeze)
+                     damp_factor = 1.0 - (ratio * 0.95)
                      
                      # Indices to Dampen:
                      # 6 (CornerL), 12 (CornerR), 14 (Lip), 17, 19, 20 (Mouth)
                      mouth_indices = [6, 12, 14, 17, 19, 20]
                      
                      x_d_info["exp"][:, mouth_indices] *= damp_factor
+                     
+                     # Debug Log (Temporary)
+                     if damp_factor < 0.9:
+                         print(f"[AIIA DAMP] Frame {self.idx}: Blink={blink_strength:.4f} | Damping Mouth x{damp_factor:.2f}")
                      
                      # Also dampen "Sneer" or other cheek muscles if possible (Index 8/9?)
                      # For now, targeting corners (6/12) is most critical.
