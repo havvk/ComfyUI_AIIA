@@ -623,18 +623,11 @@ class MotionStitch:
                 # 2. NUKE THE BOARD (Zero out pure twitch/noise)
                 delta_eye[...] *= 0.0
                 
-                # 3. Restore & Mirror Blink (Native Strength 1.0x)
-                # User confirmed original strength was fine, just one-eyed.
-                delta_eye[..., 34] = safe_right_blink * 1.0
-                delta_eye[..., 46] = safe_right_blink * 1.0
-                
-                # [Diagnostic v1.9.88] Mesh Coupling Test
-                # DISABLE BLINK to see if twitch stops.
-                # If twitch stops -> Blink KP is dragging mouth mesh (Mesh Coupling).
-                # If twitch persists -> Twitch is from elsewhere.
-                delta_eye[..., 34] = 0.0
-                delta_eye[..., 46] = 0.0
-                print(f"[AIIA DIAG] Frame {self.idx}: BLINK DISABLED for Mesh Coupling Test")
+                # 3. Restore & Mirror Blink (Reduced Amplitude 0.4x)
+                # [Fix v1.9.89] Confirmed Mesh Coupling. 1.0x blink drags mouth mesh.
+                # Solution: Reduce amplitude to 0.4x to minimize coupling.
+                delta_eye[..., 34] = safe_right_blink * 0.4
+                delta_eye[..., 46] = safe_right_blink * 0.4
                 
                 # 4. Restore Gaze (Original Strength)
                 delta_eye[..., 39:42] = safe_gaze
