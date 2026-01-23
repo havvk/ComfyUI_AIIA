@@ -241,7 +241,7 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
 
 
 def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
-    _eye = [11, 13, 15, 16] # [Restore v1.9.93] Restore both eyes. 11/13 (R), 15/16 (L). 18 (Brow) removed to minimize twitch.
+    _eye = [11, 13, 15, 16, 18] # [Native v1.9.94] Restored full official eye indices. 18 (Brow Down) added back.
 
 
 
@@ -455,7 +455,7 @@ class MotionStitch:
         self.fade_type = fade_type
         self.flag_stitching = flag_stitching
 
-        _eye = [11, 13, 15, 16] # [Restore v1.9.93] Restore both eyes. 11/13 (R), 15/16 (L). 18 (Brow) removed to minimize twitch.
+        _eye = [11, 13, 15, 16, 18] # [Native v1.9.94] Restored full official eye indices.
 
 
         _lip = [6, 12, 14, 17, 19, 20] # [Restored v1.9.66] Re-enable Talking.
