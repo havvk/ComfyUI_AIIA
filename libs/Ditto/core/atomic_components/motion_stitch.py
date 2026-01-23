@@ -449,8 +449,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.71] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.71. Diagnostic Mode Enabled.")
+        # [Debug v1.9.72] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.72. SHAPE DEBUG MODE.")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -608,24 +608,31 @@ class MotionStitch:
                 self.delta_eye_idx_list[self.idx % len(self.delta_eye_idx_list)]
             ][None] * self.blink_amp
             
-            # [Fix v1.9.70] Input Signal Conditioning (Clean Slate)
-            # Instead of hacking the output or teleporting energy, we Clean the Input Signal.
-            # 1. Boost Eyelid (11/13) to ensure full closure (since Model 11 is weak).
-            # 2. Dampen Squint (15/16/18) to reduce Twitch trigger (but don't kill it, let it breathe).
-            if delta_eye.shape[-1] > 18:
-                delta_eye[..., [11, 13]] *= 1.5  # Stronger Eyelid Signal
-                delta_eye[..., [15, 16, 18]] *= 0.5 # Weaker Squint Signal (Anti-Twitch)
-                
-                # [Diagnostic v1.9.71] Event Logger
-                # Trace exactly what signals are present during a blink.
+            # [Diagnostic v1.9.72] Unconditional Shape Logging
+            # We suspect previous fixes were skipped because shape < 19.
+            if self.idx % 30 == 0:
+                print(f"[AIIA SHAPE] Frame {self.idx}: delta_eye shape = {delta_eye.shape}")
+
+            # [Fix v1.9.70 Logic] Adjusted to handle small shapes
+            # If shape has indices 11 and 13 (Size > 13)
+            if delta_eye.shape[-1] > 13: 
+                 delta_eye[..., [11, 13]] *= 1.5
+                 if delta_eye.shape[-1] > 18:
+                     delta_eye[..., [15, 16, 18]] *= 0.5
+            
+            # [Diagnostic v1.9.72] Event Logger (Safe Access)
+            if delta_eye.shape[-1] > 13: # Has 11, 13
                 eye_l_in = float(delta_eye[..., 11].mean())
-                if eye_l_in > 0.05: # Active Blink Threshold
-                     print(f"\n[AIIA DIAG] Frame {self.idx} BLINK EVENT:")
-                     print(f"  > Input Signal (Modified): EyeL={eye_l_in:.3f}, SquintL={float(delta_eye[..., 15].mean()):.3f}, Brow={float(delta_eye[..., 18].mean()):.3f}")
-                     # Trigger flag for post-logging
+                if eye_l_in > 0.01: # Lower threshold to catch anything
+                     s_val = float(delta_eye[..., 15].mean()) if delta_eye.shape[-1] > 15 else 0.0
+                     print(f"\n[AIIA DIAG] Frame {self.idx} BLINK EVENT (Shape {delta_eye.shape}):")
+                     print(f"  > Input: EyeL={eye_l_in:.3f}, SquintL={s_val:.3f}")
                      self._log_blink_output = True
                 else:
                      self._log_blink_output = False
+            else:
+                 self._log_blink_output = False
+
 
 
             
