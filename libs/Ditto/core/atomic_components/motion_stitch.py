@@ -638,31 +638,40 @@ class MotionStitch:
                 # Detect Blink Strength (Avg of Index 34)
                 blink_strength = float(safe_right_blink.mean())
                 
-                # [Fix v1.9.83] High-Sensitivity Blink Detection & Dampening
-                # User reports mouth twitch persists.
-                # Strategy:
-                # 1. Threshold -> 0.002 (Capture even micro-blinks).
-                # 2. Dampening -> Stronger active suppression (up to 95%).
-                # 3. Log -> Print "[AIIA DAMP]" to confirm trigger.
+                # [Fix v1.9.84] Nuclear Mouth Dampening (Fade to Reference)
+                # Issue: Multiplying by ~0 forces Generic Neutral, causing "Smile -> Neutral -> Smile" twitch.
+                # Solution: Blend towards x_s_info (Reference Face) to FREEZE expression in place.
+                # Scope: ALL Indices except Eyes (to catch jaw/cheeks).
 
                 if blink_strength > 0.002: 
-                     # Ratio logic: 0.002 -> 0.01 mapping to 0.0 -> 1.0
+                     # Ratio logic
                      ratio = (blink_strength - 0.002) / 0.008 
                      ratio = min(max(ratio, 0.0), 1.0)
                      
-                     # Max Dampening: 0.05 (retain only 5% motion)
-                     # Damp factor goes from 1.0 (no damp) to 0.05 (freeze)
-                     damp_factor = 1.0 - (ratio * 0.95)
+                     # Dampening Strength (0.0 to 0.95)
+                     # 0.95 means "95% Reference, 5% Motion"
+                     damp_strength = ratio * 0.95
                      
-                     # Indices to Dampen:
-                     # 6 (CornerL), 12 (CornerR), 14 (Lip), 17, 19, 20 (Mouth)
-                     mouth_indices = [6, 12, 14, 17, 19, 20]
+                     # INDICES TO FREEZE:
+                     # All 63 coefficients...
+                     all_indices = np.arange(63)
+                     # ...EXCEPT the ones we are actively driving/protecting:
+                     # 34 (Right Blink), 46 (Left Blink), 39,40,41 (Gaze)
+                     protected = [34, 46, 39, 40, 41]
+                     target_indices = np.setdiff1d(all_indices, protected)
                      
-                     x_d_info["exp"][:, mouth_indices] *= damp_factor
+                     # Blend: Current = Current * (1-S) + Reference * S
+                     # Note: x_s_info['exp'] might be (1, 63) or (63,)
+                     ref_exp = x_s_info["exp"]
                      
-                     # Debug Log (Temporary)
-                     if damp_factor < 0.9:
-                         print(f"[AIIA DAMP] Frame {self.idx}: Blink={blink_strength:.4f} | Damping Mouth x{damp_factor:.2f}")
+                     current_vals = x_d_info["exp"][:, target_indices]
+                     ref_vals = ref_exp[:, target_indices] if ref_exp.ndim == 2 else ref_exp[target_indices]
+                     
+                     x_d_info["exp"][:, target_indices] = current_vals * (1.0 - damp_strength) + ref_vals * damp_strength
+
+                     # Debug Log
+                     if damp_strength > 0.1:
+                         print(f"[AIIA DAMP] Frame {self.idx}: Blink={blink_strength:.4f} | Freezing Face to Ref x{damp_strength:.2f}")
                      
                      # Also dampen "Sneer" or other cheek muscles if possible (Index 8/9?)
                      # For now, targeting corners (6/12) is most critical.
