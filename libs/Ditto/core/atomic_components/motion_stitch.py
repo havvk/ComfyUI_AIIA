@@ -185,6 +185,10 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
             
         idx[cur_i : cur_i + full_len] = full_blink_seq
         
+        # [AIIA Diagnostic] Log each blink event
+        vad_val = vad_timeline[cur_i] if vad_timeline is not None else -1
+        print(f"  [Blink] Scheduled at frame {cur_i}, VAD={vad_val:.2f}, Type={'Speech' if vad_val > 0.1 else 'Silence'}")
+        
         # Decide if Double Blink
         is_double = random.random() < double_blink_prob
         

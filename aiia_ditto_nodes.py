@@ -802,6 +802,15 @@ class AIIA_DittoSampler:
         elif blink_mode == "Slow":
              blink_min = 120
              blink_max = 200
+        
+        # [v1.9.97] FPS Scaling: Adjust interval based on actual FPS
+        # Original logic assumed 25 FPS (90/25 = 3.6s).
+        # If user runs at 50 FPS, we must double the intervals to maintain the same timing.
+        fps_scale = fps / 25.0
+        blink_min = int(blink_min * fps_scale)
+        blink_max = int(blink_max * fps_scale)
+        
+        print(f"[AIIA Debug] Generate: FPS={fps}, Mode={blink_mode}, SpeechOnly={speech_only_blink}, Interval={blink_min}-{blink_max}")
         # [Revert v1.9.46] Logic Separation
         # smo_k_d: Controls Pose Smoothing Window (Audio2Motion). Uses direct INT input.
         # mouth_smoothing: Controls Expression EMA Decay (MotionStitch). Passed via string.
