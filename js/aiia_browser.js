@@ -76,6 +76,8 @@ class AIIABrowserDialog extends ComfyDialog {
         this.iconView = { resizeObserver: null, columns: 0, rowHeight: 0, activeNodes: new Map(), nodePool: [], mediaCache: new Map() };
         this.applyFocusRaf = null;
         this.iconLoadTimers = new Map();
+        
+        this.outsideClickListener = null;
 
         this.tooltipImage = $el("img.aiia-tooltip-image");
         this.tooltipVideo = $el("video.aiia-tooltip-video", { autoplay: true, muted: true, loop: true, controls: false, volume: 0.8 });
@@ -1311,7 +1313,7 @@ class AIIABrowserDialog extends ComfyDialog {
 
         if ((target.tagName === 'INPUT' && target !== this.pathInput) || target.tagName === 'SELECT') return;
 
-        const keyMap = { 'ArrowUp': 'moveFocus', 'ArrowDown': 'moveFocus', 'ArrowLeft': 'moveFocus', 'ArrowRight': 'moveFocus', 'Enter': 'activateFocusedItem', ' ': 'toggleTooltipForFocusedItem' };
+        const keyMap = { 'ArrowUp': 'moveFocus', 'ArrowDown': 'moveFocus', 'ArrowLeft': 'moveFocus', 'ArrowRight': 'moveFocus', 'Enter': 'activateFocusedItem', ' ': 'toggleTooltipForFocusedItem', 'Escape': 'close' };
         if (keyMap[e.key]) {
             e.preventDefault(); e.stopPropagation();
             this.isKeyboardNavigating = true;
@@ -1327,6 +1329,29 @@ class AIIABrowserDialog extends ComfyDialog {
         super.show();
         this.updateTooltipSizeLimits();
         this.element.focus({ preventScroll: true });
+
+        // [v1.9.106] Click-outside to close
+        if (!this.outsideClickListener) {
+            this.outsideClickListener = (e) => {
+                if (this.element.style.display !== "none" && !this.element.contains(e.target)) {
+                    // Safety check: Don't close if we are interacting with another aiia modal (like fullscreen)
+                    if (this.fullscreenViewer && this.fullscreenViewer.element.style.display !== 'none') return;
+                    // Don't close if clicking the menu button itself (to avoid toggle conflict)
+                    if (e.target.closest('#aiia-browser-menu-button')) return;
+                    this.close();
+                }
+            };
+            // Use timeout to prevent the opening click from immediately closing it
+            setTimeout(() => document.addEventListener("mousedown", this.outsideClickListener), 10);
+        }
+    }
+
+    close() {
+        if (this.outsideClickListener) {
+            document.removeEventListener("mousedown", this.outsideClickListener);
+            this.outsideClickListener = null;
+        }
+        super.hide(); // ComfyDialog often uses hide() internally or as a synonym
     }
 }
 
@@ -1364,6 +1389,11 @@ app.registerExtension({
             if (!browserDialog || browserDialog.element.style.display === 'none') return;
             if (browserDialog.fullscreenViewer && browserDialog.fullscreenViewer.element.style.display !== 'none') return;
             if (!browserDialog.element.contains(document.activeElement)) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    browserDialog.close();
+                    return;
+                }
                 const isNavKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(e.key);
                 if (isNavKey) {
                     e.preventDefault();
