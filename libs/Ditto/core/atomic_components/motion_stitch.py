@@ -657,7 +657,9 @@ class MotionStitch:
         # If we are attacking, force 1.0 to avoid "Weak/Half-Closed" ghosting.
         # [Update v1.9.103/105] Softer Onset & Mouth Boost
         # Using sqrt(vad_current) to boost mouth opening at lower volumes.
-        exp_blend_alpha = vad_current ** 0.5
+        # [Update v1.9.108] More aggressive mouth opening for quiet speakers
+        # v1.9.105 used 0.5, v1.9.108 uses 0.3
+        exp_blend_alpha = vad_current ** 0.3
 
         if exp_blend_alpha < 1.0:
             # If releasing (and not attacking), use frozen frame if available
@@ -675,11 +677,11 @@ class MotionStitch:
         if mouth_smoothing_mode == "None (Raw)":
             exp_decay = 0.0
         elif mouth_smoothing_mode == "Light":
-            exp_decay = 0.3
+            exp_decay = 0.2
         elif mouth_smoothing_mode == "Heavy":
-            exp_decay = 0.7
-        else:  # "Normal" (Default)
-            exp_decay = 0.5
+            exp_decay = 0.6
+        else:  # "Normal" (Default) [v1.9.108: Reduced from 0.5 to 0.3]
+            exp_decay = 0.3
         
         if exp_decay > 0:
             if not hasattr(self, 'prev_exp_ema') or self.prev_exp_ema is None:

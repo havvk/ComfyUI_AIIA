@@ -160,13 +160,10 @@ class Audio2Motion:
             noise_scale = 0.005 
             noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
             
-            # [Update v1.9.107] Vitality 2.0:
-            # 1. Brownian Drift Tuning (Restored restricted Pitch)
-            # 0.001 for Yaw/Roll, but only 0.0003 for Pitch to prevent "Uptilt".
-            drift_scales = np.ones_like(last_pose) * 0.0005
-            # We assume dim mapping: [..., Pitch, Yaw, Roll, ...] based on LMDM structure.
-            # Usually Pitch is at index 0-2 (Euler/Rot). 
-            # Actually kp_cond is often points, but if it has rot info:
+            # 1. Brownian Drift Tuning (Reference Anchor Drift)
+            # v1.9.108: Fix math - we let the anchor itself wander (Random Walk)
+            # so the character never settles into a fixed "wax figure" state.
+            drift_scales = np.ones_like(last_pose) * 0.0006 
             drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
             self.brownian_pos += drift
             
@@ -182,16 +179,20 @@ class Audio2Motion:
             brow_indices = [15, 16, 18]
             brow_jitter = np.random.normal(0, 0.015, (len(brow_indices), 3)).astype(np.float32)
             
-            # [Update v1.9.103] Reduced to 10% (0.1) to allow more natural secondary motion.
-            gravity = 0.1
+            # [Update v1.9.108] Reduced Gravity to 5% (0.05)
+            # This allows the LMDM model more freedom to follow its own trajectory
+            # instead of being aggressively pulled back to center.
+            gravity = 0.05
             
-            next_pose = last_pose + noise + self.brownian_pos
+            next_pose = last_pose + noise
             # Inject jitter into specific points
             for i, idx_in_kp in enumerate(brow_indices):
                 if idx_in_kp < next_pose.shape[1]:
                     next_pose[:, idx_in_kp] += brow_jitter[i]
 
-            self.kp_cond = next_pose * (1.0 - gravity) + current_s_kp * gravity
+            # Anchor = Reference + Subtle Breathing Sway + Brownian Wandering
+            anchor = current_s_kp + self.brownian_pos
+            self.kp_cond = next_pose * (1.0 - gravity) + anchor * gravity
             
         elif self.fix_kp_cond > 0:
             if self.clip_idx % self.fix_kp_cond == 0:  # 重置
@@ -232,11 +233,13 @@ class Audio2Motion:
             # This allows natural transition from idle to speaking without visual discontinuity.
             
             # Reset Random Seed to ensure Noise Sampling is consistent
+            # [Update v1.9.108] Add clip_idx offset to prevent identical onset micro-motion
             if seed is not None:
-                print(f"[Ditto Debug] Soft Reset: Seed={seed} (kp_cond preserved)")
-                torch.manual_seed(seed)
-                torch.cuda.manual_seed(seed)
-                torch.cuda.manual_seed_all(seed)
+                offset_seed = (seed + self.clip_idx) % (2**32)
+                print(f"[Ditto Debug] Soft Reset: Seed={seed} + Offset={self.clip_idx} (kp_cond preserved)")
+                torch.manual_seed(offset_seed)
+                torch.cuda.manual_seed(offset_seed)
+                torch.cuda.manual_seed_all(offset_seed)
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
