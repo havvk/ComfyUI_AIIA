@@ -449,8 +449,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.70] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.70. InputConditioning (Eye*1.5, Squint*0.5).")
+        # [Debug v1.9.71] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.71. Diagnostic Mode Enabled.")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -616,12 +616,17 @@ class MotionStitch:
                 delta_eye[..., [11, 13]] *= 1.5  # Stronger Eyelid Signal
                 delta_eye[..., [15, 16, 18]] *= 0.5 # Weaker Squint Signal (Anti-Twitch)
                 
-                # Debug v1.9.70
-                if self.idx % 20 == 0:
-                   e_val = float(delta_eye[..., 11].mean())
-                   s_val = float(delta_eye[..., 15].mean())
-                   if e_val > 0.01:
-                       print(f"[AIIA Blink] Frame {self.idx}: InputEye={e_val:.3f}, InputSquint={s_val:.3f}")
+                # [Diagnostic v1.9.71] Event Logger
+                # Trace exactly what signals are present during a blink.
+                eye_l_in = float(delta_eye[..., 11].mean())
+                if eye_l_in > 0.05: # Active Blink Threshold
+                     print(f"\n[AIIA DIAG] Frame {self.idx} BLINK EVENT:")
+                     print(f"  > Input Signal (Modified): EyeL={eye_l_in:.3f}, SquintL={float(delta_eye[..., 15].mean()):.3f}, Brow={float(delta_eye[..., 18].mean()):.3f}")
+                     # Trigger flag for post-logging
+                     self._log_blink_output = True
+                else:
+                     self._log_blink_output = False
+
 
             
         # [Feature v1.9.48] Apple Mouth Micro-Motion
@@ -640,6 +645,14 @@ class MotionStitch:
         )
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
+
+        # [Diagnostic v1.9.71] Output Logger
+        if hasattr(self, '_log_blink_output') and self._log_blink_output:
+             out_exp = x_d_info["exp"]
+             # Log Eyelid, Squint, and Mouth Corners (6/12)
+             print(f"  > Final Output: EyeL={float(out_exp[:, 11].mean()):.3f}, SquintL={float(out_exp[:, 15].mean()):.3f}, CornerL={float(out_exp[:, 6].mean()):.3f}, CornerR={float(out_exp[:, 12].mean()):.3f}")
+             self._log_blink_output = False
+
 
 
         
