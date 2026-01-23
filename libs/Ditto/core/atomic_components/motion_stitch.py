@@ -400,9 +400,10 @@ class MotionStitch:
             N = 3000 if self.N_d == -1 else self.N_d
             self.delta_eye_idx_list = _set_eye_blink_idx(
                 N, len(self.delta_eye_arr), self.delta_eye_open_n,
-                blink_interval_min=blink_interval_min,
-                blink_interval_max=blink_interval_max,
-                vad_timeline=self.vad_timeline if hasattr(self, 'vad_timeline') else None
+                interval_min=getattr(self, 'blink_interval_min', 60),
+                interval_max=getattr(self, 'blink_interval_max', 100),
+                vad_timeline=self.vad_timeline if hasattr(self, 'vad_timeline') else None,
+                speech_only_blink=getattr(self, 'speech_only_blink', False)
             )
 
     def setup(
@@ -429,6 +430,8 @@ class MotionStitch:
     ):
         self.blink_amp = blink_amp
         self.speech_only_blink = speech_only_blink
+        self.blink_interval_min = blink_interval_min
+        self.blink_interval_max = blink_interval_max
         self.vad_timeline = vad_timeline
         self.is_image_flag = is_image_flag
         if use_d_keys is None:
