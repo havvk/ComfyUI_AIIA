@@ -474,6 +474,12 @@ class ComfyStreamSDK(StreamSDK):
         pass
 
 class AIIA_DittoSampler:
+    def __init__(self):
+        self.last_idle_pitch = 0.0
+        self.last_idle_yaw = 0.0
+        self.last_idle_roll = 0.0
+        self.sway_decay_remaining = 0
+    
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -748,12 +754,6 @@ class AIIA_DittoSampler:
             # Only applied when alpha < 1.0.
             
             idle_amp = 4.5 
-            
-            # [v1.9.107] Persistence state for Sway Continuity
-            last_idle_pitch = 0.0
-            last_idle_yaw = 0.0
-            last_idle_roll = 0.0
-            sway_decay_remaining = 0
             DECAY_FRAMES = 25 # ~1.0s
             
             for i in range(num_frames):
@@ -783,10 +783,10 @@ class AIIA_DittoSampler:
                     d_roll = math.cos(t * 0.4) * 0.5 * idle_weight 
                     
                     # Store for continuity
-                    last_idle_pitch = d_pitch
-                    last_idle_yaw = d_yaw
-                    last_idle_roll = d_roll
-                    sway_decay_remaining = DECAY_FRAMES
+                    self.last_idle_pitch = d_pitch
+                    self.last_idle_yaw = d_yaw
+                    self.last_idle_roll = d_roll
+                    self.sway_decay_remaining = DECAY_FRAMES
                     
                     # [Feature v1.9.49] Mouth Micro-Motion (Breathing)
                     # Refined: Positive-Only sine wave to prevent "Pursed Lips" (Negative Offset).
@@ -809,18 +809,22 @@ class AIIA_DittoSampler:
                     info_dict["delta_roll"] = hd_rot_r + d_roll
                     info_dict["delta_mouth"] = d_mouth # Additive offset for mouth
                 else:
-                    # [v1.9.107] Sway Continuity: Decay last idle offset during speech onset
-                    if sway_decay_remaining > 0:
-                        decay_alpha = sway_decay_remaining / float(DECAY_FRAMES)
-                        info_dict["delta_pitch"] = hd_rot_p + last_idle_pitch * decay_alpha
-                        info_dict["delta_yaw"] = hd_rot_y + last_idle_yaw * decay_alpha
-                        info_dict["delta_roll"] = hd_rot_r + last_idle_roll * decay_alpha
-                        sway_decay_remaining -= 1
+                    # [v1.9.107/109] Sway Continuity: Decay last idle offset during speech onset
+                    if self.sway_decay_remaining > 0:
+                        decay_alpha = self.sway_decay_remaining / float(DECAY_FRAMES)
+                        info_dict["delta_pitch"] = hd_rot_p + self.last_idle_pitch * decay_alpha
+                        info_dict["delta_yaw"] = hd_rot_y + self.last_idle_yaw * decay_alpha
+                        info_dict["delta_roll"] = hd_rot_r + self.last_idle_roll * decay_alpha
+                        self.sway_decay_remaining -= 1
                     else:
                         # Standard Speech (No idle influence)
                         info_dict["delta_pitch"] = hd_rot_p
                         info_dict["delta_yaw"] = hd_rot_y
                         info_dict["delta_roll"] = hd_rot_r
+                        # Reset memory once decayed
+                        self.last_idle_pitch = 0.0
+                        self.last_idle_yaw = 0.0
+                        self.last_idle_roll = 0.0
                     
                 if info_dict:
                      ctrl_info[i] = info_dict

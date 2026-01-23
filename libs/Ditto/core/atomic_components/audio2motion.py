@@ -277,6 +277,16 @@ class Audio2Motion:
         
         # Store for next batch
         self.last_kp_frame = res_kp_seq[:, -1:]
+        
+        # [v1.9.109] Dynamic Anchor:
+        # Slowly pull the brownian anchor towards the AI's final pose.
+        # This prevents the "Rubber Band" effect after long speech segments.
+        # Brownian position is the offset relative to s_kp_cond.
+        # res_kp_seq shape: [1, seq_frames, dim]
+        target_drift = (self.last_kp_frame - self.s_kp_cond).squeeze()
+        # Smoothly interpolate brownian_pos towards this target
+        # 0.1 factor per call block means it follows moderately fast during speech
+        self.brownian_pos = (self.brownian_pos * 0.9 + target_drift * 0.1).astype(np.float32)
 
         self.clip_idx += 1
 

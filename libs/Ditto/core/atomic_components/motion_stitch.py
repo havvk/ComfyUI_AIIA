@@ -696,6 +696,15 @@ class MotionStitch:
             # Apply EMA smoothing - let mouth opening transition naturally
             x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)
             self.prev_exp_ema = x_d_info["exp"].copy()
+            
+        # [v1.9.109] Mouth Opening Bias (Fix Lip Pucker)
+        # Add a subtle positive bias to the lower lip to prevent puckering 
+        # (下唇包牙) during speech.
+        vad_current = kwargs.get("vad_alpha", 1.0)
+        if vad_current > 0.1:
+            lower_lip = [17, 19, 20]
+            # 0.03 is a safe micro-dose that ensures "Space" for teeth.
+            x_d_info["exp"][:, lower_lip] += 0.03
 
         delta_eye = 0
         if self.drive_eye and self.delta_eye_arr is not None:
