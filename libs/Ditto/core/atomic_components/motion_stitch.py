@@ -613,37 +613,31 @@ class MotionStitch:
             if self.idx % 30 == 0:
                 print(f"[AIIA SHAPE] Frame {self.idx}: delta_eye shape = {delta_eye.shape}")
 
-            # [Fix v1.9.79] Cross-Mirror Blink Fix (Final)
-            # Diagnosis from Scanner:
-            # - KP 11 (Indices 33-35) = Right Eye Blink (Clean).
-            # - KP 15 (Indices 45-47) = Left Eye Blink + SIDE EFFECTS (Twitch/Eye Pop).
-            # - KP 13 (Indices 39-41) = Eyeballs (Gaze).
-            #
-            # Solution:
-            # 1. Suppress KP 15 fully (45-47) to kill artifacts.
-            # 2. Cross-Mirror: Copy Clean Right (Index 34) to Left (Index 46).
-            # 3. Apply Boost (2.5x) to both.
-            
-            # --- 1. Suppression ---
-            if delta_eye.shape[-1] > 47:
-                delta_eye[..., 45:48] *= 0.0 # Kill KP 15 (Twitch Source)
-            
-            # Kill KP 16 & 18 (Just in case)
-            if delta_eye.shape[-1] > 56:
-                delta_eye[..., 48:51] *= 0.0
-                delta_eye[..., 54:57] *= 0.0
+            # [Fix v1.9.80] Surgical Blink Reconstruction (The "Clean Slate" Fix)
+            # Problem: Model's "Blink" leaks into KP 8, 14, 15 causing mouth twitch.
+            #          Previous fix only killed KP 15.
+            # Solution: 
+            # 1. Capture clean signals: Right Blink (Idx 34) & Gaze (Idx 39-41).
+            # 2. WIPE EVERYTHING (delta_eye *= 0) to guarantee no mouth leakage.
+            # 3. Restore & Mirror Clean Blink (1.8x soft boost).
+            # 4. Restore Gaze (1.0x).
 
-            # --- 2. Cross-Mirror & Boost ---
-            if delta_eye.shape[-1] > 46:
-                # KP 11 Main Index is 34 (33, 34, 35).
-                # KP 15 Main Index is 46 (45, 46, 47).
+            if delta_eye.shape[-1] > 47:
+                # 1. Capture Safe Signals
+                safe_right_blink = delta_eye[..., 34].copy() # KP 11
+                safe_gaze = delta_eye[..., 39:42].copy()     # KP 13
                 
-                # Copy Right (34) -> Left (46)
-                delta_eye[..., 46] = delta_eye[..., 34]
+                # 2. NUKE THE BOARD (Zero out pure twitch/noise)
+                delta_eye[...] *= 0.0
                 
-                # Boost Both
-                delta_eye[..., 34] *= 2.5
-                delta_eye[..., 46] *= 2.5
+                # 3. Restore & Mirror Blink (Soft Boost 1.8x)
+                # Right Eye
+                delta_eye[..., 34] = safe_right_blink * 1.8
+                # Left Eye (Mirror) -> Vertical Channel (Index 46 from KP 15)
+                delta_eye[..., 46] = safe_right_blink * 1.8
+                
+                # 4. Restore Gaze (Original Strength)
+                delta_eye[..., 39:42] = safe_gaze
 
 
 
