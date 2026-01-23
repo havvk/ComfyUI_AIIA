@@ -495,7 +495,7 @@ class AIIA_DittoSampler:
                 "blink_amp": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
                 "relax_on_silence": ("BOOLEAN", {"default": True, "label_on": "Relax Face on Silence", "label_off": "Disabled"}),
                 "ref_threshold": ("FLOAT", {"default": 0.005, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "blink_mode": (["Random (Normal)", "Fast", "Slow", "None"], {"default": "Random (Normal)"}),
+                "blink_mode": (["Natural", "Fast", "Slow", "None"], {"default": "Natural"}),
                 "speech_only_blink": ("BOOLEAN", {"default": False, "label_on": "Speech Only Blink", "label_off": "Natural Blink"}),
                 "silence_release": (["Natural (0.8s)", "Fast (0.5s)", "Deep (1.3s)"], {"default": "Natural (0.8s)"}),
                 "mouth_smoothing": (["Normal", "None (Raw)", "Light", "Heavy", "Custom (Manual)"], {"default": "Normal"}),
@@ -809,7 +809,7 @@ class AIIA_DittoSampler:
         elif blink_mode == "Slow":
              blink_min = 120
              blink_max = 200
-        else: # "Random (Normal)" or "None" (fallback)
+        else: # "Natural" or "None" (fallback)
              blink_min = 90
              blink_max = 150
         

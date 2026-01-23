@@ -341,8 +341,8 @@ ComfyUI/models/EchoMimicV3/
   - `emo`: (默认 Neutral) 表情控制。可选 Angry, Happy, Sad 等。
   - `drive_eye`: (默认 True) 是否驱动眼睛。关闭后眼睛将保持参考图状态(或微动)，适合原图眼神较好的情况。
   - `chk_eye_blink`: (已废弃，请使用 `blink_mode`)。
-  - `blink_mode`: (默认 Random) **眨眼模式控制**。
-    - `Random (Normal)`: **拟人化随机眨眼**。
+  - `blink_mode`: (默认 Natural) **眨眼模式控制**。
+    - `Natural`: **拟人化随机眨眼**。
       - 基础频率：90-150帧/次 (约 3.6s - 6.0s)。
     - `Slow`: 慢速沉稳眨眼 (120-200帧/次)。
     - `Fast`: 快速频繁眨眼 (10-40帧/次)。
