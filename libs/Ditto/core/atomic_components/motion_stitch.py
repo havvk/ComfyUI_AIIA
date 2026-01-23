@@ -133,10 +133,19 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
 
     blink_idx = list(range(blink_n))
 
-    start_n = open_ns[0] if open_ns else random.randint(OPEN_MIN, OPEN_MAX)
+    if speech_only_blink and vad_timeline is not None:
+        # Start scanning for speech from framing 0
+        scan_start = 0
+        while scan_start < len(vad_timeline) and vad_timeline[scan_start] <= 0.1:
+            scan_start += 1
+        cur_i = scan_start + random.randint(12, 36)
+    else:
+        start_n = open_ns[0] if open_ns else random.randint(OPEN_MIN, OPEN_MAX)
+        cur_i = start_n
+
     end_n = open_ns[-1] if open_ns else random.randint(OPEN_MIN, OPEN_MAX)
     max_i = N - max(end_n, blink_n)
-    cur_i = start_n
+
     cur_n_i = 1
     
     # Double Blink Probability
@@ -232,7 +241,7 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
 
 
 def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
-    _eye = [11, 13] # [Fix v1.9.90] Only use clean KP 11/13. KP 15/16/18 cause mouth twitch (Mesh Coupling).
+    _eye = [11, 13, 15, 16] # [Restore v1.9.93] Restore both eyes. 11/13 (R), 15/16 (L). 18 (Brow) removed to minimize twitch.
 
 
 
@@ -446,7 +455,7 @@ class MotionStitch:
         self.fade_type = fade_type
         self.flag_stitching = flag_stitching
 
-        _eye = [11, 13, 15, 16, 18] # [Fix v1.9.63] Restore Full Mask.
+        _eye = [11, 13, 15, 16] # [Restore v1.9.93] Restore both eyes. 11/13 (R), 15/16 (L). 18 (Brow) removed to minimize twitch.
 
 
         _lip = [6, 12, 14, 17, 19, 20] # [Restored v1.9.66] Re-enable Talking.
