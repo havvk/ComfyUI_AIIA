@@ -613,28 +613,30 @@ class MotionStitch:
             if self.idx % 30 == 0:
                 print(f"[AIIA SHAPE] Frame {self.idx}: delta_eye shape = {delta_eye.shape}")
 
-            # [Fix v1.9.75] Refined Blink Boost (Stronger Left Eye)
-            # - Index 46 (KP 15 Squint): Suppressed (Verified: Kills Twitch)
-            # - Index 34 (KP 11 EyeL): Boosted 5.0x (Was 2.5x, still weak)
-            # - Index 39 (KP 13 EyeR): Boosted 2.5x (Verified: Working)
-            
-            # --- Suppression ---
-            # Suppress KP 15 (indices 45, 46, 47) - The "Twitch" Source
-            if delta_eye.shape[-1] > 47:
-                delta_eye[..., 45:48] *= 0.0
-            
-            # Suppress KP 16 & 18 just in case
-            if delta_eye.shape[-1] > 56:
-                delta_eye[..., 48:51] *= 0.0
-                delta_eye[..., 54:57] *= 0.0
+            # [Fix v1.9.76] Mirror Blink Signal (Fix One-Eyed Blink)
+            # Users report Index 34 (KP 11) drives one eye strongly (at 5.0x).
+            # The other eye (KP 13) has NO signal.
+            # Solution:
+            # 1. Kill Twitch (Index 46).
+            # 2. Force Mirror: Copy KP 11 (Idx 33-35) to KP 13 (Idx 39-41).
+            # 3. Apply moderate boost (2.5x) to both.
 
-            # --- Boosting ---
-            # Boost KP 11 (EyeL, indices 33-35) - Stronger Boost for Left Eye
-            if delta_eye.shape[-1] > 35:
-                delta_eye[..., 33:36] *= 5.0 
+            # --- Suppression (Twitch) ---
+            if delta_eye.shape[-1] > 47:
+                delta_eye[..., 45:48] *= 0.0 # Kill Squint (KP 15)
             
-            # Boost KP 13 (EyeR, indices 39-41)
+            if delta_eye.shape[-1] > 56:
+                delta_eye[..., 48:51] *= 0.0 # Kill KP 16
+                delta_eye[..., 54:57] *= 0.0 # Kill KP 18
+
+            # --- Copy & Boost (Blink) ---
             if delta_eye.shape[-1] > 41:
+                # 1. Mirror Signal: Copy active KP 11 to inactive KP 13
+                # (Symmetry check: KP 11 is 33-35, KP 13 is 39-41)
+                delta_eye[..., 39:42] = delta_eye[..., 33:36]
+                
+                # 2. Apply Boost (2.5x) - 5.0x was too strong for the active eye.
+                delta_eye[..., 33:36] *= 2.5
                 delta_eye[..., 39:42] *= 2.5
 
 
