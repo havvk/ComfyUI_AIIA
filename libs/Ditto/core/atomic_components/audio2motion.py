@@ -159,8 +159,8 @@ class Audio2Motion:
             noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
             
             # Brownian Drift: Cumulative random walk to prevent long-term stasis
-            # We use a very small scale (0.001) so it doesn't walk off screen too fast
-            drift = np.random.normal(0, 0.001, last_pose.shape).astype(np.float32)
+            # We use a very small scale (0.0005) so it doesn't walk off screen too fast
+            drift = np.random.normal(0, 0.0005, last_pose.shape).astype(np.float32)
             self.brownian_pos += drift
             
             # [Update v1.9.103] Reduced to 10% (0.1) to allow more natural secondary motion.

@@ -655,9 +655,9 @@ class MotionStitch:
         # 3. Apply Logic
         # Calculate effective alpha for expression blending
         # If we are attacking, force 1.0 to avoid "Weak/Half-Closed" ghosting.
-        # [Update v1.9.103] Softer Onset: Remove hard 1.0 override.
-        # This allows the VAD slope to naturally transition the expression.
-        exp_blend_alpha = vad_current
+        # [Update v1.9.103/105] Softer Onset & Mouth Boost
+        # Using sqrt(vad_current) to boost mouth opening at lower volumes.
+        exp_blend_alpha = vad_current ** 0.5
 
         if exp_blend_alpha < 1.0:
             # If releasing (and not attacking), use frozen frame if available

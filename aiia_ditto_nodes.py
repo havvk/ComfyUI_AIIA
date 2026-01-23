@@ -747,7 +747,7 @@ class AIIA_DittoSampler:
             # Micro-Motion: Inject subtle head sway during silence to prevent "dead static" look.
             # Only applied when alpha < 1.0.
             
-            idle_amp = 4.0 # Degrees [Boosted v1.9.104] (Was 2.5, user says still static)
+            idle_amp = 4.5 # Degrees [v1.9.105] (Was 4.0, but Pitch removed, so boosting others)
             
             for i in range(num_frames):
                 alpha = float(dataset_alpha[i])
@@ -767,11 +767,13 @@ class AIIA_DittoSampler:
                     idle_weight = (1.0 - alpha)
                     
                     t = i / 25.0
-                    # [Update v1.9.103] Dual-Frequency Sway (Biological noise)
-                    # Pitch: Slower Base (0.8) + Faster Overlay (1.8)
-                    d_pitch = (math.cos(t * 0.8) * 0.7 + math.cos(t * 1.8) * 0.3) * idle_amp * idle_weight
+                    # [Update v1.9.105] Sway Decouppling:
+                    # Pitch is removed from idle sway to prevent "Uptilt" (昂首) during silence.
+                    d_pitch = 0.0
                     # Yaw: Slower Base (0.6) + Faster Overlay (2.2)
                     d_yaw = (math.sin(t * 0.6) * 0.8 + math.sin(t * 2.2) * 0.2) * idle_amp * idle_weight
+                    # Roll: Tiny tilted breathing (0.4 frequency)
+                    d_roll = math.cos(t * 0.4) * 0.5 * idle_weight 
                     
                     # [Feature v1.9.49] Mouth Micro-Motion (Breathing)
                     # Refined: Positive-Only sine wave to prevent "Pursed Lips" (Negative Offset).
@@ -791,6 +793,7 @@ class AIIA_DittoSampler:
                     
                     info_dict["delta_pitch"] = hd_rot_p + d_pitch
                     info_dict["delta_yaw"] = hd_rot_y + d_yaw
+                    info_dict["delta_roll"] = hd_rot_r + d_roll
                     info_dict["delta_mouth"] = d_mouth # Additive offset for mouth
                     
                 if info_dict:
