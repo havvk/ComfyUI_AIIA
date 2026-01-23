@@ -613,39 +613,29 @@ class MotionStitch:
             if self.idx % 30 == 0:
                 print(f"[AIIA SHAPE] Frame {self.idx}: delta_eye shape = {delta_eye.shape}")
 
-            # [Fix v1.9.74] Targeted Twitch Removal & Blink Boost
-            # Diagnostics revealed:
-            # - Index 46 (KP 15 Squint): ~0.018 (Too Strong -> Twitch)
-            # - Index 34 (KP 11 EyeL): ~0.015 (Too Weak -> Partial Blink)
-            #
-            # Solution:
-            # 1. Kill Squint (KP 15 / Indices 45-47)
-            # 2. Boost Eyelid (KP 11 / Indices 33-35)
-            # 3. Apply to KP 13 (EyeR) just in case (Indices 39-41)
+            # [Fix v1.9.75] Refined Blink Boost (Stronger Left Eye)
+            # - Index 46 (KP 15 Squint): Suppressed (Verified: Kills Twitch)
+            # - Index 34 (KP 11 EyeL): Boosted 5.0x (Was 2.5x, still weak)
+            # - Index 39 (KP 13 EyeR): Boosted 2.5x (Verified: Working)
             
             # --- Suppression ---
-            # Suppress KP 15 (indices 45, 46, 47)
+            # Suppress KP 15 (indices 45, 46, 47) - The "Twitch" Source
             if delta_eye.shape[-1] > 47:
                 delta_eye[..., 45:48] *= 0.0
             
-            # Suppress KP 16 (indices 48-50) & KP 18 (indices 54-56) if present
+            # Suppress KP 16 & 18 just in case
             if delta_eye.shape[-1] > 56:
                 delta_eye[..., 48:51] *= 0.0
                 delta_eye[..., 54:57] *= 0.0
 
             # --- Boosting ---
-            # Boost KP 11 (EyeL, indices 33-35)
+            # Boost KP 11 (EyeL, indices 33-35) - Stronger Boost for Left Eye
             if delta_eye.shape[-1] > 35:
-                delta_eye[..., 33:36] *= 2.5 
+                delta_eye[..., 33:36] *= 5.0 
             
             # Boost KP 13 (EyeR, indices 39-41)
             if delta_eye.shape[-1] > 41:
                 delta_eye[..., 39:42] *= 2.5
-
-            # [AIIA] Minimal Logging to confirm fix
-            if self.idx % 60 == 0:
-                 max_val = float(delta_eye.max())
-                 print(f"[AIIA v1.9.74] Frame {self.idx}: Blink Fix Applied. Max Signal: {max_val:.4f}")
 
 
 
