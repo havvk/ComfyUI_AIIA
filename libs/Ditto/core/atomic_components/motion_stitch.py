@@ -187,6 +187,39 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
     blink_hold_max = 1
     
     while cur_i < max_i:
+        # [v1.9.101] Strict Speech-Only Validation
+        # Check if current cur_i is valid for a blink
+        if speech_only_blink and vad_timeline is not None:
+             # If current position is silence, find next segment
+             if vad_timeline[cur_i] <= 0.1:
+                 scan_start = cur_i
+                 while scan_start < len(vad_timeline) and vad_timeline[scan_start] <= 0.1:
+                     scan_start += 1
+                 
+                 if scan_start >= len(vad_timeline): break
+                 
+                 # New segment found
+                 scan_end = scan_start
+                 while scan_end < len(vad_timeline) and vad_timeline[scan_end] > 0.1:
+                     scan_end += 1
+                     
+                 # Force blink into this segment
+                 if (scan_end - scan_start) >= blink_n:
+                     cur_i = random.randint(scan_start, scan_end - blink_n)
+                 else:
+                     cur_i = scan_end
+                     continue # Too short, try next
+             else:
+                 # Already in speech, check if it fits before segment ends
+                 scan_end = cur_i
+                 while scan_end < len(vad_timeline) and vad_timeline[scan_end] > 0.1:
+                      scan_end += 1
+                 
+                 if cur_i + blink_n > scan_end:
+                      # Not enough room here, jump to end and find next segment
+                      cur_i = scan_end
+                      continue
+
         # First Blink
         hold_frames = random.randint(blink_hold_min, blink_hold_max)
         
@@ -236,59 +269,25 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
              idx[cur_i : cur_i + full_len_2] = full_blink_seq_2
              cur_i += full_len_2
 
-        # [v1.9.92] Speech-Only Blink: Only insert blinks during speech.
-        # This masks mesh coupling artifacts naturally.
+        # Calculate Next Event
         if open_ns:
             cur_n = open_ns[cur_n_i % len(open_ns)]
             cur_n_i += 1
         else:
-            if vad_timeline is not None:
-                if speech_only_blink:
-                    # Speech-Only Mode: Scan ahead to find next speech segment
-                    scan_start = cur_i
-                    while scan_start < len(vad_timeline) and vad_timeline[scan_start] <= 0.1:
-                        scan_start += 1
-                    
-                    if scan_start >= len(vad_timeline):
-                        print(f"  [Blink Loop] No more speech found after frame {cur_i}. Stopping.")
-                        break
-                    
-                    # Find end of this segment
-                    scan_end = scan_start
-                    while scan_end < len(vad_timeline) and vad_timeline[scan_end] > 0.1:
-                        scan_end += 1
-                        
-                    # Next blink: interval_min to interval_max
-                    jump = random.randint(OPEN_MIN, OPEN_MAX)
-                    target_i = scan_start + jump
-                    
-                    if target_i + blink_n <= scan_end:
-                         cur_i = target_i
-                         print(f"  [Blink Loop] Speech-Only: Next speech at {scan_start}-{scan_end}, jumping +{jump} to {cur_i}")
-                    else:
-                         if (scan_end - scan_start) >= blink_n:
-                             cur_i = random.randint(scan_start, scan_end - blink_n)
-                             print(f"  [Blink Loop] Speech-Only: Target {target_i} overshot segment end {scan_end}. Pulling back to {cur_i}")
-                         else:
-                             print(f"  [Blink Loop] Speech-Only: Segment at {scan_start}-{scan_end} too short (<{blink_n}). Skipping.")
-                             cur_i = scan_end
-                             cur_n = 0
-                             continue # Try next segment
-                    
-                    cur_n = 0 
+            if vad_timeline is not None and not speech_only_blink:
+                # Natural Mode (Not speech-only)
+                is_speaking = vad_timeline[cur_i] > 0.1 if cur_i < len(vad_timeline) else False
+                if is_speaking:
+                    cur_n = random.randint(OPEN_MIN, OPEN_MAX)
+                    print(f"  [Blink Loop] Natural: Speaking at {cur_i}, next in {cur_n}")
                 else:
-                    # Natural Mode: Scale user intervals based on speech
-                    is_speaking = vad_timeline[cur_i] > 0.1 if cur_i < len(vad_timeline) else False
-                    if is_speaking:
-                        cur_n = random.randint(OPEN_MIN, OPEN_MAX)
-                        print(f"  [Blink Loop] Natural: Speaking at {cur_i}, next in {cur_n}")
-                    else:
-                        # Silence: Relaxed Interval (1.5x longer)
-                        cur_n = random.randint(int(OPEN_MIN * 1.5), int(OPEN_MAX * 1.5))
-                        print(f"  [Blink Loop] Natural: Silence at {cur_i}, next in {cur_n} (1.5x Relaxed)")
+                    cur_n = random.randint(int(OPEN_MIN * 1.5), int(OPEN_MAX * 1.5))
+                    print(f"  [Blink Loop] Natural: Silence at {cur_i}, next in {cur_n} (1.5x Relaxed)")
             else:
+                # Standard or Speech-Only prep (Speech-Only will re-validate at loop top)
                 cur_n = random.randint(OPEN_MIN, OPEN_MAX)
-                print(f"  [Blink Loop] Standard (No VAD): Next in {cur_n}")
+                if speech_only_blink:
+                    print(f"  [Blink Loop] Speech-Only Pre-Interval: +{cur_n}")
 
         cur_i += cur_n
 
