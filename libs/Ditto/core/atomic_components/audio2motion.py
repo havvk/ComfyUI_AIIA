@@ -119,8 +119,8 @@ class Audio2Motion:
         self.brownian_momentum = np.zeros_like(self.kp_cond) # [v1.9.139] Postural inertia
         self.look_up_timer = 0 # [v1.9.141] Timer for anti-stall recovery
         self.is_recovering = False # [v1.9.155] Hysteresis state flag
-        self.target_bias_deg = 0.0 # [v1.9.162/163] For scope visibility
-        self.current_push = 0.0 # [v1.9.164] SAFETY: Initialize missing variable to prevent thread crash
+        self.target_bias_deg = -3.5 # [v1.9.189] Aesthetic Sweet Spot (Target Delta)
+        self.current_push = 0.0012 # [v1.9.189] Constant Chin-Tuck Pressure
         
         # [v1.9.170] Pure Photo Anchor (Reverted Neutralizer)
         self.photo_base_neutralizer = np.zeros_like(self.s_kp_cond)
@@ -248,15 +248,13 @@ class Audio2Motion:
             # [v1.9.164] Predictive Physics Push
             new_drift[0, 1:67] += self.current_push
             
-            # [v1.9.152] Absolute Postural Force (Boosted to 0.0030)
+            # [v1.9.189] Decoupled Axis Force (Chin-Tuck Mode)
             if self.is_recovering:
-                # [v1.9.158] Decoupled Axis Force
-                # High tension for Pitch (1:67), Soft tension for Yaw/Roll/T (67:202)
-                new_drift[0, 1:67] -= 0.0030 
-                new_drift[0, 67:202] -= 0.0010 # Softened Yaw/Roll pulse
+                # Add drift (push down) to recover from looking up too much
+                new_drift[0, 1:67] += 0.0035 
+                new_drift[0, 67:202] -= 0.0010 
                 if self.look_up_timer > 100:
-                    new_drift[0, 1:67] -= 0.0030 # Double impulse for Pitch
-            
+                    new_drift[0, 1:67] += 0.0035 
             self.brownian_momentum = self.brownian_momentum * 0.92 + new_drift
             self.brownian_pos += self.brownian_momentum
             
@@ -388,7 +386,7 @@ class Audio2Motion:
             
             if self.clip_idx % 20 == 0:
                  mode_s = "SPEECH" if is_talking else "IDLE"
-                 print(f"[v1.9.170 {mode_s}] Pressure: {pressure*100:.0f}% (Safety Net Active)")
+                 print(f"[v1.9.189 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
         
         # [v1.9.156] Virtual Last Frame for Startup Stabilization
         # If this is the VERY first chunk, we treat the source photo as the "prev frame"
