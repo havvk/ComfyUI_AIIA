@@ -120,7 +120,12 @@ class Audio2Motion:
         self.look_up_timer = 0 # [v1.9.141] Timer for anti-stall recovery
         self.is_recovering = False # [v1.9.155] Hysteresis state flag
         self.target_bias_deg = 0.0 # [v1.9.162/163] For scope visibility
-        self.current_push = 0.0 # [v1.9.164] Dynamic physics push
+        
+        # [v1.9.165] Mathematical Posture Initializers
+        self.photo_base_neutralizer = np.zeros_like(self.s_kp_cond)
+        self.photo_base_neutralizer[0, 1:202] = -self.s_kp_cond[0, 1:202]
+        self.current_neutralizer = self.photo_base_neutralizer.copy()
+        self.target_neutralizer = self.photo_base_neutralizer.copy()
         
         # [v1.9.146] Capture Source Pitch Baseline
         # We need the "Original" degree of the source photo to detect relative stalls.
