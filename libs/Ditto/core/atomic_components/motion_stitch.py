@@ -760,43 +760,54 @@ class MotionStitch:
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 
-        # [v1.9.121] The Iron Mask (Global Transition Lockdown)
-        # Defining the total set of indices that might trigger horizontal pull or squint.
-        # We lock everything to source EXCEPT 11, 13, 15 (Blinks) and 17, 19, 20 (Vertical Mouth).
+        # [v1.9.122] Ultimate Total State Lockdown (Closing/Opening)
+        # We lock everything (Pose, Scale, Translation, Exp, KP) to Source 
+        # except for BLINKS and a manual vertical MOUTH bypass.
         if exp_blend_alpha < 1.0:
+            print(f"[AIIA] V1.9.122 Safety Net Engaged (Alpha={exp_blend_alpha:.2f})")
+            
+            # 1. Detect Blinks
             is_blinking = False
             if self.drive_eye and not isinstance(delta_eye, int):
-                # Using 1e-4 threshold to sense blink energy
                 if np.abs(delta_eye).max() > 1e-4:
                     is_blinking = True
 
-            # Full list of indices for 3DMM landmarks (0-20)
-            # Active (Allowed to move): 11, 13, 15 (Eyelids/Blinks), 17, 19, 20 (Lower Lip)
-            # Locked (Forced to source): 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18
-            
-            _locked_points = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18]
-            _blink_points = [15] # Blink companion (often carries squint residue)
+            # 2. Total Parameter Freeze (Orientation/Position)
+            for k in ['pitch', 'yaw', 'roll', 't', 'scale']:
+                if k in x_d_info and k in x_s_info:
+                    x_d_info[k] = x_s_info[k].copy()
+
+            # 3. Landmark Isolation (Exp & KP)
+            # Allowed to float: 11, 13 (Eyelids), 15 (Manual decision below), 17, 19, 20 (Lower Lip)
+            _free_set = [11, 13, 15, 17, 19, 20]
             
             exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
             src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
             
-            # 1. Enforce neutrality on locked points (The Iron Mask)
-            exp_reshaped[:, _locked_points] = src_reshaped[:, _locked_points]
+            # Temporary copy of AI's mouth for manual blending
+            ai_mouth_y = exp_reshaped[:, [17, 19, 20], 1].copy()
             
-            # 2. Handle Blinking points (Only unlock if active)
-            if not is_blinking:
-                exp_reshaped[:, _blink_points] = src_reshaped[:, _blink_points]
+            # FORCE NEUTRAL on everything
+            exp_reshaped[:] = src_reshaped[:]
+            
+            # Restore Blinks
+            if is_blinking:
+                _eyes = [11, 13, 15]
+                exp_reshaped[:, _eyes] = x_d_info["exp"].reshape(-1, 21, 3)[:, _eyes]
+
+            # Manual Mouth Closure (Linear blend between AI-predicted current and Source neutral)
+            # This bypasses the model's learned 'smile' at lower alphas.
+            exp_reshaped[:, [17, 19, 20], 1] = src_reshaped[:, [17, 19, 20], 1] + (ai_mouth_y - src_reshaped[:, [17, 19, 20], 1]) * exp_blend_alpha
             
             x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
-            # 3. Synchronize "kp" attribute if present (Keypoint Parity)
-            # Ensuring the spatial transform also respects the Iron Mask.
+            # Sync KP (Geometric Lock)
             if "kp" in x_d_info:
                 kp_reshaped = x_d_info["kp"].reshape(-1, 21, 3)
                 src_kp_reshaped = x_s_info["kp"].reshape(-1, 21, 3)
-                kp_reshaped[:, _locked_points] = src_kp_reshaped[:, _locked_points]
-                if not is_blinking:
-                    kp_reshaped[:, _blink_points] = src_kp_reshaped[:, _blink_points]
+                kp_reshaped[:] = src_kp_reshaped[:]
+                # Mirror blinks and manual mouth to KP if desired, 
+                # but locking them to source is safer for now.
                 x_d_info["kp"] = kp_reshaped.reshape(1, -1)
         # [Diagnostic v1.9.71] Output Logger
         if hasattr(self, '_log_blink_output') and self._log_blink_output:
