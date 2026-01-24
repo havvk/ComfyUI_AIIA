@@ -211,6 +211,8 @@ class Audio2Motion:
             # [v1.9.152] Absolute Postural Force (Boosted to 0.0030)
             if self.look_up_timer > 50:
                 new_drift[0, 1:67] -= 0.0030 
+                if self.look_up_timer > 100:
+                    new_drift[0, 1:67] -= 0.0030 # Double impulse
             
             self.brownian_momentum = self.brownian_momentum * 0.92 + new_drift
             self.brownian_pos += self.brownian_momentum
@@ -227,16 +229,25 @@ class Audio2Motion:
             brow_indices = [217, 218, 220]
             brow_jitter = np.random.normal(0, 0.015 * boost_factor, len(brow_indices)).astype(np.float32)
             
+            # 5. Postural Auto-Correction Logic [v1.9.150 Robustness Patch]
+            # Shorten silence threshold to 25 frames (1 second) to combat jittery audio
+            # Only trigger if notably higher than source (> 2.0 deg Higher -> Delta < -2.0)
+            if self.silence_frames >= 25 and delta_p < -2.0:
+                self.look_up_timer += step_len
+                if self.look_up_timer > 50:
+                     tag = "[纠偏活跃]" if self.look_up_timer <= 100 else "[极限强驱]"
+                     print(f"{tag} Frame {real_f} | Delta={delta_p:+.2f}° | Applying Pressure.")
+            else:
+                # ONLY RESET if we are back in the safe zone (Hysteresis)
+                if delta_p >= -0.5:
+                     if self.look_up_timer > 50:
+                          print(f"[Postural] Recovery Finished (Delta={delta_p:+.2f}°). Timer reset.")
+                     self.look_up_timer = 0
+
             gravity_vec = np.ones_like(last_pose) * 0.05
             if self.look_up_timer > 50:
-                # [v1.9.152] Tripelling restoration gravity to 60%
-                gravity_vec[0, 1:67] = 0.60
-                
-                # [v1.9.153] Nuclear Trigger: 100% Hard Overwrite if stall > 4s
-                if self.look_up_timer > 100:
-                     if self.look_up_timer % 10 == 0:
-                         print(f"[Nuclear ACTIVE] Pitch stuck too long. Force-overwriting to 100% Baseline.")
-                     gravity_vec[0, 1:67] = 1.0 
+                # [v1.9.154] Maintain high gravity for next step seed
+                gravity_vec[0, 1:67] = 0.80 if self.look_up_timer > 100 else 0.60
             
             # 6. Integration
             next_pose = last_pose + noise
@@ -301,6 +312,20 @@ class Audio2Motion:
             self.silence_frames += step_len
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
+        
+        # [v1.9.154] Sequence-Level Physical Correction
+        # We correct EVERY frame in the newly generated chunk before it hits the timeline.
+        if self.look_up_timer > 50:
+            # 70% intensity if starting, 95% if persistent stall
+            pressure = 0.70 if self.look_up_timer <= 100 else 0.95
+            anchor_p = self.s_kp_cond[0, 1:67] + self.brownian_pos[0, 1:67]
+            # Force current segment to lean towards center
+            # pred_kp_seq shape: [1, frames, dim]
+            for f in range(pred_kp_seq.shape[1]):
+                pred_kp_seq[0, f, 1:67] = pred_kp_seq[0, f, 1:67] * (1.0 - pressure) + anchor_p * pressure
+            
+            if self.clip_idx % 5 == 0:
+                 print(f"[v1.9.154 Burst] Forced {pressure*100:.0f}% correction on {pred_kp_seq.shape[1]} frames.")
         
         # [v1.9.104/107] Persistence & Pose Warping (Anti-Teleport)
         # Check for global continuity (even across audio batches)
