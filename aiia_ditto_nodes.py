@@ -754,7 +754,7 @@ class AIIA_DittoSampler:
             # Only applied when alpha < 1.0.
             
             idle_amp = 4.5 
-            DECAY_FRAMES = 50 # [v1.9.117] Sync with Core warping (80 frames) for seamless handover
+            DECAY_FRAMES = 25 # ~1.0s
             
             for i in range(num_frames):
                 alpha = float(dataset_alpha[i])
