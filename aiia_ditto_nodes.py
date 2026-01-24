@@ -493,7 +493,7 @@ class AIIA_DittoSampler:
                 "emo": (["Neutral", "Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Contempt"], {"default": "Neutral"}),
                 "drive_eye": ("BOOLEAN", {"default": True}),
                 "chk_eye_blink": ("BOOLEAN", {"default": True}),
-                "smo_k_d": ("INT", {"default": 3, "min": 1, "max": 9}),
+                "smo_k_d": ("INT", {"default": 5, "min": 1, "max": 9}),
                 "hd_rot_p": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "hd_rot_y": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "hd_rot_r": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),

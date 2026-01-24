@@ -337,11 +337,16 @@ class Audio2Motion:
             if self.clip_idx % 5 == 0:
                  print(f"[v1.9.154 Burst] Forced {pressure*100:.0f}% correction on {pred_kp_seq.shape[1]} frames.")
         
-        # [v1.9.104/107] Persistence & Pose Warping (Anti-Teleport)
-        # Check for global continuity (even across audio batches)
+        # [v1.9.156] Virtual Last Frame for Startup Stabilization
+        # If this is the VERY first chunk, we treat the source photo as the "prev frame"
+        # to trigger a 50-frame gentle glide into the AI's path.
         effective_res_kp_seq = res_kp_seq
-        if effective_res_kp_seq is None and self.last_kp_frame is not None:
-             effective_res_kp_seq = self.last_kp_frame # Mock sequence for offset calc
+        if effective_res_kp_seq is None:
+             if self.last_kp_frame is not None:
+                  effective_res_kp_seq = self.last_kp_frame 
+             else:
+                  # Force warp from source photo for Frame 0 stabilization
+                  effective_res_kp_seq = self.s_kp_cond.reshape(1, 1, -1)
              
         if effective_res_kp_seq is not None:
              # Calculate offset between last real frame and first new predicted frame

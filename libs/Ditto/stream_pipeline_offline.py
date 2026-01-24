@@ -108,7 +108,7 @@ class StreamSDK:
         self.sampling_timesteps = kwargs.get("sampling_timesteps", 50)
         self.online_mode = kwargs.get("online_mode", False)
         self.v_min_max_for_clip = kwargs.get('v_min_max_for_clip', None)
-        self.smo_k_d = kwargs.get("smo_k_d", 3)
+        self.smo_k_d = kwargs.get("smo_k_d", 5)
 
         # -- motion_stitch: setup --
         self.N_d = kwargs.get("N_d", -1)
