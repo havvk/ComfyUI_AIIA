@@ -760,28 +760,44 @@ class MotionStitch:
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 
-        # [v1.9.120] Final Transition Lockdown (Comprehensive)
+        # [v1.9.121] The Iron Mask (Global Transition Lockdown)
         # Defining the total set of indices that might trigger horizontal pull or squint.
-        # We allow 11, 13, 15 (Blinks) and 17, 19, 20 (Vertical Mouth).
+        # We lock everything to source EXCEPT 11, 13, 15 (Blinks) and 17, 19, 20 (Vertical Mouth).
         if exp_blend_alpha < 1.0:
             is_blinking = False
             if self.drive_eye and not isinstance(delta_eye, int):
+                # Using 1e-4 threshold to sense blink energy
                 if np.abs(delta_eye).max() > 1e-4:
                     is_blinking = True
 
-            _locked_points = [6, 7, 8, 12, 14, 16, 18] # Total isolation set
+            # Full list of indices for 3DMM landmarks (0-20)
+            # Active (Allowed to move): 11, 13, 15 (Eyelids/Blinks), 17, 19, 20 (Lower Lip)
+            # Locked (Forced to source): 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18
+            
+            _locked_points = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18]
+            _blink_points = [15] # Blink companion (often carries squint residue)
+            
             exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
             src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
             
-            # Lock secondary smile points unconditionally during transitions
+            # 1. Enforce neutrality on locked points (The Iron Mask)
             exp_reshaped[:, _locked_points] = src_reshaped[:, _locked_points]
             
-            # Lock Left Squint (15) only if not blinking
+            # 2. Handle Blinking points (Only unlock if active)
             if not is_blinking:
-                _blink_sq = [15]
-                exp_reshaped[:, _blink_sq] = src_reshaped[:, _blink_sq]
-                
+                exp_reshaped[:, _blink_points] = src_reshaped[:, _blink_points]
+            
             x_d_info["exp"] = exp_reshaped.reshape(1, -1)
+
+            # 3. Synchronize "kp" attribute if present (Keypoint Parity)
+            # Ensuring the spatial transform also respects the Iron Mask.
+            if "kp" in x_d_info:
+                kp_reshaped = x_d_info["kp"].reshape(-1, 21, 3)
+                src_kp_reshaped = x_s_info["kp"].reshape(-1, 21, 3)
+                kp_reshaped[:, _locked_points] = src_kp_reshaped[:, _locked_points]
+                if not is_blinking:
+                    kp_reshaped[:, _blink_points] = src_kp_reshaped[:, _blink_points]
+                x_d_info["kp"] = kp_reshaped.reshape(1, -1)
         # [Diagnostic v1.9.71] Output Logger
         if hasattr(self, '_log_blink_output') and self._log_blink_output:
              out_exp = x_d_info["exp"]
