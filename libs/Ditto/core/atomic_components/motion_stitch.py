@@ -707,6 +707,13 @@ class MotionStitch:
         # Restore flattened state
         x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
+        # [v1.9.137] Restore Blink Logic (Fix NameError)
+        delta_eye = 0
+        if self.drive_eye and self.delta_eye_arr is not None:
+            delta_eye = self.delta_eye_arr[
+                self.delta_eye_idx_list[self.idx % len(self.delta_eye_idx_list)]
+            ][None] * self.blink_amp
+
         # [Revert v1.9.55] User reports "Original code didn't have twitch".
         # Switching back to Legacy Function (but with [11,13] fix applied inside it).
         x_d_info = _fix_exp_for_x_d_info(
