@@ -1,13 +1,7 @@
 [project]
 name = "aiia"
-description = "The Ultimate AI Audio/Video toolkit for ComfyUI. Features an enhanced Ditto (with optimizations that outperform official demos and other SOTA talking head models in lip-sync accuracy- [x] v1.9.170: Zero-Pressure Speech & Photo Baseline
-    - [x] Motion: Implement Laissez-Faire Speech (0% Pressure)
-    - [x] Motion: Restore Stable Photo Anchor (No mathematical noise)
-    - [x] Motion: Robust Silence Locking (60% Pressure)
-    - [x] Update version to 1.9.170 and sync server
-
-- [x] v1.9.169: Neutral Elasticity & Geometric Integrity"
-version = "1.9.170"
+description = "The Ultimate AI Audio/Video toolkit for ComfyUI. Features an enhanced Ditto (with optimizations that outperform official demos and other SOTA talking head models in lip-sync accuracy and natural motion), EchoMimic V3 & FLOAT, VibeVoice & CosyVoice 3.0 (Zero-Shot Voice Cloning), Multi-Role Podcast Generation, and a powerful Media Browser."
+version = "1.9.182"
 license = {file = "LICENSE"}
 readme = "README.md"
 authors = [
