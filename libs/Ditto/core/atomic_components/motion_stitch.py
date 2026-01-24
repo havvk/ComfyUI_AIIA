@@ -652,13 +652,8 @@ class MotionStitch:
             
         self.prev_vad_alpha = vad_current
 
-        # 3. Apply Logic
-        # Calculate effective alpha for expression blending
-        # If we are attacking, force 1.0 to avoid "Weak/Half-Closed" ghosting.
-        # [Update v1.9.103/105] Softer Onset & Mouth Boost
-        # Using sqrt(vad_current) to boost mouth opening at lower volumes.
-        # [Update v1.9.108] More aggressive mouth opening for quiet speakers
-        # v1.9.105 used 0.5, v1.9.108 uses 0.3
+        # [v1.9.136] Enhanced Vitality (v1.112 Style)
+        # Using gamma boost to amplify micro-vibrations in silence.
         exp_blend_alpha = vad_current ** 0.3
 
         if exp_blend_alpha < 1.0:
@@ -669,10 +664,7 @@ class MotionStitch:
             x_d_info = ctrl_vad(x_d_info, x_s_info, exp_blend_alpha)
 
         # [FIX] Expression Temporal Smoothing (EMA)
-        # Prevents inhumanly fast mouth open/close cycles by adding inertia.
-        # Human mouths have physical mass; they can't teleport.
-        
-        # Map user selection to decay value
+        # Restore EMA decay to 0.3 for organic persistence.
         mouth_smoothing_mode = kwargs.get("mouth_smoothing", "Normal")
         if mouth_smoothing_mode == "None (Raw)":
             exp_decay = 0.0
@@ -680,7 +672,7 @@ class MotionStitch:
             exp_decay = 0.2
         elif mouth_smoothing_mode == "Heavy":
             exp_decay = 0.6
-        else:  # "Normal" (Default) [v1.9.108: Reduced from 0.5 to 0.3]
+        else:
             exp_decay = 0.3
         
         if exp_decay > 0:
@@ -697,33 +689,23 @@ class MotionStitch:
             x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)
             self.prev_exp_ema = x_d_info["exp"].copy()
             
-        # [v1.9.109] Mouth Opening Bias (Fix Lip Pucker)
-        # Add a subtle positive bias to the lower lip to prevent puckering 
-        # (下唇包牙) during speech.
-        vad_current = kwargs.get("vad_alpha", 1.0)
+        # [v1.9.136] 3D-Aware Mouth Biomechanics (v1.112 Refactoring)
+        # We reshape to (21, 3) to ensure we target the vertical Y-axis (index 1).
+        exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
+        
+        # 1. Mouth Opening Bias (v1.109 Stable Dose)
         if vad_current > 0.1:
             lower_lip = [17, 19, 20]
-            # 0.03 is a safe micro-dose that ensures "Space" for teeth.
-            x_d_info["exp"][:, lower_lip] += 0.03
+            # 0.03 constant bias (No alpha-scaling to avoid 1.112's deformation)
+            exp_reshaped[:, lower_lip, 1] += 0.03
 
-        delta_eye = 0
-        if self.drive_eye and self.delta_eye_arr is not None:
-            delta_eye = self.delta_eye_arr[
-                self.delta_eye_idx_list[self.idx % len(self.delta_eye_idx_list)]
-            ][None] * self.blink_amp
-            
-            # [v1.9.90] Removed all delta_eye manipulation (Clean Slate, Motion Hold).
-            # delta_eye is passed through unmodified to _fix_exp_for_x_d_info.
-            # Post-processing mirror (Right Eye -> Left Eye) is applied AFTER _fix_exp.
-
-
-
-            
-        # [Feature v1.9.48] Apple Mouth Micro-Motion
+        # 2. Mouth Micro-Motion (Breathing + Corners 7,8)
         if "delta_mouth" in kwargs:
-             _lip = [6, 7, 8, 12, 14, 17, 19, 20]
-             # Broadcasting scalar to (1, 8, 3) or (1, 8)
-             x_d_info["exp"][:, _lip] += kwargs["delta_mouth"]
+             _lip_and_corners = [6, 7, 8, 12, 14, 17, 19, 20]
+             exp_reshaped[:, _lip_and_corners, 1] += kwargs["delta_mouth"]
+             
+        # Restore flattened state
+        x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
         # [Revert v1.9.55] User reports "Original code didn't have twitch".
         # Switching back to Legacy Function (but with [11,13] fix applied inside it).
