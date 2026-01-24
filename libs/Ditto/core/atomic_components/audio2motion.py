@@ -181,10 +181,9 @@ class Audio2Motion:
         real_f = res_kp_seq.shape[1]
         
         # [v1.9.155] Hysteresis Logic
-        # Safety Zone: 0 ~ -10.0 deg. 
-        # Trigger Trigger at -10.0. Release only at -1.0.
+        # [v1.9.159 STRESS TEST] Relaxed Trigger to -25.0 for Geometry Validation
         if self.silence_frames >= 25:
-             if not self.is_recovering and delta_p < -10.0:
+             if not self.is_recovering and delta_p < -25.0:
                   self.is_recovering = True
                   print(f"[Hysteresis Trigger] Delta={delta_p:+.2f}° Breach. Force engaged.")
              elif self.is_recovering and delta_p >= -1.0:
@@ -200,7 +199,11 @@ class Audio2Motion:
         if self.is_recovering:
              self.look_up_timer += step_len
         
+        # [v1.9.159] Precision Stress Zone Highlight
         tag = "[HEARTBEAT]" if not self.is_recovering else "[RECOVERY]"
+        if -16.0 < delta_p < -14.0:
+             tag = "[STRESS ZONE]"
+        
         print(f"{tag} Frame {real_f:04d} | Delta={delta_p:+.2f}° | Silence={self.silence_frames:03d} | Timer={self.look_up_timer}/50")
 
         # 5. Postural Auto-Correction Logic [REPLACED by v1.9.155 Hysteresis]
@@ -217,6 +220,10 @@ class Audio2Motion:
             # 2. Brownian Momentum Logic
             drift_scales = np.ones_like(last_pose) * (0.0006 * boost_factor)
             new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
+            
+            # [v1.9.159 STRESS TEST] Upward Nudge
+            # We add a persistent upward force to "pump" the head into the stress zone
+            new_drift[0, 1:67] += 0.0010
             
             # [v1.9.152] Absolute Postural Force (Boosted to 0.0030)
             if self.is_recovering:
