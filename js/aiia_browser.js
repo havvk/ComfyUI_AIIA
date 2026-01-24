@@ -76,7 +76,7 @@ class AIIABrowserDialog extends ComfyDialog {
         this.iconView = { resizeObserver: null, columns: 0, rowHeight: 0, activeNodes: new Map(), nodePool: [], mediaCache: new Map() };
         this.applyFocusRaf = null;
         this.iconLoadTimers = new Map();
-        
+
         this.outsideClickListener = null;
 
         this.tooltipImage = $el("img.aiia-tooltip-image");
@@ -298,6 +298,25 @@ class AIIABrowserDialog extends ComfyDialog {
                 alert(`Error loading workflow: ${e.message}`);
                 console.error(e);
             }
+        }
+    }
+    async deleteItem(itemName) {
+        if (!itemName) return;
+        if (!confirm(`Are you sure you want to delete "${itemName}"? This action cannot be undone.`)) return;
+        try {
+            const res = await api.fetchApi('/aiia/v1/browser/delete_item', {
+                method: 'POST',
+                body: JSON.stringify({ path: this.currentPath, filename: itemName })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+            const result = await res.json();
+            if (result.status === 'success') {
+                this.setFocus(null, null);
+                this.refreshCurrentDirectory();
+            }
+        } catch (e) {
+            alert(`Error deleting item: ${e.message}`);
+            console.error(e);
         }
     }
     updateTooltipSizeLimits() { const rect = this.contentPanel.getBoundingClientRect(); const maxSize = Math.min(rect.width, rect.height) * 0.30; this.tooltipElement.style.setProperty('--aiia-tooltip-media-max-size', `${maxSize}px`); }
@@ -1313,11 +1332,15 @@ class AIIABrowserDialog extends ComfyDialog {
 
         if ((target.tagName === 'INPUT' && target !== this.pathInput) || target.tagName === 'SELECT') return;
 
-        const keyMap = { 'ArrowUp': 'moveFocus', 'ArrowDown': 'moveFocus', 'ArrowLeft': 'moveFocus', 'ArrowRight': 'moveFocus', 'Enter': 'activateFocusedItem', ' ': 'toggleTooltipForFocusedItem', 'Escape': 'close' };
+        const keyMap = { 'ArrowUp': 'moveFocus', 'ArrowDown': 'moveFocus', 'ArrowLeft': 'moveFocus', 'ArrowRight': 'moveFocus', 'Enter': 'activateFocusedItem', ' ': 'toggleTooltipForFocusedItem', 'Escape': 'close', 'Delete': 'deleteFocusedItem' };
         if (keyMap[e.key]) {
             e.preventDefault(); e.stopPropagation();
             this.isKeyboardNavigating = true;
             if (keyMap[e.key] === 'moveFocus') this.moveFocus(e.key);
+            else if (keyMap[e.key] === 'deleteFocusedItem') {
+                const item = this.getAllNavigableItems()[this.currentFocusIndex];
+                if (item) this.deleteItem(item.name);
+            }
             else this[keyMap[e.key]]();
         }
     }
