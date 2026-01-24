@@ -176,9 +176,9 @@ class Audio2Motion:
         delta_p = pitch_deg - self.s_pitch_deg
         
         if self.clip_idx % 5 == 0:
-             # Estimated frame is total frames added to res_kp_seq
-             cur_f = self.clip_idx * self.valid_clip_len
-             print(f"[Postural HEARTBEAT] Frame ~{cur_f} | Raw={pitch_deg:.2f}° | Delta={delta_p:+.2f}° | Timer={self.look_up_timer}/50")
+             # Use real accumulated frame count from sequence
+             real_f = res_kp_seq.shape[1]
+             print(f"[Postural HEARTBEAT] Frame {real_f} | Raw={pitch_deg:.2f}° | Delta={delta_p:+.2f}° (负为昂首) | Timer={self.look_up_timer}/50")
 
         if self.fix_kp_cond == 0:  # 不重置
             # 1. Silence Intensity Boost
@@ -207,19 +207,20 @@ class Audio2Motion:
             brow_indices = [217, 218, 220]
             brow_jitter = np.random.normal(0, 0.015 * boost_factor, len(brow_indices)).astype(np.float32)
             
-            # 5. Postural Auto-Correction (Anti-Stall) - [v1.9.146 Relative Logic]
+            # 5. Postural Auto-Correction (Anti-Stall) - [v1.9.147 Polarity Fix]
             # Trigger if head is > 2.0 degrees ABOVE its original photo position.
-            if self.silence_frames > 50 and delta_p > 2.0:
+            # In 3DMM: NEGATIVE = UP. So looking up more = Delta becomes Negative.
+            if self.silence_frames > 50 and delta_p < -2.0:
                 self.look_up_timer += 1
                 if self.look_up_timer % 10 == 0:
-                     print(f"[Postural Diag] Delta={delta_p:+.2f}° | Timer={self.look_up_timer}/50 | Silence={self.silence_frames}")
+                     print(f"[Postural Diag] 昂首监测中! Delta={delta_p:+.2f}° | Timer={self.look_up_timer}/50")
             else:
                 self.look_up_timer = 0
             
             gravity_vec = np.ones_like(last_pose) * 0.05
             if self.look_up_timer > 50:
                 if self.look_up_timer == 51:
-                    print(f"[Postural RECOVERY] Pitch stalled at {pitch_deg:.2f}°. Applying 20% Gravity to Pitch.")
+                    print(f"[Postural RECOVERY] Detected Upward Stall ({delta_p:.2f}°). Applying 20% Pull-Down.")
                 gravity_vec[0, 1:67] = 0.20
             
             # 6. Integration
