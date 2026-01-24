@@ -231,6 +231,12 @@ class Audio2Motion:
             if self.look_up_timer > 50:
                 # [v1.9.152] Tripelling restoration gravity to 60%
                 gravity_vec[0, 1:67] = 0.60
+                
+                # [v1.9.153] Nuclear Trigger: 100% Hard Overwrite if stall > 4s
+                if self.look_up_timer > 100:
+                     if self.look_up_timer % 10 == 0:
+                         print(f"[Nuclear ACTIVE] Pitch stuck too long. Force-overwriting to 100% Baseline.")
+                     gravity_vec[0, 1:67] = 1.0 
             
             # 6. Integration
             next_pose = last_pose + noise
@@ -331,15 +337,19 @@ class Audio2Motion:
         # Store for next batch
         self.last_kp_frame = res_kp_seq[:, -1:]
         
-        # [v1.9.109] Dynamic Anchor:
-        # Slowly pull the brownian anchor towards the AI's final pose.
-        # This prevents the "Rubber Band" effect after long speech segments.
-        # Brownian position is the offset relative to s_kp_cond.
-        # res_kp_seq shape: [1, seq_frames, dim]
-        target_drift = (self.last_kp_frame - self.s_kp_cond).squeeze()
-        # Smoothly interpolate brownian_pos towards this target
-        # 0.1 factor per call block means it follows moderately fast during speech
-        self.brownian_pos = (self.brownian_pos * 0.9 + target_drift * 0.1).astype(np.float32)
+        # [v1.9.153] Anchor Suppression Logic:
+        # If we are in recovery, the "Stable Center" should NO LONGER follow the AI's drift.
+        # Instead, we should actively pull the anchor back towards the 0-point (The Original Photo).
+        if self.look_up_timer > 50:
+            # Force the anchor to decay back to neutral photo position
+            # This ensures recovery gravity pulls the head DOWN, not back to its CURRENT tilted position.
+            self.brownian_pos = (self.brownian_pos * 0.7).astype(np.float32)
+            if self.clip_idx % 5 == 0:
+                 print(f"[Postural] Anchor Resetting... (Dist={np.abs(self.brownian_pos[0, 1:67]).mean():.4f})")
+        else:
+            # Normal speech persistence: anchor follows AI slowly to prevent rubber-banding
+            target_drift = (self.last_kp_frame - self.s_kp_cond).squeeze()
+            self.brownian_pos = (self.brownian_pos * 0.9 + target_drift * 0.1).astype(np.float32)
 
         self.clip_idx += 1
 
