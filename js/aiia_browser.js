@@ -93,7 +93,10 @@ class AIIABrowserDialog extends ComfyDialog {
 
         const splitViewContainer = $el("div.aiia-split-view-container", [this.directoryPanel, this.contentPanel, this.tooltipElement]);
 
-        this.iconViewObserver = new IntersectionObserver(this.handleIconIntersection.bind(this), { root: this.contentArea, rootMargin: '300px 0px 300px 0px' });
+        this.iconViewObserver = new IntersectionObserver(this.handleIconIntersection.bind(this), {
+            root: null, // Use root: null to observe relative to browser viewport
+            rootMargin: '500px 0px 500px 0px'
+        });
 
         this.titleElement = $el("span", { textContent: "AIIA Media Browser" });
         this.closeButton = $el("button.close", { textContent: "✖", title: "Close" });
@@ -1353,20 +1356,23 @@ class AIIABrowserDialog extends ComfyDialog {
         this.updateTooltipSizeLimits();
         this.element.focus({ preventScroll: true });
 
-        // [v1.9.106] Click-outside to close
+        // [v1.9.184] Click-outside to close - targeting the native ComfyUI modal backdrop
         if (!this.outsideClickListener) {
             this.outsideClickListener = (e) => {
-                if (this.element.style.display !== "none" && !this.element.contains(e.target)) {
-                    // Safety check: Don't close if we are interacting with another aiia modal (like fullscreen)
-                    if (this.fullscreenViewer && this.fullscreenViewer.element.style.display !== 'none') return;
-                    // Don't close if clicking the menu button itself (to avoid toggle conflict)
-                    if (e.target.closest('#aiia-browser-menu-button')) return;
-                    this.close();
+                if (this.element.style.display !== "none") {
+                    // If the click is on the parent container (the backdrop) and NOT on the element itself
+                    if (e.target === this.element.parentElement || e.target.classList.contains('comfy-modal')) {
+                        // Safety check: Don't close if we are interacting with another aiia modal
+                        if (this.fullscreenViewer && this.fullscreenViewer.element.style.display !== 'none') return;
+                        this.close();
+                    }
                 }
             };
-            // Use timeout to prevent the opening click from immediately closing it
             setTimeout(() => document.addEventListener("mousedown", this.outsideClickListener), 10);
         }
+
+        // Force a resize/scroll event to trigger initial icon rendering
+        setTimeout(() => { this.render(); }, 100);
     }
 
     close() {
