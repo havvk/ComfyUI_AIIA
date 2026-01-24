@@ -116,6 +116,7 @@ class Audio2Motion:
         self.silence_frames = 0 # [v1.9.139] Track silence duration for adaptive boost
         self.brownian_momentum = np.zeros_like(self.kp_cond) # [v1.9.139] Postural inertia
         self.look_up_timer = 0 # [v1.9.141] Timer for anti-stall recovery
+        self.is_recovering = False # [v1.9.155] Hysteresis state flag
         
         # [v1.9.146] Capture Source Pitch Baseline
         # We need the "Original" degree of the source photo to detect relative stalls.
@@ -178,22 +179,31 @@ class Audio2Motion:
         # [v1.9.150] Detailed Diagnostic Pulse
         # Always output current frame pitch and silence status
         real_f = res_kp_seq.shape[1]
-        tag = "[Postural HEARTBEAT]" if self.look_up_timer <= 50 else "[RECOVERY ACTIVE]"
+        
+        # [v1.9.155] Hysteresis Logic
+        # Safety Zone: 0 ~ -10.0 deg. 
+        # Trigger Trigger at -10.0. Release only at -1.0.
+        if self.silence_frames >= 25:
+             if not self.is_recovering and delta_p < -10.0:
+                  self.is_recovering = True
+                  print(f"[Hysteresis Trigger] Delta={delta_p:+.2f}° Breach. Force engaged.")
+             elif self.is_recovering and delta_p >= -1.0:
+                  self.is_recovering = False
+                  self.look_up_timer = 0
+                  print(f"[Hysteresis Release] Delta={delta_p:+.2f}°. Neutral zone reached.")
+        else:
+             # Stop recovering if talking starts
+             if self.is_recovering:
+                  self.is_recovering = False
+                  self.look_up_timer = 0
+        
+        if self.is_recovering:
+             self.look_up_timer += step_len
+        
+        tag = "[HEARTBEAT]" if not self.is_recovering else "[RECOVERY]"
         print(f"{tag} Frame {real_f:04d} | Delta={delta_p:+.2f}° | Silence={self.silence_frames:03d} | Timer={self.look_up_timer}/50")
 
-        # 5. Postural Auto-Correction Logic [v1.9.150 Robustness Patch]
-        # Shorten silence threshold to 25 frames (1 second) to combat jittery audio
-        # Only trigger if notably higher than source (> 2.0 deg Higher -> Delta < -2.0)
-        if self.silence_frames >= 25 and delta_p < -2.0:
-            self.look_up_timer += step_len
-            if self.look_up_timer > 50:
-                 print(f"[正在执行纠偏] Frame {real_f} | Delta={delta_p:+.2f}° | Active Down-Pull engaged.")
-        else:
-            # ONLY RESET if we are back in the safe zone (Hysteresis)
-            if delta_p >= -0.5:
-                 if self.look_up_timer > 50:
-                      print(f"[Postural] Recovery Finished (Delta={delta_p:+.2f}°). Timer reset.")
-                 self.look_up_timer = 0
+        # 5. Postural Auto-Correction Logic [REPLACED by v1.9.155 Hysteresis]
 
         if self.fix_kp_cond == 0:  # 不重置
             # 1. Silence Intensity Boost
@@ -209,7 +219,7 @@ class Audio2Motion:
             new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
             
             # [v1.9.152] Absolute Postural Force (Boosted to 0.0030)
-            if self.look_up_timer > 50:
+            if self.is_recovering:
                 new_drift[0, 1:67] -= 0.0030 
                 if self.look_up_timer > 100:
                     new_drift[0, 1:67] -= 0.0030 # Double impulse
@@ -245,7 +255,7 @@ class Audio2Motion:
                      self.look_up_timer = 0
 
             gravity_vec = np.ones_like(last_pose) * 0.05
-            if self.look_up_timer > 50:
+            if self.is_recovering:
                 # [v1.9.154] Maintain high gravity for next step seed
                 gravity_vec[0, 1:67] = 0.80 if self.look_up_timer > 100 else 0.60
             
@@ -315,7 +325,7 @@ class Audio2Motion:
         
         # [v1.9.154] Sequence-Level Physical Correction
         # We correct EVERY frame in the newly generated chunk before it hits the timeline.
-        if self.look_up_timer > 50:
+        if self.is_recovering:
             # 70% intensity if starting, 95% if persistent stall
             pressure = 0.70 if self.look_up_timer <= 100 else 0.95
             anchor_p = self.s_kp_cond[0, 1:67] + self.brownian_pos[0, 1:67]
@@ -365,7 +375,7 @@ class Audio2Motion:
         # [v1.9.153] Anchor Suppression Logic:
         # If we are in recovery, the "Stable Center" should NO LONGER follow the AI's drift.
         # Instead, we should actively pull the anchor back towards the 0-point (The Original Photo).
-        if self.look_up_timer > 50:
+        if self.is_recovering:
             # Force the anchor to decay back to neutral photo position
             # This ensures recovery gravity pulls the head DOWN, not back to its CURRENT tilted position.
             self.brownian_pos = (self.brownian_pos * 0.7).astype(np.float32)
