@@ -707,7 +707,7 @@ class MotionStitch:
         elif mouth_smoothing_mode == "Heavy":
             exp_decay = 0.6
         else:  # "Normal" (Default) [v1.9.108: Reduced from 0.5 to 0.3]
-            exp_decay = 0.3
+            exp_decay = 0.0 # [Forced v1.9.127 Diagnostic]
         
         if exp_decay > 0:
             if not hasattr(self, 'prev_exp_ema') or self.prev_exp_ema is None:
@@ -737,55 +737,13 @@ class MotionStitch:
 
 
             
-        # [v1.9.126] DIAGNOSTIC RESET: Removed all manual mouth biases.
-        # Letting AI model control the mouth (17, 19, 20) completely.
-        # Procedural deltas are now moved to the very bottom to ensure they land on final pixels.
-
-        # [v1.9.125] DIAGNOSTIC RESET: Removed all manual mouth biases.
-        # Letting AI model control the mouth (17, 19, 20) completely.
-
-        # Poses will be applied at the bottom.
-
-        # [v1.9.126] REFINED TRANSITION SHIELD (Narrow-Cast)
-        # We only lock eyes/cheeks when ACTIVELY transitioning (0.0 < alpha < 1.0).
-        # Pure Silence (0.0) is left alone to allow procedural breathing to take over.
-        if 0.0 < exp_blend_alpha < 1.0:
-            print(f"[AIIA] v1.9.126 Transition Guard (Alpha={exp_blend_alpha:.2f})")
-            
-            is_blinking = False
-            if self.drive_eye and not isinstance(delta_eye, int):
-                if np.abs(delta_eye).max() > 1e-4:
-                    is_blinking = True
-
-            # Shield against smile pops (Cheeks, Brows, Eyes)
-            _shield_points = [6, 7, 8, 12, 14, 15, 16, 18]
-            
-            exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
-            src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
-            
-            # Lock shield points only if not blinking
-            for p in _shield_points:
-                if p in [11, 13, 15] and is_blinking:
-                    continue
-                exp_reshaped[:, p] = src_reshaped[:, p]
-            
-            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
-
-            # Sync KP shield
-            if "kp" in x_d_info:
-                kp_reshaped = x_d_info["kp"].reshape(-1, 21, 3)
-                src_kp_reshaped = x_s_info["kp"].reshape(-1, 21, 3)
-                for p in _shield_points:
-                    if p in [11, 13, 15] and is_blinking:
-                        continue
-                    kp_reshaped[:, p] = src_kp_reshaped[:, p]
-                x_d_info["kp"] = kp_reshaped.reshape(1, -1)
+        # [v1.9.127] ALL SHIELDS AND LOCKDOWNS REMOVED.
+        # Returning to 100% Raw AI predictions for facial landmarks.
         # [Diagnostic v1.9.71] Output Logger
         if hasattr(self, '_log_blink_output') and self._log_blink_output:
              out_exp = x_d_info["exp"]
              # Log Eyelid, Squint, and Mouth Corners (6/12)
              print(f"  > Final Output: EyeL={float(out_exp[:, 11].mean()):.3f}, SquintL={float(out_exp[:, 15].mean()):.3f}, CornerL={float(out_exp[:, 6].mean()):.3f}, CornerR={float(out_exp[:, 12].mean()):.3f}")
-             self._log_blink_output = False
 
 
 
@@ -855,8 +813,8 @@ class MotionStitch:
         # We apply all procedural and legacy fixes here to ensure 
         # they are never overwritten by transition logic.
         
-        # 1. Base Eyelid Fix (Legacy twitch suppression + [11,13] restore)
-        x_d_info = _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye, self.drive_eye)
+        # 1. Base Eyelid Fix [DISABLED v1.9.127 for Raw Test]
+        # x_d_info = _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye, self.drive_eye)
         
         # 2. Breathing Mouth (delta_mouth)
         if "delta_mouth" in kwargs:
