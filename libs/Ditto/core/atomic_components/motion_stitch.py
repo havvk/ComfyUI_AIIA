@@ -45,7 +45,7 @@ def ctrl_motion(x_d_info, **kwargs):
 
     # mouth amp
     if "mouth_amp" in kwargs:
-        _lip = [6, 12, 14, 17, 19, 20]
+        _lip = [6, 7, 8, 9, 10, 12, 14, 17, 19, 20]
         x_d_info["exp"][:, _lip] *= kwargs["mouth_amp"]
 
     return x_d_info
@@ -299,7 +299,7 @@ def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
 
 
 
-    _lip = [6, 12, 14, 17, 19, 20] # [Restored v1.9.66] Re-enable Talking.
+    _lip = [6, 7, 8, 9, 10, 12, 14, 17, 19, 20] # [v1.9.188] Added Upper Lip (7,8,9,10) for Symmetry
 
     alpha = np.zeros((21, 3), dtype=x_d_info["exp"].dtype)
     alpha[_lip] = 1
@@ -515,7 +515,7 @@ class MotionStitch:
         _eye = [11, 13, 15, 16, 18] # [Native v1.9.94] Restored full official eye indices.
 
 
-        _lip = [6, 12, 14, 17, 19, 20] # [Restored v1.9.66] Re-enable Talking.
+        _lip = [6, 7, 8, 9, 10, 12, 14, 17, 19, 20] # [v1.9.188] Full Lip Set
 
         _a1 = np.zeros((21, 3), dtype=np.float32)
         _a1[_lip] = 1
@@ -533,8 +533,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.144] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.144. LATEST VERSION LOADED.")
+        # [Debug v1.9.188] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.188. LATEST VERSION LOADED.")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:

@@ -120,6 +120,7 @@ class Audio2Motion:
         self.look_up_timer = 0 # [v1.9.141] Timer for anti-stall recovery
         self.is_recovering = False # [v1.9.155] Hysteresis state flag
         self.target_bias_deg = 0.0 # [v1.9.162/163] For scope visibility
+        self.current_push = 0.0 # [v1.9.164] SAFETY: Initialize missing variable to prevent thread crash
         
         # [v1.9.170] Pure Photo Anchor (Reverted Neutralizer)
         self.photo_base_neutralizer = np.zeros_like(self.s_kp_cond)
