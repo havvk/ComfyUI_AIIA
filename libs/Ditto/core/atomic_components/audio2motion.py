@@ -171,18 +171,6 @@ class Audio2Motion:
 
         return res_kp_seq
     
-    def _generate_gaussian_pitch(self, target_deg, sigma=3.0):
-        # Ditto Pitch: 66 bins, 3 deg each, center at 32.5 (0 deg)
-        # target_deg = (idx * 3) - 97.5 => idx = (target_deg + 97.5) / 3
-        mu = (target_deg + 97.5) / 3.0
-        x = np.arange(66)
-        # We generate raw coefficients that will simulate the target degree
-        gaussian = np.exp(-((x - mu)**2) / (2 * sigma**2))
-        # Add tiny epsilon to avoid log(0) issues in model
-        gaussian = np.clip(gaussian, 1e-6, 1.0)
-        # Log-space coefficients for the categorical model
-        return np.log(gaussian).reshape(1, 66)
-
     def _update_kp_cond(self, res_kp_seq, idx, step_len=0):
         # [v1.9.144] Unconditional State Tracking
         # We process these outside the fix_kp_cond branches to ensure monitoring never stops.
@@ -222,9 +210,9 @@ class Audio2Motion:
         if self.is_recovering:
              self.look_up_timer += step_len
         
-        # [v1.9.165] FLUID POSTURE STATE MACHINE
+        # [v1.9.169] DECOUPLED POSTURE STATE MACHINE
         # Decisions are based on Silence Frames (Universal) + VAD Lookahead (Optional)
-        target_bias_deg = 0.0 # Standard flat
+        target_bias_deg = 0.0 # Default Neutral
         
         is_currently_talking = self.silence_frames < 25
         has_upcoming_speech = False
@@ -234,24 +222,24 @@ class Audio2Motion:
              has_upcoming_speech = len(lookahead) > 0 and np.max(lookahead) > 0.1
         
         if is_currently_talking or has_upcoming_speech:
-             # [v1.9.168] NEUTRAL ALIGNMENT: 0.0 deg for natural mouth geometry
+             # NEUTRAL ALIGNMENT: 0.0 deg matches 3DMM natural geometry
              target_bias_deg = 0.0 
         else:
              # IDLE SWAY: Natural breathing (Slight negative bias for safety)
              cycle = np.sin(self.global_time * 0.05)
-             target_bias_deg = -2.0 + cycle * 2.0 # Sway between 0.0 and -4.0
+             target_bias_deg = -2.0 + cycle * 1.5 
         
-        # [v1.9.165] Synthetic Anchor Generation
-        # Instead of photo bias, we anchor to a mathematical IDEAL distribution.
+        # [v1.9.169] Stable Photo Anchor
+        # We target the degree but we do NOT replace the categorical structure.
         self.target_bias_deg = target_bias_deg
-        synthetic_pitch = self._generate_gaussian_pitch(target_bias_deg)
         
-        # Apply to anchor target
+        # Calculate offset from s_pitch_deg to target_bias_deg
+        # Approx 1.0 unit = 30 deg.
+        pitch_offset_raw = (target_bias_deg - self.s_pitch_deg) / 30.0
+        
+        # Apply to anchor target via photo-base coefficients (Preserves 3D structure)
         self.target_neutralizer = self.photo_base_neutralizer.copy()
-        # Offset 1:67 is Pitch. We overwrite with synthetic distribution.
-        # Since photo_base_neutralizer[1:67] is -s_kp[1:67], 
-        # photo_base + s_kp + synthetic = synthetic.
-        self.target_neutralizer[0, 1:67] = -self.s_kp_cond[0, 1:67] + synthetic_pitch[0]
+        self.target_neutralizer[0, 1:67] += pitch_offset_raw
         
         # Smooth Transition (0.05 EMA = ~1s glide)
         self.current_neutralizer = self.current_neutralizer * 0.95 + self.target_neutralizer * 0.05
@@ -404,26 +392,27 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.168] NEUTRAL ELASTICITY MODE
-        # We now use "Mathematical Gravity" to pull the head into the safe zone.
+        # [v1.9.169] DECOUPLED PRESSURE MODE
+        # We allow AI full freedom (10%) during speech, but lock (60%) during silence.
         if True:
-            # [v1.9.168] Ultra-Fluid Pressure: 40% Pitch / 20% Yaw-Roll 
-            # This restores maximum expressiveness and solves "Blood Mouth" stretching.
-            pressure = 0.40 
-            soft_p = 0.20 
+            is_talking = self.silence_frames < 25 or (self.vad_timeline is not None and np.max(self.vad_timeline[res_kp_seq.shape[1]:res_kp_seq.shape[1]+30]) > 0.1)
             
-            # Stable Anchor = Photo + Synthetic Offset + Brownian Drift
+            # Decoupled Tension
+            pressure = 0.10 if is_talking else 0.60
+            soft_p = 0.10 if is_talking else 0.30 # Almost zero-interference during speech
+            
+            # Stable Anchor = Photo + Drift-Adjusted Offset
             anchor_p = (self.s_kp_cond + self.current_neutralizer + self.brownian_pos)[0, 1:202]
             
             for f in range(pred_kp_seq.shape[1]):
-                # Absolute Pitch Locking (Halt baring distortion)
+                # Pitch Gravity
                 pred_kp_seq[0, f, 1:67] = pred_kp_seq[0, f, 1:67] * (1.0 - pressure) + anchor_p[0:66] * pressure
-                # Soft Rotational Locking (Organic movement)
+                # Rotational Gravity
                 pred_kp_seq[0, f, 67:202] = pred_kp_seq[0, f, 67:202] * (1.0 - soft_p) + anchor_p[66:201] * soft_p
             
             if self.clip_idx % 20 == 0:
-                 mode_s = "SPEECH" if self.target_bias_deg < -2.0 else "IDLE"
-                 print(f"[v1.9.165 {mode_s}] Fluid Gravity: {self.target_bias_deg:+.1f}° goal.")
+                 mode_s = "SPEECH" if is_talking else "IDLE"
+                 print(f"[v1.9.169 {mode_s}] Fluid Tension: {pressure*100:.0f}% | Goal: {self.target_bias_deg:+.1f}°")
         
         # [v1.9.156] Virtual Last Frame for Startup Stabilization
         # If this is the VERY first chunk, we treat the source photo as the "prev frame"
