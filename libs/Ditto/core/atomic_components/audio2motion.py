@@ -113,6 +113,8 @@ class Audio2Motion:
         self.brownian_pos = np.zeros_like(self.kp_cond)
         self.last_kp_frame = None # [v1.9.107] Persistence bridging
         self.global_time = 0 # [v1.9.107] For procedural breathing
+        self.silence_frames = 0 # [v1.9.139] Track silence duration for adaptive boost
+        self.brownian_momentum = np.zeros_like(self.kp_cond) # [v1.9.139] Postural inertia
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         ## ========================
@@ -152,36 +154,50 @@ class Audio2Motion:
     
     def _update_kp_cond(self, res_kp_seq, idx):
         if self.fix_kp_cond == 0:  # 不重置
-            # [Vitality Fix v1.9.41]
-            # Problem: Feeding back smoothed output causes variance decay (EMA effect), leading to stasis.
-            # Solution: Inject micro-noise to keep the 'cascading generation' alive.
+            # [v1.9.139] Silence Tracker & Adaptive Logic
+            # Detect silence intensity (Threshold < 0.1 VAD)
+            is_silent = (idx >= res_kp_seq.shape[1]) or (np.mean(res_kp_seq[:, idx-1, :]) < 0.001) # fallback VAD check
+            # Real VAD is better if accessible, but we track frames since last audio here.
+            # In __call__, we reset silence_frames if audio is present.
+            
+            # [Method 3: Threshold Boost]
+            # Beyond 50 frames (2s), we ramp noise and step size to counteract EMA stabilization.
+            boost_factor = 1.0
+            if self.silence_frames > 50:
+                # Linear ramp up to 1.6x over the next 150 frames
+                boost_factor = min(1.6, 1.0 + (self.silence_frames - 50) * 0.004)
+            
             last_pose = res_kp_seq[:, idx-1]
-            # [Update v1.9.104] Dynamic Vitality: Increased noise (0.005) + Brownian Drift
-            noise_scale = 0.005 
+            # Base Noise: 0.005 -> 0.008 at full boost
+            noise_scale = 0.005 * boost_factor
             noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
             
-            # 1. Brownian Drift Tuning (Reference Anchor Drift)
-            # v1.9.108: Fix math - we let the anchor itself wander (Random Walk)
-            # so the character never settles into a fixed "wax figure" state.
-            drift_scales = np.ones_like(last_pose) * 0.0006 
-            drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
-            self.brownian_pos += drift
+            # [Method 2: Restless Brownian / Postural Shifts]
+            # We add momentum to the random walk so the "wandering" feels like intentional shifting.
+            drift_scales = np.ones_like(last_pose) * (0.0006 * boost_factor)
+            new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
+            # 0.92 persistence for momentum (Slow, weighted drift)
+            self.brownian_momentum = self.brownian_momentum * 0.92 + new_drift
+            self.brownian_pos += self.brownian_momentum
             
-            # 2. Reference Pose Breathing (Anchor Sway)
-            # Gently sway the target anchor s_kp_cond to simulate chest/neck breathing.
+            # [Method 1: Compound Sine Sway]
             self.global_time += 1
-            t = self.global_time * 0.04 # ~1 Hz cycle
-            sway = (np.sin(t) * 0.002).astype(np.float32)
+            t = self.global_time
+            # Layer 1: Main Breathing (~15-20 frames)
+            sway_f1 = np.sin(t * 0.04) * 0.002
+            # Layer 2: Micro Jitter/Heartbeat (~3-5 frames)
+            sway_f2 = np.sin(t * 0.25) * 0.0004
+            # Layer 3: Macro Postural Drift (~300 frames)
+            sway_f3 = np.sin(t * 0.005) * 0.0015
+            
+            sway = (sway_f1 + sway_f2 + sway_f3).astype(np.float32)
             current_s_kp = self.s_kp_cond + sway
             
             # 3. Micro-Brow Jitters (Indices 15, 16, 18)
-            # These are critical for avoiding "wax figure" look.
             brow_indices = [15, 16, 18]
-            brow_jitter = np.random.normal(0, 0.015, (len(brow_indices), 3)).astype(np.float32)
+            brow_jitter = np.random.normal(0, 0.015 * boost_factor, (len(brow_indices), 3)).astype(np.float32)
             
-            # [Update v1.9.108] Reduced Gravity to 5% (0.05)
-            # This allows the LMDM model more freedom to follow its own trajectory
-            # instead of being aggressively pulled back to center.
+            # Reduced Gravity to 5% (0.05) - v1.108 legacy
             gravity = 0.05
             
             next_pose = last_pose + noise
@@ -190,7 +206,7 @@ class Audio2Motion:
                 if idx_in_kp < next_pose.shape[1]:
                     next_pose[:, idx_in_kp] += brow_jitter[i]
 
-            # Anchor = Reference + Subtle Breathing Sway + Brownian Wandering
+            # Anchor = Reference + Compound Sway + Brownian Posture
             anchor = current_s_kp + self.brownian_pos
             self.kp_cond = next_pose * (1.0 - gravity) + anchor * gravity
             
@@ -240,6 +256,12 @@ class Audio2Motion:
                 torch.manual_seed(offset_seed)
                 torch.cuda.manual_seed(offset_seed)
                 torch.cuda.manual_seed_all(offset_seed)
+            
+            # [v1.9.139] Speech resets silence counter
+            self.silence_frames = 0
+        else:
+            # Increment silence counter during idle
+            self.silence_frames += step_len
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
