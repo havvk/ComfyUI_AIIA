@@ -299,8 +299,8 @@ def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
 
 
 
-    _lip = [6, 12, 14, 17, 19, 20] # [Reverted v1.9.111] Back to official indices to fix unintended brow/eye pull.
-    # Note: 7/8 (Corners) and 18 (Brows) removed to avoid "fixed squint/smile" look.
+    _lip = [6, 7, 8, 12, 14, 17, 19, 20] # [v1.9.112] Restored 7, 8 (Corners) to fix closure pull.
+    # Note: 18 (Brows) remains removed to avoid "fixed squint" look.
 
     alpha = np.zeros((21, 3), dtype=x_d_info["exp"].dtype)
     alpha[_lip] = 1
@@ -669,6 +669,23 @@ class MotionStitch:
             
             x_d_info = ctrl_vad(x_d_info, x_s_info, exp_blend_alpha)
 
+        # [v1.9.112] Precise Mouth Opening Bias (Applied BEFORE EMA for temporal smoothing)
+        # 1. Point 18 (Brows) suppressed (kept in rest pose by mask alpha).
+        # 2. Point 7/8 (Corners) and 17, 19, 20 (Lower Lip) lowered dynamically.
+        bias_alpha = kwargs.get("vad_alpha", 0.0)
+        # No threshold (>0.05) to prevent jumpy closure.
+        # Scale bias by speech intensity to allow natural closure.
+        lower_lip = [17, 19, 20]
+        corners = [7, 8]
+        
+        # Point to spatial indexing: exp is (1, 21, 3)
+        exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
+        # Center lower lip gets full bias
+        exp_reshaped[:, lower_lip, 1] += 0.05 * bias_alpha
+        # Corners get 30% bias to lower the entire jaw structure harmoniously
+        exp_reshaped[:, corners, 1] += 0.015 * bias_alpha 
+        x_d_info["exp"] = exp_reshaped.reshape(1, -1)
+
         # [FIX] Expression Temporal Smoothing (EMA)
         # Prevents inhumanly fast mouth open/close cycles by adding inertia.
         # Human mouths have physical mass; they can't teleport.
@@ -698,19 +715,6 @@ class MotionStitch:
             x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)
             self.prev_exp_ema = x_d_info["exp"].copy()
             
-        # [v1.9.111] Precise Mouth Opening Bias
-        # 1. Reverted Point 18 (it controls brows, not lips).
-        # 2. Reverted Point 7/8 (mouth corners).
-        # 3. Made bias speech-dependent: 0.0 in silence, up to 0.05 in speech.
-        bias_alpha = kwargs.get("vad_alpha", 0.0)
-        if bias_alpha > 0.05:
-            # Scale bias by speech intensity to allow natural closure
-            bias_val = 0.05 * bias_alpha 
-            lower_lip = [17, 19, 20] # Points 17, 19, 20 are the true lower-lip center chain
-            exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
-            # Index 1 = Y-axis (vertical)
-            exp_reshaped[:, lower_lip, 1] += bias_val
-            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
         delta_eye = 0
         if self.drive_eye and self.delta_eye_arr is not None:
