@@ -652,9 +652,9 @@ class MotionStitch:
             
         self.prev_vad_alpha = vad_current
 
-        # [v1.9.136] Enhanced Vitality (v1.112 Style)
-        # Using gamma boost to amplify micro-vibrations in silence.
-        exp_blend_alpha = vad_current ** 0.3
+        # [v1.9.138] Volumetric Vitality (3D Axis Expansion & Bias Purge)
+        # Using Gamma 0.5 for a smoother, less "snappy" transition into speech.
+        exp_blend_alpha = vad_current ** 0.5
 
         if exp_blend_alpha < 1.0:
             # If releasing (and not attacking), use frozen frame if available
@@ -689,20 +689,17 @@ class MotionStitch:
             x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)
             self.prev_exp_ema = x_d_info["exp"].copy()
             
-        # [v1.9.136] 3D-Aware Mouth Biomechanics (v1.112 Refactoring)
-        # We reshape to (21, 3) to ensure we target the vertical Y-axis (index 1).
+        # [v1.9.138] 3D-Aware Mouth Biomechanics (Absolute Bias Purge)
+        # We target all 3 coordinates (X, Y, Z) for Procedural Breathing 
+        # to create a "full" volumetric pulse without corrupting indices.
+        # Constant Mouth Bias (+0.03) has been DELETED to eliminate deformation.
         exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
         
-        # 1. Mouth Opening Bias (v1.109 Stable Dose)
-        if vad_current > 0.1:
-            lower_lip = [17, 19, 20]
-            # 0.03 constant bias (No alpha-scaling to avoid 1.112's deformation)
-            exp_reshaped[:, lower_lip, 1] += 0.03
-
-        # 2. Mouth Micro-Motion (Breathing + Corners 7,8)
+        # 1. Volumetric Mouth Micro-Motion (Breathing + Corners 7,8)
         if "delta_mouth" in kwargs:
              _lip_and_corners = [6, 7, 8, 12, 14, 17, 19, 20]
-             exp_reshaped[:, _lip_and_corners, 1] += kwargs["delta_mouth"]
+             # Targeting all 3 axes [:, :] for high-fidelity 3D expansion
+             exp_reshaped[:, _lip_and_corners] += kwargs["delta_mouth"]
              
         # Restore flattened state
         x_d_info["exp"] = exp_reshaped.reshape(1, -1)
