@@ -206,8 +206,13 @@ class Audio2Motion:
             p_soft = e_x / e_x.sum()
             pitch_deg = np.sum(p_soft * np.arange(66)) * 3 - 97.5
             
-            # If looking up (>1.0 deg) during long silence, start recovery timer
-            if self.silence_frames > 50 and pitch_deg > 1.0:
+            # [v1.9.143] Postural Heartbeat (Sampling Pitch)
+            # Unconditional sampling to diagnose failure of v1.142
+            if self.global_time % 100 == 0:
+                 print(f"[Postural HEARTBEAT] Pitch={pitch_deg:.2f}° | Silence={self.silence_frames}")
+
+            # If looking up (>0.5 deg) during long silence, start recovery timer
+            if self.silence_frames > 50 and pitch_deg > 0.5:
                 self.look_up_timer += 1
                 if self.look_up_timer % 10 == 0:
                      print(f"[Postural Diag] Pitch={pitch_deg:.2f}° | Timer={self.look_up_timer}/50 | Silence={self.silence_frames}")
