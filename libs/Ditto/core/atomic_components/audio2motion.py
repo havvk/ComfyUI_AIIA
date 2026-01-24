@@ -121,11 +121,8 @@ class Audio2Motion:
         self.is_recovering = False # [v1.9.155] Hysteresis state flag
         self.target_bias_deg = 0.0 # [v1.9.162/163] For scope visibility
         
-        # [v1.9.165] Mathematical Posture Initializers
+        # [v1.9.170] Pure Photo Anchor (Reverted Neutralizer)
         self.photo_base_neutralizer = np.zeros_like(self.s_kp_cond)
-        self.photo_base_neutralizer[0, 1:202] = -self.s_kp_cond[0, 1:202]
-        self.current_neutralizer = self.photo_base_neutralizer.copy()
-        self.target_neutralizer = self.photo_base_neutralizer.copy()
         
         # [v1.9.146] Capture Source Pitch Baseline
         # We need the "Original" degree of the source photo to detect relative stalls.
@@ -210,10 +207,8 @@ class Audio2Motion:
         if self.is_recovering:
              self.look_up_timer += step_len
         
-        # [v1.9.169] DECOUPLED POSTURE STATE MACHINE
+        # [v1.9.170] ZERO-PRESSURE SPEECH STATE MACHINE
         # Decisions are based on Silence Frames (Universal) + VAD Lookahead (Optional)
-        target_bias_deg = 0.0 # Default Neutral
-        
         is_currently_talking = self.silence_frames < 25
         has_upcoming_speech = False
         
@@ -221,34 +216,16 @@ class Audio2Motion:
              lookahead = self.vad_timeline[idx : idx + 50]
              has_upcoming_speech = len(lookahead) > 0 and np.max(lookahead) > 0.1
         
-        if is_currently_talking or has_upcoming_speech:
-             # NEUTRAL ALIGNMENT: 0.0 deg matches 3DMM natural geometry
-             target_bias_deg = 0.0 
-        else:
-             # IDLE SWAY: Natural breathing (Slight negative bias for safety)
-             cycle = np.sin(self.global_time * 0.05)
-             target_bias_deg = -2.0 + cycle * 1.5 
+        # We store the state for pressure selection in __call__
+        self.is_talking_state = is_currently_talking or has_upcoming_speech
         
-        # [v1.9.169] Stable Photo Anchor
-        # We target the degree but we do NOT replace the categorical structure.
-        self.target_bias_deg = target_bias_deg
-        
-        # Calculate offset from s_pitch_deg to target_bias_deg
-        # Approx 1.0 unit = 30 deg.
-        pitch_offset_raw = (target_bias_deg - self.s_pitch_deg) / 30.0
-        
-        # Apply to anchor target via photo-base coefficients (Preserves 3D structure)
-        self.target_neutralizer = self.photo_base_neutralizer.copy()
-        self.target_neutralizer[0, 1:67] += pitch_offset_raw
-        
-        # Smooth Transition (0.05 EMA = ~1s glide)
-        self.current_neutralizer = self.current_neutralizer * 0.95 + self.target_neutralizer * 0.05
-        
+        # Log Heartbeat
         tag = "[HEARTBEAT]" if not self.is_recovering else "[RECOVERY]"
         if has_upcoming_speech and not is_currently_talking:
              tag = "[ANTICIPATION]"
              
-        print(f"{tag} Frame {idx:04d} | Delta={delta_p:+.2f}° | Goal={self.target_bias_deg:+.1f}° | Silence={self.silence_frames:03d}")
+        if self.clip_idx % 20 == 0:
+             print(f"{tag} Frame {idx:04d} | Delta={delta_p:+.2f}° | Silence={self.silence_frames:03d}")
 
         # 5. Postural Auto-Correction Logic [REPLACED by v1.9.160 STATIC + v1.9.162 PREDICTIVE]
 
@@ -392,27 +369,25 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.169] DECOUPLED PRESSURE MODE
-        # We allow AI full freedom (10%) during speech, but lock (60%) during silence.
+        # [v1.9.170] ZERO-PRESSURE SPEECH MODE
+        # 0% Pressure during speech (Full AI expression), 60% during silence (Stability).
         if True:
-            is_talking = self.silence_frames < 25 or (self.vad_timeline is not None and np.max(self.vad_timeline[res_kp_seq.shape[1]:res_kp_seq.shape[1]+30]) > 0.1)
+            # We use is_talking from state machine (VAD + Silence)
+            is_talking = getattr(self, "is_talking_state", False)
             
-            # Decoupled Tension
-            pressure = 0.10 if is_talking else 0.60
-            soft_p = 0.10 if is_talking else 0.30 # Almost zero-interference during speech
+            # [v1.9.170] True Laissez-Faire: 0.0 pressure for speech!
+            pressure = 0.0 if is_talking else 0.60
+            soft_p = 0.0 if is_talking else 0.30
             
-            # Stable Anchor = Photo + Drift-Adjusted Offset
-            anchor_p = (self.s_kp_cond + self.current_neutralizer + self.brownian_pos)[0, 1:202]
+            # Anchor is ALWAYS the original photo + micro-drift
+            anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 1:202]
             
             for f in range(pred_kp_seq.shape[1]):
-                # Pitch Gravity
-                pred_kp_seq[0, f, 1:67] = pred_kp_seq[0, f, 1:67] * (1.0 - pressure) + anchor_p[0:66] * pressure
-                # Rotational Gravity
-                pred_kp_seq[0, f, 67:202] = pred_kp_seq[0, f, 67:202] * (1.0 - soft_p) + anchor_p[66:201] * soft_p
+                pred_kp_seq[0, f, 1:202] = pred_kp_seq[0, f, 1:202] * (1.0 - pressure) + anchor_p[0:201] * pressure
             
             if self.clip_idx % 20 == 0:
                  mode_s = "SPEECH" if is_talking else "IDLE"
-                 print(f"[v1.9.169 {mode_s}] Fluid Tension: {pressure*100:.0f}% | Goal: {self.target_bias_deg:+.1f}°")
+                 print(f"[v1.9.170 {mode_s}] Pressure: {pressure*100:.0f}% (Safety Net Active)")
         
         # [v1.9.156] Virtual Last Frame for Startup Stabilization
         # If this is the VERY first chunk, we treat the source photo as the "prev frame"
