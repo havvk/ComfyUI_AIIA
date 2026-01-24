@@ -154,64 +154,48 @@ class Audio2Motion:
         return res_kp_seq
     
     def _update_kp_cond(self, res_kp_seq, idx):
+        # [v1.9.144] Unconditional State Tracking
+        # We process these outside the fix_kp_cond branches to ensure monitoring never stops.
+        last_pose = res_kp_seq[:, idx-1]
+        
+        # Calculate current pitch degree (Ditto 3DMM logic)
+        pitch_bins = last_pose[0, 1:67]
+        e_x = np.exp(pitch_bins - np.max(pitch_bins))
+        p_soft = e_x / e_x.sum()
+        pitch_deg = np.sum(p_soft * np.arange(66)) * 3 - 97.5
+        
+        self.global_time += 1
+        if self.global_time % 100 == 0:
+             print(f"[Postural HEARTBEAT] Pitch={pitch_deg:.2f}° | Silence={self.silence_frames} | GlobalTime={self.global_time}")
+
         if self.fix_kp_cond == 0:  # 不重置
-            # [v1.9.139] Silence Tracker & Adaptive Logic
-            # Detect silence intensity (Threshold < 0.1 VAD)
-            is_silent = (idx >= res_kp_seq.shape[1]) or (np.mean(res_kp_seq[:, idx-1, :]) < 0.001) # fallback VAD check
-            # Real VAD is better if accessible, but we track frames since last audio here.
-            # In __call__, we reset silence_frames if audio is present.
-            
-            # [Method 3: Threshold Boost]
-            # Beyond 50 frames (2s), we ramp noise and step size to counteract EMA stabilization.
+            # 1. Silence Intensity Boost
             boost_factor = 1.0
             if self.silence_frames > 50:
-                # Linear ramp up to 1.6x over the next 150 frames
                 boost_factor = min(1.6, 1.0 + (self.silence_frames - 50) * 0.004)
             
-            last_pose = res_kp_seq[:, idx-1]
-            # Base Noise: 0.005 -> 0.008 at full boost
             noise_scale = 0.005 * boost_factor
             noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
             
-            # [Method 2: Restless Brownian / Postural Shifts]
-            # We add momentum to the random walk so the "wandering" feels like intentional shifting.
+            # 2. Brownian Momentum Logic
             drift_scales = np.ones_like(last_pose) * (0.0006 * boost_factor)
             new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
-            # 0.92 persistence for momentum (Slow, weighted drift)
             self.brownian_momentum = self.brownian_momentum * 0.92 + new_drift
             self.brownian_pos += self.brownian_momentum
             
-            # [Method 1: Compound Sine Sway]
-            self.global_time += 1
+            # 3. Compound Sine Sway
             t = self.global_time
-            # Layer 1: Main Breathing (~15-20 frames)
             sway_f1 = np.sin(t * 0.04) * 0.002
-            # Layer 2: Micro Jitter/Heartbeat (~3-5 frames)
             sway_f2 = np.sin(t * 0.25) * 0.0004
-            # Layer 3: Macro Postural Drift (~300 frames)
             sway_f3 = np.sin(t * 0.005) * 0.0015
-            
             sway = (sway_f1 + sway_f2 + sway_f3).astype(np.float32)
             current_s_kp = self.s_kp_cond + sway
             
-            # 3. Micro-Brow Jitters (Indices 15, 16, 18)
-            brow_indices = [15, 16, 18]
-            # [v1.9.141] Postural Auto-Correction (Anti-Stall)
-            # Detect if head is stuck in an upward-tilted ("Looking Up") pose.
-            # Pitch indices are 1:67 in the flattened vector.
-            pitch_bins = last_pose[0, 1:67]
-            # Use softmax + weighted sum to get current degree (Ditto 3DMM logic)
-            # Note: scipy.special.softmax isn't imported here, so we do manual softmax
-            e_x = np.exp(pitch_bins - np.max(pitch_bins))
-            p_soft = e_x / e_x.sum()
-            pitch_deg = np.sum(p_soft * np.arange(66)) * 3 - 97.5
+            # 4. Micro-Brow Jitters (Expression Indices 15, 16, 18 -> offset 202)
+            brow_indices = [217, 218, 220]
+            brow_jitter = np.random.normal(0, 0.015 * boost_factor, len(brow_indices)).astype(np.float32)
             
-            # [v1.9.143] Postural Heartbeat (Sampling Pitch)
-            # Unconditional sampling to diagnose failure of v1.142
-            if self.global_time % 100 == 0:
-                 print(f"[Postural HEARTBEAT] Pitch={pitch_deg:.2f}° | Silence={self.silence_frames}")
-
-            # If looking up (>0.5 deg) during long silence, start recovery timer
+            # 5. Postural Auto-Correction (Anti-Stall)
             if self.silence_frames > 50 and pitch_deg > 0.5:
                 self.look_up_timer += 1
                 if self.look_up_timer % 10 == 0:
@@ -219,26 +203,19 @@ class Audio2Motion:
             else:
                 self.look_up_timer = 0
             
-            # Define gravity vector (Pitch gets special treatment during stall)
-            # Default 5% (0.05)
             gravity_vec = np.ones_like(last_pose) * 0.05
             if self.look_up_timer > 50:
                 if self.look_up_timer == 51:
                     print(f"[Postural RECOVERY] Pitch stalled at {pitch_deg:.2f}°. Applying 20% Gravity to Pitch.")
-                # Ramp up restoring force to 20% to slowly pull head back to center
                 gravity_vec[0, 1:67] = 0.20
             
-            brow_jitter = np.random.normal(0, 0.015 * boost_factor, (len(brow_indices), 3)).astype(np.float32)
-            
+            # 6. Integration
             next_pose = last_pose + noise
-            # Inject jitter into specific points
             for i, idx_in_kp in enumerate(brow_indices):
                 if idx_in_kp < next_pose.shape[1]:
-                    next_pose[:, idx_in_kp] += brow_jitter[i]
+                    next_pose[0, idx_in_kp] += brow_jitter[i]
 
-            # Anchor = Reference + Compound Sway + Brownian Posture
             anchor = current_s_kp + self.brownian_pos
-            # Use spatially-varying gravity for correction
             self.kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
             
         elif self.fix_kp_cond > 0:
