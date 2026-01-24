@@ -689,13 +689,24 @@ class MotionStitch:
             x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)
             self.prev_exp_ema = x_d_info["exp"].copy()
             
-        # [v1.9.138] 3D-Aware Mouth Biomechanics (Absolute Bias Purge)
+        # [v1.9.140] 3D-Aware Mouth Biomechanics (Exponential Jaw Excitation)
         # We target all 3 coordinates (X, Y, Z) for Procedural Breathing 
-        # to create a "full" volumetric pulse without corrupting indices.
-        # Constant Mouth Bias (+0.03) has been DELETED to eliminate deformation.
+        # while using an Exponential Gain for the lower lip to boost lazy audio.
         exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
         
-        # 1. Volumetric Mouth Micro-Motion (Breathing + Corners 7,8)
+        # 1. Exponential Jaw Gain (Boost micro-openings for lazy audio)
+        # We amplify original AI intent without adding a fixed offset.
+        lower_lip = [17, 19, 20]
+        y_intent = exp_reshaped[:, lower_lip, 1]
+        # Only boost if the AI is actually trying to open the mouth (y > 0)
+        mask = y_intent > 0.001
+        if np.any(mask):
+            # Gain(y) = 1.0 + 0.8 * exp(-y / 0.04)
+            # High gain for small y, moves to 1.0 as y increases.
+            gain = 1.0 + 0.8 * np.exp(-y_intent[mask] / 0.04)
+            exp_reshaped[:, lower_lip, 1][mask] *= gain
+
+        # 2. Volumetric Mouth Micro-Motion (Breathing + Corners 7,8)
         if "delta_mouth" in kwargs:
              _lip_and_corners = [6, 7, 8, 12, 14, 17, 19, 20]
              # Targeting all 3 axes [:, :] for high-fidelity 3D expansion
