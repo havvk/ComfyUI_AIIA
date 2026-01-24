@@ -295,8 +295,8 @@ def _set_eye_blink_idx(N, blink_n=15, open_n=-1, interval_min=60, interval_max=1
 
 
 def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
-    _eye = [11, 13] # [Surgery v1.9.113] Pure Eyelid. Remove 15, 16, 18 to lock cheeks/brows to source.
-    _lip = [6, 7, 8, 12, 14] # [Surgery v1.9.113] Removed 17, 19, 20 from AI control to fix center-lip smile pull.
+    _eye = [11, 13, 15, 16, 18] # [Restored v1.9.114] Restore 15, 16, 18 to fix Left-Eye blink.
+    _lip = [6, 7, 8, 12, 14, 17, 19, 20] # [Restored v1.9.114] Restore 17, 19, 20 to fix Stuck Mouth.
     # Note: Corners (7, 8) and Side-Lips (6, 12, 14) stay active for "Breathing" and "Closure Harmony".
 
     alpha = np.zeros((21, 3), dtype=x_d_info["exp"].dtype)
