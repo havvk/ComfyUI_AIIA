@@ -672,28 +672,22 @@ class MotionStitch:
                  x_d_info["exp"] = self.last_speaking_exp.copy()
             
             x_d_info = ctrl_vad(x_d_info, x_s_info, exp_blend_alpha)
-            # [v1.9.115] Transition Suppression: Lock cheeks/brows to source 
-            # while mouth is opening or closing (alpha < 1.0).
-            # This prevents AI smile/squint predictions from leaking into transitions.
-            _squint_fix = [15, 16, 18]
-            exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
-            src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
-            exp_reshaped[:, _squint_fix] = src_reshaped[:, _squint_fix]
-            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
+            # [REMOVED v1.9.118] Moved suppression to the absolute end of __call__ for Final Lock.
 
-        # [v1.9.117] Lite Mouth Opening Bias (Applied BEFORE EMA for temporal smoothing)
-        # We use a 60% strength (+0.03) compared to v1.9.112 to avoid facial mutation.
+        # [v1.9.118] Adaptive Mouth Bias Guard (Applied BEFORE EMA)
+        # Threshold (0.6): Bias is 0.0 in transitions, ramps up in loud speech.
         bias_alpha = kwargs.get("vad_alpha", 0.0)
-        lower_lip = [17, 19, 20]
-        corners = [7, 8]
-        
-        # Point to spatial indexing: exp is (1, 21, 3)
-        exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
-        # Center lower lip gets lite bias (+0.03)
-        exp_reshaped[:, lower_lip, 1] += 0.03 * bias_alpha
-        # Corners get micro bias (+0.01) for minimal structural support
-        exp_reshaped[:, corners, 1] += 0.01 * bias_alpha 
-        x_d_info["exp"] = exp_reshaped.reshape(1, -1)
+        if bias_alpha > 0.6:
+            # Linear ramp from 0.6 to 1.0
+            ramp_weight = (bias_alpha - 0.6) / 0.4
+            bias_val = 0.03 * ramp_weight
+            
+            lower_lip = [17, 19, 20]
+            corners = [7, 8]
+            exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
+            exp_reshaped[:, lower_lip, 1] += bias_val
+            exp_reshaped[:, corners, 1] += (bias_val * 0.3) # Harmonious corner follow
+            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
         # [FIX] Expression Temporal Smoothing (EMA)
         # Prevents inhumanly fast mouth open/close cycles by adding inertia.
@@ -761,6 +755,16 @@ class MotionStitch:
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 
+        # [v1.9.118] Final Transition Lockdown (Absolute Last Step)
+        # If we are in transition (opening or closing), force eyebrows and cheeks to source.
+        # This acts as a 'Safety Net' to ensure no logic re-introduces a smile pop.
+        if exp_blend_alpha < 1.0:
+            _squint_fix = [15, 16, 18]
+            exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
+            src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
+            exp_reshaped[:, _squint_fix] = src_reshaped[:, _squint_fix]
+            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
+            
         # [Diagnostic v1.9.71] Output Logger
         if hasattr(self, '_log_blink_output') and self._log_blink_output:
              out_exp = x_d_info["exp"]
