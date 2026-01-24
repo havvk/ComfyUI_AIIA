@@ -760,55 +760,68 @@ class MotionStitch:
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 
-        # [v1.9.122] Ultimate Total State Lockdown (Closing/Opening)
-        # We lock everything (Pose, Scale, Translation, Exp, KP) to Source 
-        # except for BLINKS and a manual vertical MOUTH bypass.
-        if exp_blend_alpha < 1.0:
-            print(f"[AIIA] V1.9.122 Safety Net Engaged (Alpha={exp_blend_alpha:.2f})")
+        # [v1.9.123] Vitality-Aware Transition Lockdown
+        # Threshold: Only trigger if we are ACTIVELY opening or closing (0.0 < alpha < 1.0).
+        # This restores silence vitality (breathing/sway) when alpha == 0.0.
+        if 0.0 < exp_blend_alpha < 1.0:
+            print(f"[AIIA] v1.9.123 Transition Isolation (Alpha={exp_blend_alpha:.2f})")
             
-            # 1. Detect Blinks
+            # 1. Detect Blinks (Safety Net)
             is_blinking = False
             if self.drive_eye and not isinstance(delta_eye, int):
                 if np.abs(delta_eye).max() > 1e-4:
                     is_blinking = True
 
-            # 2. Total Parameter Freeze (Orientation/Position)
-            for k in ['pitch', 'yaw', 'roll', 't', 'scale']:
+            # 2. Vitality Preservation (Locked Pose + Procedural Offsets)
+            # We lock to Source as "Rest Pose", but ALLOW the procedural deltas (breathing).
+            for k, delta_k in [('pitch', 'delta_pitch'), ('yaw', 'delta_yaw'), ('roll', 'delta_roll')]:
+                if k in x_d_info and k in x_s_info:
+                    # Reset to source + apply breathing offset
+                    x_d_info[k] = x_s_info[k].copy()
+                    if delta_k in kwargs:
+                         x_d_info[k] = bin66_to_degree(x_d_info[k]) + kwargs[delta_k]
+            
+            for k in ['t', 'scale']:
                 if k in x_d_info and k in x_s_info:
                     x_d_info[k] = x_s_info[k].copy()
 
-            # 3. Landmark Isolation (Exp & KP)
-            # Allowed to float: 11, 13 (Eyelids), 15 (Manual decision below), 17, 19, 20 (Lower Lip)
-            _free_set = [11, 13, 15, 17, 19, 20]
-            
+            # 3. Landmark Isolation (Iron Mask 2.0)
             exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
             src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
             
-            # Temporary copy of AI's mouth for manual blending
+            # Manual Mouth chain: 17, 19, 20
             ai_mouth_y = exp_reshaped[:, [17, 19, 20], 1].copy()
             
-            # FORCE NEUTRAL on everything
+            # PHYSICAL LOCK: Set EVERYTHING to source neutrality
             exp_reshaped[:] = src_reshaped[:]
             
-            # Restore Blinks
+            # MANUAL MOUTH: Linear vertical only
+            exp_reshaped[:, [17, 19, 20], 1] = src_reshaped[:, [17, 19, 20], 1] + (ai_mouth_y - src_reshaped[:, [17, 19, 20], 1]) * exp_blend_alpha
+
+            # RESTORE BLINKS (Physical Logic)
             if is_blinking:
                 _eyes = [11, 13, 15]
-                exp_reshaped[:, _eyes] = x_d_info["exp"].reshape(-1, 21, 3)[:, _eyes]
-
-            # Manual Mouth Closure (Linear blend between AI-predicted current and Source neutral)
-            # This bypasses the model's learned 'smile' at lower alphas.
-            exp_reshaped[:, [17, 19, 20], 1] = src_reshaped[:, [17, 19, 20], 1] + (ai_mouth_y - src_reshaped[:, [17, 19, 20], 1]) * exp_blend_alpha
+                # Re-apply the eyelids that were calculated by the model before our lock
+                # We need to reshape the ORIGINAL x_d_info['exp'] to pull them
+                orig_exp = x_d_info["exp"].reshape(-1, 21, 3) 
+                exp_reshaped[:, _eyes] = orig_exp[:, _eyes]
             
             x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
-            # Sync KP (Geometric Lock)
-            if "kp" in x_d_info:
-                kp_reshaped = x_d_info["kp"].reshape(-1, 21, 3)
-                src_kp_reshaped = x_s_info["kp"].reshape(-1, 21, 3)
-                kp_reshaped[:] = src_kp_reshaped[:]
-                # Mirror blinks and manual mouth to KP if desired, 
-                # but locking them to source is safer for now.
-                x_d_info["kp"] = kp_reshaped.reshape(1, -1)
+            # 4. STITCH-NET BYPASS: Total Isolation
+            # This prevents the AI model from seeing our manual closure and 'fixing' it into a smile.
+            # flag_stitching = False (Temporary for this frame ONLY if we returned manually)
+            # However, __call__ logic below does transformation. 
+            # We will use flag_stitching=False later in the flow.
+            self._bypass_stitch_this_frame = True # Temporary internal flag
+        else:
+            self._bypass_stitch_this_frame = False
+
+        # Apply Eye Blink restoring if we locked everything above
+        if (0.0 < exp_blend_alpha < 1.0) and is_blinking:
+             # We must re-run eye fix just for the eyelids on top of our neutral mask
+             # For simplicity in this logic block, eyelids are handled in the Final Lock 3.0 below.
+             pass
         # [Diagnostic v1.9.71] Output Logger
         if hasattr(self, '_log_blink_output') and self._log_blink_output:
              out_exp = x_d_info["exp"]
@@ -882,8 +895,12 @@ class MotionStitch:
         
         x_d = transform_keypoint(x_d_info)
         
-        if self.flag_stitching:
+        # [v1.9.123] Stitch-Net Bypass: 
+        # Prevent AI model from 'hallucinating' smiles during manual transitions.
+        if self.flag_stitching and not getattr(self, '_bypass_stitch_this_frame', False):
             x_d = self.stitch_net(x_s, x_d)
+        elif self.flag_stitching:
+             print(f"  > [AIIA] Stitch-Net Bypassed for Purity")
 
         self.idx += 1
 
