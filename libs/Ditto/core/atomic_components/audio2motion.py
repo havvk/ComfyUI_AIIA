@@ -115,6 +115,7 @@ class Audio2Motion:
         self.global_time = 0 # [v1.9.107] For procedural breathing
         self.silence_frames = 0 # [v1.9.139] Track silence duration for adaptive boost
         self.brownian_momentum = np.zeros_like(self.kp_cond) # [v1.9.139] Postural inertia
+        self.look_up_timer = 0 # [v1.9.141] Timer for anti-stall recovery
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         ## ========================
@@ -195,10 +196,30 @@ class Audio2Motion:
             
             # 3. Micro-Brow Jitters (Indices 15, 16, 18)
             brow_indices = [15, 16, 18]
-            brow_jitter = np.random.normal(0, 0.015 * boost_factor, (len(brow_indices), 3)).astype(np.float32)
+            # [v1.9.141] Postural Auto-Correction (Anti-Stall)
+            # Detect if head is stuck in an upward-tilted ("Looking Up") pose.
+            # Pitch indices are 1:67 in the flattened vector.
+            pitch_bins = last_pose[0, 1:67]
+            # Use softmax + weighted sum to get current degree (Ditto 3DMM logic)
+            # Note: scipy.special.softmax isn't imported here, so we do manual softmax
+            e_x = np.exp(pitch_bins - np.max(pitch_bins))
+            p_soft = e_x / e_x.sum()
+            pitch_deg = np.sum(p_soft * np.arange(66)) * 3 - 97.5
             
-            # Reduced Gravity to 5% (0.05) - v1.108 legacy
-            gravity = 0.05
+            # If looking up (>5 deg) during long silence, start recovery timer
+            if self.silence_frames > 50 and pitch_deg > 5.0:
+                self.look_up_timer += 1
+            else:
+                self.look_up_timer = 0
+            
+            # Define gravity vector (Pitch gets special treatment during stall)
+            # Default 5% (0.05)
+            gravity_vec = np.ones_like(last_pose) * 0.05
+            if self.look_up_timer > 50:
+                # Ramp up restoring force to 20% to slowly pull head back to center
+                gravity_vec[0, 1:67] = 0.20
+            
+            brow_jitter = np.random.normal(0, 0.015 * boost_factor, (len(brow_indices), 3)).astype(np.float32)
             
             next_pose = last_pose + noise
             # Inject jitter into specific points
@@ -208,7 +229,8 @@ class Audio2Motion:
 
             # Anchor = Reference + Compound Sway + Brownian Posture
             anchor = current_s_kp + self.brownian_pos
-            self.kp_cond = next_pose * (1.0 - gravity) + anchor * gravity
+            # Use spatially-varying gravity for correction
+            self.kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
             
         elif self.fix_kp_cond > 0:
             if self.clip_idx % self.fix_kp_cond == 0:  # 重置
