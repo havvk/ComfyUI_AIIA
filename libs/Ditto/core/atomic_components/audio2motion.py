@@ -165,8 +165,8 @@ class Audio2Motion:
         pitch_deg = np.sum(p_soft * np.arange(66)) * 3 - 97.5
         
         self.global_time += 1
-        if self.global_time % 100 == 0:
-             print(f"[Postural HEARTBEAT] Pitch={pitch_deg:.2f}° | Silence={self.silence_frames} | GlobalTime={self.global_time}")
+        if self.clip_idx % 5 == 0:
+             print(f"[Postural HEARTBEAT] Frame ~{self.clip_idx * self.valid_clip_len} | Pitch={pitch_deg:.2f}° | Timer={self.look_up_timer}/50 | Silence={self.silence_frames}")
 
         if self.fix_kp_cond == 0:  # 不重置
             # 1. Silence Intensity Boost
