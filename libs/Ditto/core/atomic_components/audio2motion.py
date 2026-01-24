@@ -171,7 +171,7 @@ class Audio2Motion:
 
         return res_kp_seq
     
-    def _generate_gaussian_pitch(self, target_deg, sigma=2.5):
+    def _generate_gaussian_pitch(self, target_deg, sigma=3.0):
         # Ditto Pitch: 66 bins, 3 deg each, center at 32.5 (0 deg)
         # target_deg = (idx * 3) - 97.5 => idx = (target_deg + 97.5) / 3
         mu = (target_deg + 97.5) / 3.0
@@ -234,12 +234,12 @@ class Audio2Motion:
              has_upcoming_speech = len(lookahead) > 0 and np.max(lookahead) > 0.1
         
         if is_currently_talking or has_upcoming_speech:
-             # [v1.9.167] SWEET SPOT: Slightly less aggressive tuck to avoid "Blood Mouth"
-             target_bias_deg = -3.0 
+             # [v1.9.168] NEUTRAL ALIGNMENT: 0.0 deg for natural mouth geometry
+             target_bias_deg = 0.0 
         else:
-             # IDLE SWAY: Natural breathing (Negative bias to keep chin tucked)
+             # IDLE SWAY: Natural breathing (Slight negative bias for safety)
              cycle = np.sin(self.global_time * 0.05)
-             target_bias_deg = -2.0 + cycle * 3.0 # Sway between +1.0 and -5.0
+             target_bias_deg = -2.0 + cycle * 2.0 # Sway between 0.0 and -4.0
         
         # [v1.9.165] Synthetic Anchor Generation
         # Instead of photo bias, we anchor to a mathematical IDEAL distribution.
@@ -404,13 +404,13 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.165/167] SPRINGY POSTURE MODE
+        # [v1.9.168] NEUTRAL ELASTICITY MODE
         # We now use "Mathematical Gravity" to pull the head into the safe zone.
         if True:
-            # [v1.9.167] Springy Pressure: 65% Pitch / 25% Yaw-Roll 
-            # This restores expressiveness and "Bounce" while maintaining vertical stability.
-            pressure = 0.65 
-            soft_p = 0.25 
+            # [v1.9.168] Ultra-Fluid Pressure: 40% Pitch / 20% Yaw-Roll 
+            # This restores maximum expressiveness and solves "Blood Mouth" stretching.
+            pressure = 0.40 
+            soft_p = 0.20 
             
             # Stable Anchor = Photo + Synthetic Offset + Brownian Drift
             anchor_p = (self.s_kp_cond + self.current_neutralizer + self.brownian_pos)[0, 1:202]
