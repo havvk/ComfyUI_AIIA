@@ -116,6 +116,14 @@ class Audio2Motion:
         self.silence_frames = 0 # [v1.9.139] Track silence duration for adaptive boost
         self.brownian_momentum = np.zeros_like(self.kp_cond) # [v1.9.139] Postural inertia
         self.look_up_timer = 0 # [v1.9.141] Timer for anti-stall recovery
+        
+        # [v1.9.146] Capture Source Pitch Baseline
+        # We need the "Original" degree of the source photo to detect relative stalls.
+        s_pitch_bins = self.s_kp_cond[0, 1:67]
+        e_s = np.exp(s_pitch_bins - np.max(s_pitch_bins))
+        p_s = e_s / e_s.sum()
+        self.s_pitch_deg = np.sum(p_s * np.arange(66)) * 3 - 97.5
+        print(f"[Postural Setup] Source Pitch Base: {self.s_pitch_deg:.2f}°")
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         ## ========================
@@ -165,8 +173,12 @@ class Audio2Motion:
         pitch_deg = np.sum(p_soft * np.arange(66)) * 3 - 97.5
         
         self.global_time += 1
+        delta_p = pitch_deg - self.s_pitch_deg
+        
         if self.clip_idx % 5 == 0:
-             print(f"[Postural HEARTBEAT] Frame ~{self.clip_idx * self.valid_clip_len} | Pitch={pitch_deg:.2f}° | Timer={self.look_up_timer}/50 | Silence={self.silence_frames}")
+             # Estimated frame is total frames added to res_kp_seq
+             cur_f = self.clip_idx * self.valid_clip_len
+             print(f"[Postural HEARTBEAT] Frame ~{cur_f} | Raw={pitch_deg:.2f}° | Delta={delta_p:+.2f}° | Timer={self.look_up_timer}/50")
 
         if self.fix_kp_cond == 0:  # 不重置
             # 1. Silence Intensity Boost
@@ -195,11 +207,12 @@ class Audio2Motion:
             brow_indices = [217, 218, 220]
             brow_jitter = np.random.normal(0, 0.015 * boost_factor, len(brow_indices)).astype(np.float32)
             
-            # 5. Postural Auto-Correction (Anti-Stall)
-            if self.silence_frames > 50 and pitch_deg > 0.5:
+            # 5. Postural Auto-Correction (Anti-Stall) - [v1.9.146 Relative Logic]
+            # Trigger if head is > 2.0 degrees ABOVE its original photo position.
+            if self.silence_frames > 50 and delta_p > 2.0:
                 self.look_up_timer += 1
                 if self.look_up_timer % 10 == 0:
-                     print(f"[Postural Diag] Pitch={pitch_deg:.2f}° | Timer={self.look_up_timer}/50 | Silence={self.silence_frames}")
+                     print(f"[Postural Diag] Delta={delta_p:+.2f}° | Timer={self.look_up_timer}/50 | Silence={self.silence_frames}")
             else:
                 self.look_up_timer = 0
             
