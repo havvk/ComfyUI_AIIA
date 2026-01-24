@@ -220,9 +220,10 @@ class Audio2Motion:
             
             # [v1.9.152] Absolute Postural Force (Boosted to 0.0030)
             if self.is_recovering:
-                new_drift[0, 1:67] -= 0.0030 
+                # [v1.9.157] Apply to all postural axes (1-202: Pitch, Yaw, Roll, T)
+                new_drift[0, 1:202] -= 0.0030 
                 if self.look_up_timer > 100:
-                    new_drift[0, 1:67] -= 0.0030 # Double impulse
+                    new_drift[0, 1:202] -= 0.0030 # Double impulse
             
             self.brownian_momentum = self.brownian_momentum * 0.92 + new_drift
             self.brownian_pos += self.brownian_momentum
@@ -256,8 +257,9 @@ class Audio2Motion:
 
             gravity_vec = np.ones_like(last_pose) * 0.05
             if self.is_recovering:
-                # [v1.9.154] Maintain high gravity for next step seed
-                gravity_vec[0, 1:67] = 0.80 if self.look_up_timer > 100 else 0.60
+                # [v1.9.157] Apply to all postural axes (1-202: Pitch, Yaw, Roll, T)
+                # Maintain high gravity for next step seed
+                gravity_vec[0, 1:202] = 0.80 if self.look_up_timer > 100 else 0.60
             
             # 6. Integration
             next_pose = last_pose + noise
@@ -328,11 +330,12 @@ class Audio2Motion:
         if self.is_recovering:
             # 70% intensity if starting, 95% if persistent stall
             pressure = 0.70 if self.look_up_timer <= 100 else 0.95
-            anchor_p = self.s_kp_cond[0, 1:67] + self.brownian_pos[0, 1:67]
+            # [v1.9.157] Correct across all postural axes (Pitch, Yaw, Roll, T)
+            anchor_p = self.s_kp_cond[0, 1:202] + self.brownian_pos[0, 1:202]
             # Force current segment to lean towards center
             # pred_kp_seq shape: [1, frames, dim]
             for f in range(pred_kp_seq.shape[1]):
-                pred_kp_seq[0, f, 1:67] = pred_kp_seq[0, f, 1:67] * (1.0 - pressure) + anchor_p * pressure
+                pred_kp_seq[0, f, 1:202] = pred_kp_seq[0, f, 1:202] * (1.0 - pressure) + anchor_p * pressure
             
             if self.clip_idx % 5 == 0:
                  print(f"[v1.9.154 Burst] Forced {pressure*100:.0f}% correction on {pred_kp_seq.shape[1]} frames.")
