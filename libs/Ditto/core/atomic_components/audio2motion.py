@@ -125,6 +125,13 @@ class Audio2Motion:
         p_s = e_s / e_s.sum()
         self.s_pitch_deg = np.sum(p_s * np.arange(66)) * 3 - 97.5
         print(f"[Postural Setup] Source Pitch Base: {self.s_pitch_deg:.2f}°")
+        
+        # [v1.9.161] Absolute Neutral Baseline (Zero-Drift Goal)
+        # We store an offset that cancelling out the source photo's postural bias.
+        # This allows us to anchor to a TRUE "Flat View" (0,0,0) from frame 0.
+        self.posture_neutralizer = np.zeros_like(self.s_kp_cond)
+        # Index 1:202 contains Scale(1), Pitch(66), Yaw(66), Roll(66), T(3)
+        self.posture_neutralizer[0, 1:202] = -self.s_kp_cond[0, 1:202]
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         ## ========================
@@ -333,14 +340,15 @@ class Audio2Motion:
         
         # [v1.9.160] STATIC POSTURE MODE
         # Based on validation, we now enforce high Pitch pressure ALWAYS to prevent drift.
-        # This eliminates the dependency on 'Hysteresis Recovery' and ensures the jaw stays stable.
+        # [v1.9.161] Neutral Baseline: Anchor is shifted to TRUE 0 (Neutral Center).
         if True:
-            # [v1.9.160] Constant 95% tension for Pitch (Vertical)
+            # Constant 95% tension for Pitch (Vertical)
             pressure = 0.95
             soft_p = 0.40 # Maintain soft-lock for Yaw/Roll to allow mouth projection
             
-            # Anchor is source + current Brownian offset
-            anchor_p = self.s_kp_cond[0, 1:202] + self.brownian_pos[0, 1:202]
+            # [v1.9.161] Anchor = Neutralized Source (0-Posture) + Brownian micro-drift
+            # This ensures we anchor to FLAT view, even if the photo is tilted.
+            anchor_p = (self.s_kp_cond + self.posture_neutralizer + self.brownian_pos)[0, 1:202]
             
             for f in range(pred_kp_seq.shape[1]):
                 # Absolute Pitch Locking (Halt baring distortion)
