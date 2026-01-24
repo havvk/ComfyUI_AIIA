@@ -737,37 +737,20 @@ class MotionStitch:
 
 
             
-        # [Feature v1.9.48] Apple Mouth Micro-Motion
-        if "delta_mouth" in kwargs:
-             _lip = [6, 12, 14, 17, 19, 20]
-             # Broadcasting scalar to (1, 6, 3)
-             exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
-             exp_reshaped[:, _lip] += kwargs["delta_mouth"]
-             x_d_info["exp"] = exp_reshaped.reshape(1, -1)
+        # [v1.9.126] DIAGNOSTIC RESET: Removed all manual mouth biases.
+        # Letting AI model control the mouth (17, 19, 20) completely.
+        # Procedural deltas are now moved to the very bottom to ensure they land on final pixels.
 
         # [v1.9.125] DIAGNOSTIC RESET: Removed all manual mouth biases.
         # Letting AI model control the mouth (17, 19, 20) completely.
 
-        # [Revert v1.9.55] User reports "Original code didn't have twitch".
-        # Switching back to Legacy Function (but with [11,13] fix applied inside it).
-        x_d_info = _fix_exp_for_x_d_info(
-            x_d_info,
-            x_s_info,
-            delta_eye,
-            self.drive_eye
-        )
-        
-        # [v1.9.92] Speech-Only Blink: Blink mirror removed.
-        # With blinks only occurring during speech, the mesh coupling artifact
-        # (slight mouth twitch) is naturally masked by speaking motion.
-        
-        x_d_info = ctrl_motion(x_d_info, **kwargs)
+        # Poses will be applied at the bottom.
 
-        # [v1.9.125] MINIMAL TRANSITION SHIELD (Diagnostic Mode)
-        # We UNFREEZE pose/position and UNLOCK the mouth (17, 19, 20).
-        # We only lock eyes/cheeks to prevent the most jarring smile mutations.
-        if exp_blend_alpha < 1.0:
-            print(f"[AIIA] v1.9.125 Diagnostic Mode (Alpha={exp_blend_alpha:.2f})")
+        # [v1.9.126] REFINED TRANSITION SHIELD (Narrow-Cast)
+        # We only lock eyes/cheeks when ACTIVELY transitioning (0.0 < alpha < 1.0).
+        # Pure Silence (0.0) is left alone to allow procedural breathing to take over.
+        if 0.0 < exp_blend_alpha < 1.0:
+            print(f"[AIIA] v1.9.126 Transition Guard (Alpha={exp_blend_alpha:.2f})")
             
             is_blinking = False
             if self.drive_eye and not isinstance(delta_eye, int):
@@ -868,9 +851,26 @@ class MotionStitch:
             if self.is_image_flag:
                 self.x_s = x_s
         
+        # [v1.9.126] PIPE END VITALITY APPLICATION
+        # We apply all procedural and legacy fixes here to ensure 
+        # they are never overwritten by transition logic.
+        
+        # 1. Base Eyelid Fix (Legacy twitch suppression + [11,13] restore)
+        x_d_info = _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye, self.drive_eye)
+        
+        # 2. Breathing Mouth (delta_mouth)
+        if "delta_mouth" in kwargs:
+             _lip = [6, 12, 14, 17, 19, 20]
+             exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
+             exp_reshaped[:, _lip] += kwargs["delta_mouth"]
+             x_d_info["exp"] = exp_reshaped.reshape(1, -1)
+             
+        # 3. Head Sway & Poses (ctrl_motion)
+        x_d_info = ctrl_motion(x_d_info, **kwargs)
+
         x_d = transform_keypoint(x_d_info)
         
-        # [v1.9.125] Restore Native Stitch Net for Diagnosis
+        # Re-apply Stitch Net
         if self.flag_stitching:
             x_d = self.stitch_net(x_s, x_d)
 
