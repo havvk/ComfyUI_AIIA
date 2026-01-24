@@ -755,16 +755,30 @@ class MotionStitch:
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 
-        # [v1.9.118] Final Transition Lockdown (Absolute Last Step)
-        # If we are in transition (opening or closing), force eyebrows and cheeks to source.
-        # This acts as a 'Safety Net' to ensure no logic re-introduces a smile pop.
+        # [v1.9.119] Final Transition Lockdown (Absolute Last Step)
+        # Threshold (alpha < 1.0) defines the "Sensitive Transition Zone" (Opening/Closing).
         if exp_blend_alpha < 1.0:
-            _squint_fix = [15, 16, 18]
+            # 1. Blink detection: If delta_eye has energy, skip brow/squint lock to allow blinks.
+            # delta_eye is typically (1, 63) or 0
+            is_blinking = False
+            if self.drive_eye and not isinstance(delta_eye, int):
+                if np.abs(delta_eye).max() > 1e-4:
+                    is_blinking = True
+
+            _squint_points = [15, 16, 18]
+            _corner_points = [6, 12] # Fixes the "Widening Smile" closure pull
+            
             exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
             src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
-            exp_reshaped[:, _squint_fix] = src_reshaped[:, _squint_fix]
-            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
             
+            # Unconditionally lock Corners during transitions (stops horizontal stretch)
+            exp_reshaped[:, _corner_points] = src_reshaped[:, _corner_points]
+            
+            # Lock Squint/Brow only if not blinking (Physical Safety Net)
+            if not is_blinking:
+                exp_reshaped[:, _squint_points] = src_reshaped[:, _squint_points]
+                
+            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
         # [Diagnostic v1.9.71] Output Logger
         if hasattr(self, '_log_blink_output') and self._log_blink_output:
              out_exp = x_d_info["exp"]

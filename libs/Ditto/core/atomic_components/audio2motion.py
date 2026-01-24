@@ -259,7 +259,7 @@ class Audio2Motion:
              
              # Apply decaying warp to the new sequence
              # We want to return to the model's path over ~50 frames (v1.9.107: longer decay)
-             decay_len = 80
+             decay_len = 120
              warp_len = min(decay_len, pred_kp_seq.shape[1])
              weights = np.linspace(1.0, 0.0, warp_len).reshape(1, -1, 1)
              
