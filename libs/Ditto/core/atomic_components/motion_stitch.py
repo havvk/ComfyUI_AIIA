@@ -317,7 +317,8 @@ class MotionStitch:
         **kwargs
     ):
         # [v1.9.130 Patch] Accepting **kwargs to avoid crash with AIIA nodes, 
-        # but ignoring them to maintain 100% official logic baseline.
+        # but ignoring others to maintain official baseline.
+        self.blink_amp = kwargs.get("blink_amp", 1.0)
         self.is_image_flag = is_image_flag
         if use_d_keys is None:
             if self.is_image_flag:
@@ -438,6 +439,8 @@ class MotionStitch:
             delta_eye = self.delta_eye_arr[
                 self.delta_eye_idx_list[self.idx % len(self.delta_eye_idx_list)]
             ][None]
+            # [v1.9.131] Restore Blink Intensity
+            delta_eye *= self.blink_amp
         x_d_info = _fix_exp_for_x_d_info_v2(
             x_d_info,
             x_s_info,
