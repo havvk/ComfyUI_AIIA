@@ -299,7 +299,8 @@ def _fix_exp_for_x_d_info(x_d_info, x_s_info, delta_eye=None, drive_eye=True):
 
 
 
-    _lip = [6, 7, 8, 12, 14, 17, 18, 19, 20] # [Updated v1.9.110] Added 7, 8 (Corners) and 18 to allow fuller mouth opening.
+    _lip = [6, 12, 14, 17, 19, 20] # [Reverted v1.9.111] Back to official indices to fix unintended brow/eye pull.
+    # Note: 7/8 (Corners) and 18 (Brows) removed to avoid "fixed squint/smile" look.
 
     alpha = np.zeros((21, 3), dtype=x_d_info["exp"].dtype)
     alpha[_lip] = 1
@@ -697,18 +698,19 @@ class MotionStitch:
             x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)
             self.prev_exp_ema = x_d_info["exp"].copy()
             
-        # [v1.9.109/v1.9.110] Spatial Mouth Opening Bias
-        # Force lower lip down to show teeth and fix pucker.
-        # Points 17-20 are the lower lip center chain.
-        # We target index 1 (Y-axis displacement).
+        # [v1.9.111] Precise Mouth Opening Bias
+        # 1. Reverted Point 18 (it controls brows, not lips).
+        # 2. Reverted Point 7/8 (mouth corners).
+        # 3. Made bias speech-dependent: 0.0 in silence, up to 0.05 in speech.
         bias_alpha = kwargs.get("vad_alpha", 0.0)
-        bias_val = 0.03 + (0.05 * bias_alpha) # Base 0.03 + Speech Boost 0.05 = 0.08 max
-        
-        # Point to spatial indexing: exp is (1, 21, 3) or (1, 63)
-        # We reshape to be safe
-        exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
-        exp_reshaped[:, [17, 18, 19, 20], 1] += bias_val
-        x_d_info["exp"] = exp_reshaped.reshape(1, -1)
+        if bias_alpha > 0.05:
+            # Scale bias by speech intensity to allow natural closure
+            bias_val = 0.05 * bias_alpha 
+            lower_lip = [17, 19, 20] # Points 17, 19, 20 are the true lower-lip center chain
+            exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
+            # Index 1 = Y-axis (vertical)
+            exp_reshaped[:, lower_lip, 1] += bias_val
+            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
         delta_eye = 0
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -725,8 +727,8 @@ class MotionStitch:
             
         # [Feature v1.9.48] Apple Mouth Micro-Motion
         if "delta_mouth" in kwargs:
-             _lip = [6, 7, 8, 12, 14, 17, 18, 19, 20]
-             # Broadcasting scalar to (1, 9, 3)
+             _lip = [6, 12, 14, 17, 19, 20]
+             # Broadcasting scalar to (1, 6, 3)
              exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
              exp_reshaped[:, _lip] += kwargs["delta_mouth"]
              x_d_info["exp"] = exp_reshaped.reshape(1, -1)
