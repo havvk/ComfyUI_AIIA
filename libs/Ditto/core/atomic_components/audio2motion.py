@@ -113,9 +113,6 @@ class Audio2Motion:
         self.clip_idx = 0
         self.warp_offset = None
         self.brownian_pos = np.zeros_like(self.kp_cond)
-        self.target_neutralizer = np.zeros_like(self.kp_cond) # [v1.9.162] For Predictive Posture
-        self.current_neutralizer = np.zeros_like(self.kp_cond)
-        
         self.last_kp_frame = None # [v1.9.107] Persistence bridging
         self.global_time = 0 # [v1.9.107] For procedural breathing
         self.silence_frames = 0 # [v1.9.139] Track silence duration for adaptive boost
@@ -123,6 +120,7 @@ class Audio2Motion:
         self.look_up_timer = 0 # [v1.9.141] Timer for anti-stall recovery
         self.is_recovering = False # [v1.9.155] Hysteresis state flag
         self.target_bias_deg = 0.0 # [v1.9.162/163] For scope visibility
+        self.current_push = 0.0 # [v1.9.164] Dynamic physics push
         
         # [v1.9.146] Capture Source Pitch Baseline
         # We need the "Original" degree of the source photo to detect relative stalls.
@@ -131,15 +129,6 @@ class Audio2Motion:
         p_s = e_s / e_s.sum()
         self.s_pitch_deg = np.sum(p_s * np.arange(66)) * 3 - 97.5
         print(f"[Postural Setup] Source Pitch Base: {self.s_pitch_deg:.2f}°")
-        
-        # [v1.9.161/162] Absolute Neutral Baseline (Zero-Drift Goal)
-        # We store the base offset to cancel the photo's bias
-        self.photo_base_neutralizer = np.zeros_like(self.s_kp_cond)
-        self.photo_base_neutralizer[0, 1:202] = -self.s_kp_cond[0, 1:202]
-        
-        # Initialize current posture to a 0-drift center
-        self.current_neutralizer = self.photo_base_neutralizer.copy()
-        self.target_neutralizer = self.photo_base_neutralizer.copy()
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         ## ========================
@@ -218,50 +207,37 @@ class Audio2Motion:
         
         # [v1.9.162] PREDICTIVE POSTURE STATE MACHINE
         # We scan the VAD timeline to decide the character's "Readiness"
-        # 0: Absolute Photo 
-        # -5: Golden Posture (Tucked Chin for speech protection)
-        # +3 ~ +10: Idle Sway (Relaxed breathing)
-        
         target_bias_deg = 0.0 # Standard flat
         
         if self.vad_timeline is not None:
              # Lookahead window: 2 seconds (50 frames)
-             idx = real_f
-             window_size = 50
-             lookahead = self.vad_timeline[idx : idx + window_size]
+             lookahead = self.vad_timeline[idx : idx + 50]
              
              is_currently_talking = self.silence_frames < 25
              has_upcoming_speech = len(lookahead) > 0 and np.max(lookahead) > 0.1
              
              if is_currently_talking or has_upcoming_speech:
-                  # COMBAT STANCE: Tucked chin to provide headroom for speech peaks
-                  target_bias_deg = +5.0 # Downward in Ditto space (+ is down)
+                  # COMBAT STANCE: Tucked chin (-5 deg downward = -0.0020 impulse push)
+                  target_bias_deg = +5.0 
+                  self.target_push = -0.0025 # Persistent negative impulse to lower head
              else:
-                  # IDLE SWAY: Natural breathing motion during long silence
-                  # Cycle between 0 and -8 degrees (relaxed slightly upward?)
-                  # Actually let's keep it near 0 to -5 for "attentive" listening
-                  cycle = np.sin(self.global_time * 0.05) # Slow wave
-                  target_bias_deg = -3.0 + cycle * 5.0 # -8.0 to +2.0 range
-        
-        # Map target_bias_deg to Keypoint 1:67 (Pitch distribution)
-        # Approx 1.0 raw = 30 deg. So 5 deg = 0.16 roughly? 
-        # But we use the neutralizer logic which is absolute coefficients.
-        # To make it simple, we offset the photo_base_neutralizer directly.
-        
-        # Calculate target_neutralizer (Base + Pitch Bias)
-        pitch_bias_raw = target_bias_deg / 30.0 # Heuristic for coefficients
-        self.target_neutralizer = self.photo_base_neutralizer.copy()
-        self.target_neutralizer[0, 1:67] += pitch_bias_raw
-        
-        # Smooth Transition via EMA (0.05 for graceful 1s transition)
-        self.current_neutralizer = self.current_neutralizer * 0.95 + self.target_neutralizer * 0.05
+                  # IDLE SWAY: Natural breathing motion
+                  cycle = np.sin(self.global_time * 0.05)
+                  target_bias_deg = -3.0 + cycle * 5.0 
+                  self.target_push = 0.0 # No forced push, just natural sway
+        else:
+             self.target_push = 0.0
+             target_bias_deg = 0.0
+
+        # Smooth Push Transition
+        self.current_push = self.current_push * 0.90 + self.target_push * 0.10
         self.target_bias_deg = target_bias_deg
         
         tag = "[HEARTBEAT]" if not self.is_recovering else "[RECOVERY]"
         if self.vad_timeline is not None and has_upcoming_speech and not is_currently_talking:
              tag = "[ANTICIPATION]"
              
-        print(f"{tag} Frame {real_f:04d} | Delta={delta_p:+.2f}° | Bias={self.target_bias_deg:+.1f}° | Silence={self.silence_frames:03d}")
+        print(f"{tag} Frame {idx:04d} | Delta={delta_p:+.2f}° | Bias={self.target_bias_deg:+.1f}° | Silence={self.silence_frames:03d}")
 
         # 5. Postural Auto-Correction Logic [REPLACED by v1.9.160 STATIC + v1.9.162 PREDICTIVE]
 
@@ -279,6 +255,9 @@ class Audio2Motion:
             new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
             
             # [v1.9.160] Reverted Uward Nudge Bias
+            
+            # [v1.9.164] Predictive Physics Push
+            new_drift[0, 1:67] += self.current_push
             
             # [v1.9.152] Absolute Postural Force (Boosted to 0.0030)
             if self.is_recovering:
@@ -372,8 +351,13 @@ class Audio2Motion:
 
         # [v1.9.163] Restore Condition Update
         # Without this, self.kp_cond and self.current_neutralizer NEVER UPDATE.
+        # We pass self.global_time or absolute frame count to sync with VAD.
+        # res_kp_seq.shape[1] is the correct current global frame.
         if res_kp_seq is not None:
              self._update_kp_cond(res_kp_seq, res_kp_seq.shape[1], step_len)
+        else:
+             # First frame, lookahead from 0
+             self._update_kp_cond(self.s_kp_cond.reshape(1, 1, -1), 0, step_len)
 
         if reset:
             # [SOFT RESET] Only reset random seed for lip-sync consistency.
@@ -397,18 +381,18 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.160/162] STATIC/PREDICTIVE POSTURE MODE
-        # We now enforce high Pitch pressure ALWAYS to anchor to our dynamic target.
+        # [v1.9.160/162/164] STATIC/PREDICTIVE POSTURE MODE
+        # We now enforce high Pitch pressure ALWAYS to anchor to our target baseline.
         if True:
             # Constant 95% tension for Pitch (Vertical)
             pressure = 0.95
             soft_p = 0.40 # Maintain soft-lock for Yaw/Roll to allow mouth projection
             
-            # [v1.9.162] Anchor = Smoothly Shifting Neutralizer (Predictive) + Brownian micro-drift
-            anchor_p = (self.s_kp_cond + self.current_neutralizer + self.brownian_pos)[0, 1:202]
+            # [v1.9.164] Stable Anchor = Photo + Drift-Adjusted Offset
+            anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 1:202]
             
             for f in range(pred_kp_seq.shape[1]):
-                # Absolute Pitch Locking (Predictive Center)
+                # Absolute Pitch Locking (Halt baring distortion)
                 pred_kp_seq[0, f, 1:67] = pred_kp_seq[0, f, 1:67] * (1.0 - pressure) + anchor_p[0:66] * pressure
                 # Soft Rotational Locking (Organic freedom)
                 pred_kp_seq[0, f, 67:202] = pred_kp_seq[0, f, 67:202] * (1.0 - soft_p) + anchor_p[66:201] * soft_p
