@@ -171,7 +171,7 @@ class Audio2Motion:
 
         return res_kp_seq
     
-    def _generate_gaussian_pitch(self, target_deg, sigma=1.5):
+    def _generate_gaussian_pitch(self, target_deg, sigma=2.5):
         # Ditto Pitch: 66 bins, 3 deg each, center at 32.5 (0 deg)
         # target_deg = (idx * 3) - 97.5 => idx = (target_deg + 97.5) / 3
         mu = (target_deg + 97.5) / 3.0
@@ -234,12 +234,12 @@ class Audio2Motion:
              has_upcoming_speech = len(lookahead) > 0 and np.max(lookahead) > 0.1
         
         if is_currently_talking or has_upcoming_speech:
-             # COMBAT STANCE: Tucked chin for headroom
-             target_bias_deg = -5.0 
+             # [v1.9.167] SWEET SPOT: Slightly less aggressive tuck to avoid "Blood Mouth"
+             target_bias_deg = -3.0 
         else:
-             # IDLE SWAY: Natural breathing
+             # IDLE SWAY: Natural breathing (Negative bias to keep chin tucked)
              cycle = np.sin(self.global_time * 0.05)
-             target_bias_deg = +2.0 + cycle * 5.0 # Slightly down/neutral sway
+             target_bias_deg = -2.0 + cycle * 3.0 # Sway between +1.0 and -5.0
         
         # [v1.9.165] Synthetic Anchor Generation
         # Instead of photo bias, we anchor to a mathematical IDEAL distribution.
@@ -404,13 +404,13 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.165] FLUID POSTURE MODE
+        # [v1.9.165/167] SPRINGY POSTURE MODE
         # We now use "Mathematical Gravity" to pull the head into the safe zone.
         if True:
-            # [v1.9.165] Fluid Pressure: 75% Pitch / 30% Yaw-Roll 
-            # This restores expressiveness while maintaining vertical stability.
-            pressure = 0.75 
-            soft_p = 0.30 
+            # [v1.9.167] Springy Pressure: 65% Pitch / 25% Yaw-Roll 
+            # This restores expressiveness and "Bounce" while maintaining vertical stability.
+            pressure = 0.65 
+            soft_p = 0.25 
             
             # Stable Anchor = Photo + Synthetic Offset + Brownian Drift
             anchor_p = (self.s_kp_cond + self.current_neutralizer + self.brownian_pos)[0, 1:202]
