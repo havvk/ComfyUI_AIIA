@@ -181,6 +181,7 @@ class StreamSDK:
             online_mode=self.online_mode,
             v_min_max_for_clip=self.v_min_max_for_clip,
             smo_k_d=self.smo_k_d,
+            vad_timeline=self.vad_timeline,
         )
 
         # ======== Setup Motion Stitch ========
