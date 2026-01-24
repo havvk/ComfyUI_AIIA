@@ -165,7 +165,7 @@ class Audio2Motion:
             res_kp_seq[:, i, :202] = np.mean(new_res_kp_seq[:, ss:ee, :202], axis=1)
         return res_kp_seq
 
-    def __call__(self, aud_cond, res_kp_seq=None):
+    def __call__(self, aud_cond, res_kp_seq=None, **kwargs):
         """
         aud_cond: (1, seq_frames, dim)
         """
