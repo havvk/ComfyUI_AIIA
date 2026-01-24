@@ -122,6 +122,7 @@ class Audio2Motion:
         self.brownian_momentum = np.zeros_like(self.kp_cond) # [v1.9.139] Postural inertia
         self.look_up_timer = 0 # [v1.9.141] Timer for anti-stall recovery
         self.is_recovering = False # [v1.9.155] Hysteresis state flag
+        self.target_bias_deg = 0.0 # [v1.9.162/163] For scope visibility
         
         # [v1.9.146] Capture Source Pitch Baseline
         # We need the "Original" degree of the source photo to detect relative stalls.
@@ -179,6 +180,8 @@ class Audio2Motion:
     def _update_kp_cond(self, res_kp_seq, idx, step_len=0):
         # [v1.9.144] Unconditional State Tracking
         # We process these outside the fix_kp_cond branches to ensure monitoring never stops.
+        if idx <= 0:
+            return # Skip for first frame setup
         last_pose = res_kp_seq[:, idx-1]
         
         # Calculate current pitch degree (Ditto 3DMM logic)
@@ -252,12 +255,13 @@ class Audio2Motion:
         
         # Smooth Transition via EMA (0.05 for graceful 1s transition)
         self.current_neutralizer = self.current_neutralizer * 0.95 + self.target_neutralizer * 0.05
+        self.target_bias_deg = target_bias_deg
         
         tag = "[HEARTBEAT]" if not self.is_recovering else "[RECOVERY]"
         if self.vad_timeline is not None and has_upcoming_speech and not is_currently_talking:
              tag = "[ANTICIPATION]"
              
-        print(f"{tag} Frame {real_f:04d} | Delta={delta_p:+.2f}° | Bias={target_bias_deg:+.1f}° | Silence={self.silence_frames:03d}")
+        print(f"{tag} Frame {real_f:04d} | Delta={delta_p:+.2f}° | Bias={self.target_bias_deg:+.1f}° | Silence={self.silence_frames:03d}")
 
         # 5. Postural Auto-Correction Logic [REPLACED by v1.9.160 STATIC + v1.9.162 PREDICTIVE]
 
@@ -366,6 +370,11 @@ class Audio2Motion:
         if step_len is None:
             step_len = self.valid_clip_len
 
+        # [v1.9.163] Restore Condition Update
+        # Without this, self.kp_cond and self.current_neutralizer NEVER UPDATE.
+        if res_kp_seq is not None:
+             self._update_kp_cond(res_kp_seq, res_kp_seq.shape[1], step_len)
+
         if reset:
             # [SOFT RESET] Only reset random seed for lip-sync consistency.
             # DO NOT reset kp_cond to reference - let model continue from current idle state.
@@ -405,8 +414,8 @@ class Audio2Motion:
                 pred_kp_seq[0, f, 67:202] = pred_kp_seq[0, f, 67:202] * (1.0 - soft_p) + anchor_p[66:201] * soft_p
             
             if self.clip_idx % 20 == 0:
-                 mode_s = "SPEECH" if target_bias_deg > 2.0 else "IDLE"
-                 print(f"[v1.9.162 {mode_s}] Anchor: {target_bias_deg:+.1f}° goal.")
+                 mode_s = "SPEECH" if self.target_bias_deg > 2.0 else "IDLE"
+                 print(f"[v1.9.162 {mode_s}] Anchor: {self.target_bias_deg:+.1f}° goal.")
         
         # [v1.9.156] Virtual Last Frame for Startup Stabilization
         # If this is the VERY first chunk, we treat the source photo as the "prev frame"
