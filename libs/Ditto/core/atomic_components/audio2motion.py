@@ -208,9 +208,9 @@ class Audio2Motion:
             drift_scales = np.ones_like(last_pose) * (0.0006 * boost_factor)
             new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
             
-            # [v1.9.149] Active Down-Pull Impulse (Boosted to 0.0012)
+            # [v1.9.152] Absolute Postural Force (Boosted to 0.0030)
             if self.look_up_timer > 50:
-                new_drift[0, 1:67] -= 0.0012 
+                new_drift[0, 1:67] -= 0.0030 
             
             self.brownian_momentum = self.brownian_momentum * 0.92 + new_drift
             self.brownian_pos += self.brownian_momentum
@@ -229,7 +229,8 @@ class Audio2Motion:
             
             gravity_vec = np.ones_like(last_pose) * 0.05
             if self.look_up_timer > 50:
-                gravity_vec[0, 1:67] = 0.20
+                # [v1.9.152] Tripelling restoration gravity to 60%
+                gravity_vec[0, 1:67] = 0.60
             
             # 6. Integration
             next_pose = last_pose + noise
