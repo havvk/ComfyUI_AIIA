@@ -183,7 +183,7 @@ class Audio2Motion:
         pitch_deg = np.sum(p_soft * np.arange(66)) * 3 - 97.5
         
         self.global_time += 1
-        delta_p = pitch_deg - self.s_pitch_deg
+        self.delta_p = pitch_deg - self.s_pitch_deg
         
         # [v1.9.150] Detailed Diagnostic Pulse
         # Always output current frame pitch and silence status
@@ -192,13 +192,13 @@ class Audio2Motion:
         # [v1.9.155] Hysteresis Logic
         # [v1.9.160] Reverted Stress Test to Standard Safety Zone: 0 ~ -10.0 deg. 
         if self.silence_frames >= 25:
-             if not self.is_recovering and delta_p < -10.0:
+             if not self.is_recovering and self.delta_p < -10.0:
                   self.is_recovering = True
-                  print(f"[Hysteresis Trigger] Delta={delta_p:+.2f}° Breach. Force engaged.")
-             elif self.is_recovering and delta_p >= -1.0:
+                  print(f"[Hysteresis Trigger] Delta={self.delta_p:+.2f}° Breach. Force engaged.")
+             elif self.is_recovering and self.delta_p >= -1.0:
                   self.is_recovering = False
                   self.look_up_timer = 0
-                  print(f"[Hysteresis Release] Delta={delta_p:+.2f}°. Neutral zone reached.")
+                  print(f"[Hysteresis Release] Delta={self.delta_p:+.2f}°. Neutral zone reached.")
         else:
              # Stop recovering if talking starts
              if self.is_recovering:
@@ -226,7 +226,7 @@ class Audio2Motion:
              tag = "[ANTICIPATION]"
              
         if self.clip_idx % 20 == 0:
-             print(f"{tag} Frame {idx:04d} | Delta={delta_p:+.2f}° | Silence={self.silence_frames:03d}")
+             print(f"{tag} Frame {idx:04d} | Delta={self.delta_p:+.2f}° | Silence={self.silence_frames:03d}")
 
         # 5. Postural Auto-Correction Logic [REPLACED by v1.9.160 STATIC + v1.9.162 PREDICTIVE]
 
@@ -273,16 +273,16 @@ class Audio2Motion:
             # 5. Postural Auto-Correction Logic [v1.9.150 Robustness Patch]
             # Shorten silence threshold to 25 frames (1 second) to combat jittery audio
             # Only trigger if notably higher than source (> 2.0 deg Higher -> Delta < -2.0)
-            if self.silence_frames >= 25 and delta_p < -2.0:
+            if self.silence_frames >= 25 and self.delta_p < -2.0:
                 self.look_up_timer += step_len
                 if self.look_up_timer > 50:
                      tag = "[纠偏活跃]" if self.look_up_timer <= 100 else "[极限强驱]"
-                     print(f"{tag} Frame {real_f} | Delta={delta_p:+.2f}° | Applying Pressure.")
+                     print(f"{tag} Frame {real_f} | Delta={self.delta_p:+.2f}° | Applying Pressure.")
             else:
                 # ONLY RESET if we are back in the safe zone (Hysteresis)
-                if delta_p >= -0.5:
+                if self.delta_p >= -0.5:
                      if self.look_up_timer > 50:
-                          print(f"[Postural] Recovery Finished (Delta={delta_p:+.2f}°). Timer reset.")
+                          print(f"[Postural] Recovery Finished (Delta={self.delta_p:+.2f}°). Timer reset.")
                      self.look_up_timer = 0
 
             gravity_vec = np.ones_like(last_pose) * 0.05
@@ -386,7 +386,7 @@ class Audio2Motion:
             
             if self.clip_idx % 20 == 0:
                  mode_s = "SPEECH" if is_talking else "IDLE"
-                 print(f"[v1.9.189 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
+                 print(f"[v1.9.189 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={self.delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
         
         # [v1.9.156] Virtual Last Frame for Startup Stabilization
         # If this is the VERY first chunk, we treat the source photo as the "prev frame"
