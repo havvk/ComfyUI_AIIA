@@ -681,14 +681,19 @@ class MotionStitch:
             exp_reshaped[:, _squint_fix] = src_reshaped[:, _squint_fix]
             x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
-        # [v1.9.116] DIAGNOSTIC: Temporarily disabled mouth bias to trace facial mutation
-        # bias_alpha = kwargs.get("vad_alpha", 0.0)
-        # lower_lip = [17, 19, 20]
-        # corners = [7, 8]
-        # exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
-        # exp_reshaped[:, lower_lip, 1] += 0.05 * bias_alpha
-        # exp_reshaped[:, corners, 1] += 0.015 * bias_alpha 
-        # x_d_info["exp"] = exp_reshaped.reshape(1, -1)
+        # [v1.9.117] Lite Mouth Opening Bias (Applied BEFORE EMA for temporal smoothing)
+        # We use a 60% strength (+0.03) compared to v1.9.112 to avoid facial mutation.
+        bias_alpha = kwargs.get("vad_alpha", 0.0)
+        lower_lip = [17, 19, 20]
+        corners = [7, 8]
+        
+        # Point to spatial indexing: exp is (1, 21, 3)
+        exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
+        # Center lower lip gets lite bias (+0.03)
+        exp_reshaped[:, lower_lip, 1] += 0.03 * bias_alpha
+        # Corners get micro bias (+0.01) for minimal structural support
+        exp_reshaped[:, corners, 1] += 0.01 * bias_alpha 
+        x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
         # [FIX] Expression Temporal Smoothing (EMA)
         # Prevents inhumanly fast mouth open/close cycles by adding inertia.
