@@ -642,7 +642,14 @@ class MotionStitch:
             # before LMDM started closing.
             # Using -2 (approx 0.08s ago)
             idx = -2 if len(self.exp_buffer) >= 2 else -1
-            self.last_speaking_exp = self.exp_buffer[idx].copy()
+            tmp_exp = self.exp_buffer[idx].copy()
+            # [v1.9.115] Pure Lip Caching: Scrub squint/smile residue (15, 16, 18) from cache
+            # This ensures the closure phase doesn't inherit a "frozen smile".
+            _squint_fix = [15, 16, 18]
+            exp_reshaped = tmp_exp.reshape(-1, 21, 3)
+            src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
+            exp_reshaped[:, _squint_fix] = src_reshaped[:, _squint_fix]
+            self.last_speaking_exp = exp_reshaped.reshape(1, -1)
         
         # 2. Clear Logic (Attack / Re-entry)
         if is_attack:
@@ -665,6 +672,14 @@ class MotionStitch:
                  x_d_info["exp"] = self.last_speaking_exp.copy()
             
             x_d_info = ctrl_vad(x_d_info, x_s_info, exp_blend_alpha)
+            # [v1.9.115] Transition Suppression: Lock cheeks/brows to source 
+            # while mouth is opening or closing (alpha < 1.0).
+            # This prevents AI smile/squint predictions from leaking into transitions.
+            _squint_fix = [15, 16, 18]
+            exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
+            src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
+            exp_reshaped[:, _squint_fix] = src_reshaped[:, _squint_fix]
+            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
         # [v1.9.112] Precise Mouth Opening Bias (Applied BEFORE EMA for temporal smoothing)
         # 1. Point 18 (Brows) suppressed (kept in rest pose by mask alpha).
