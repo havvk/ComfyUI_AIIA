@@ -1374,7 +1374,10 @@ class AIIABrowserDialog extends ComfyDialog {
             document.removeEventListener("mousedown", this.outsideClickListener);
             this.outsideClickListener = null;
         }
-        super.hide(); // ComfyDialog often uses hide() internally or as a synonym
+        this.element.style.display = "none";
+        this.hideTooltip();
+        if (typeof super.close === "function") super.close();
+        else if (typeof super.hide === "function") super.hide();
     }
 }
 
@@ -1409,14 +1412,17 @@ app.registerExtension({
         let browserDialog = null;
         const createDialog = () => { if (!browserDialog) browserDialog = new AIIABrowserDialog(); browserDialog.show(); };
         document.addEventListener('keydown', (e) => {
-            if (!browserDialog || browserDialog.element.style.display === 'none') return;
-            if (browserDialog.fullscreenViewer && browserDialog.fullscreenViewer.element.style.display !== 'none') return;
+            if (!browserDialog || (browserDialog.element && browserDialog.element.style.display === 'none')) return;
+            if (browserDialog.fullscreenViewer && browserDialog.fullscreenViewer.element && browserDialog.fullscreenViewer.element.style.display !== 'none') return;
+
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                browserDialog.close();
+                return;
+            }
+
             if (!browserDialog.element.contains(document.activeElement)) {
-                if (e.key === 'Escape') {
-                    e.preventDefault();
-                    browserDialog.close();
-                    return;
-                }
                 const isNavKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(e.key);
                 if (isNavKey) {
                     e.preventDefault();
