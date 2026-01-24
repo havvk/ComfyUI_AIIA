@@ -181,9 +181,9 @@ class Audio2Motion:
         real_f = res_kp_seq.shape[1]
         
         # [v1.9.155] Hysteresis Logic
-        # [v1.9.159 STRESS TEST] Relaxed Trigger to -25.0 for Geometry Validation
+        # [v1.9.160] Reverted Stress Test to Standard Safety Zone: 0 ~ -10.0 deg. 
         if self.silence_frames >= 25:
-             if not self.is_recovering and delta_p < -25.0:
+             if not self.is_recovering and delta_p < -10.0:
                   self.is_recovering = True
                   print(f"[Hysteresis Trigger] Delta={delta_p:+.2f}° Breach. Force engaged.")
              elif self.is_recovering and delta_p >= -1.0:
@@ -199,11 +199,7 @@ class Audio2Motion:
         if self.is_recovering:
              self.look_up_timer += step_len
         
-        # [v1.9.159] Precision Stress Zone Highlight
         tag = "[HEARTBEAT]" if not self.is_recovering else "[RECOVERY]"
-        if -16.0 < delta_p < -14.0:
-             tag = "[STRESS ZONE]"
-        
         print(f"{tag} Frame {real_f:04d} | Delta={delta_p:+.2f}° | Silence={self.silence_frames:03d} | Timer={self.look_up_timer}/50")
 
         # 5. Postural Auto-Correction Logic [REPLACED by v1.9.155 Hysteresis]
@@ -221,9 +217,7 @@ class Audio2Motion:
             drift_scales = np.ones_like(last_pose) * (0.0006 * boost_factor)
             new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
             
-            # [v1.9.159 STRESS TEST] Upward Nudge
-            # We add a persistent upward force to "pump" the head into the stress zone
-            new_drift[0, 1:67] += 0.0010
+            # [v1.9.160] Reverted Uward Nudge Bias
             
             # [v1.9.152] Absolute Postural Force (Boosted to 0.0030)
             if self.is_recovering:
@@ -337,24 +331,25 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.154] Sequence-Level Physical Correction
-        # We correct EVERY frame in the newly generated chunk before it hits the timeline.
-        if self.is_recovering:
-            # 70% intensity if starting, 95% if persistent stall
-            pressure = 0.70 if self.look_up_timer <= 100 else 0.95
-            soft_p = 0.40 # [v1.9.158] Soft limit for Rotation/Tilt to avoid teeth-baring
+        # [v1.9.160] STATIC POSTURE MODE
+        # Based on validation, we now enforce high Pitch pressure ALWAYS to prevent drift.
+        # This eliminates the dependency on 'Hysteresis Recovery' and ensures the jaw stays stable.
+        if True:
+            # [v1.9.160] Constant 95% tension for Pitch (Vertical)
+            pressure = 0.95
+            soft_p = 0.40 # Maintain soft-lock for Yaw/Roll to allow mouth projection
             
-            # [v1.9.158] Decoupled sequence correction
+            # Anchor is source + current Brownian offset
             anchor_p = self.s_kp_cond[0, 1:202] + self.brownian_pos[0, 1:202]
             
             for f in range(pred_kp_seq.shape[1]):
-                # High tension for Pitch (Index 1:67)
+                # Absolute Pitch Locking (Halt baring distortion)
                 pred_kp_seq[0, f, 1:67] = pred_kp_seq[0, f, 1:67] * (1.0 - pressure) + anchor_p[0:66] * pressure
-                # Soft tension for Yaw/Roll/T (Index 67:202)
+                # Soft Rotational Locking (Organic freedom)
                 pred_kp_seq[0, f, 67:202] = pred_kp_seq[0, f, 67:202] * (1.0 - soft_p) + anchor_p[66:201] * soft_p
             
-            if self.clip_idx % 5 == 0:
-                 print(f"[v1.9.154 Burst] Forced {pressure*100:.0f}% Pitch / {soft_p*100:.0f}% Global correction.")
+            if self.clip_idx % 10 == 0:
+                 print(f"[v1.9.160 Static] Pitch Locked (95%) | Yaw/Roll Soft (40%)")
         
         # [v1.9.156] Virtual Last Frame for Startup Stabilization
         # If this is the VERY first chunk, we treat the source photo as the "prev frame"
