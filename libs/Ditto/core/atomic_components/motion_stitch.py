@@ -613,117 +613,19 @@ class MotionStitch:
             self.d0,
         )
 
-        # [FIX] Instant Mouth Closing & Onset Ghosting
-        # 1. Capture Buffer: Keep history to capture a truly "Open" frame before LMDM closes it.
-        # 2. Instant Attack: Force full expression strength on onset to prevent attenuated "ghosting".
+        # [v1.9.128] ABSOLUTE MINIMALIST PURGE
+        # Deleted: exp_buffer, last_speaking_exp, EMA scrubbing, attack/release logic, 
+        #          mouth biases, and manual transition guards.
         
-        vad_current = kwargs.get("vad_alpha", 1.0)
+        vad_alpha = kwargs.get("vad_alpha", 1.0)
         
-        # Initialize state
-        if not hasattr(self, 'prev_vad_alpha'):
-            self.prev_vad_alpha = 1.0
-            self.last_speaking_exp = None
-            self.exp_buffer = [] # Store last 5 frames of exp
+        # 1. Simple Linear Blend (Landmark Parity)
+        # We blend strictly based on volume. No history, no hidden overrides.
+        for k in ["exp", "kp"]:
+            if k in x_d_info and k in x_s_info:
+                x_d_info[k] = x_d_info[k] * vad_alpha + x_s_info[k] * (1.0 - vad_alpha)
 
-        # Update Buffer
-        # Copy to avoid reference issues. 
-        # We only need to buffer when speaking (or transition), but buffering always is safer/simpler.
-        self.exp_buffer.append(x_d_info["exp"].copy())
-        if len(self.exp_buffer) > 5:
-            self.exp_buffer.pop(0)
-
-        # Logic Vars
-        is_release_start = (self.prev_vad_alpha >= 0.99 and vad_current < 0.99)
-        is_attack = (vad_current > self.prev_vad_alpha)
-        
-        # 1. Capture Logic (Release Start)
-        if is_release_start:
-            # Capture from buffer (e.g. -2 or -3) to ensure we get the Open frame 
-            # before LMDM started closing.
-            # Using -2 (approx 0.08s ago)
-            idx = -2 if len(self.exp_buffer) >= 2 else -1
-            tmp_exp = self.exp_buffer[idx].copy()
-            _squint_fix = [6, 7, 8, 12, 14, 15, 16, 18] # Expanded smile set
-            exp_reshaped = tmp_exp.reshape(-1, 21, 3)
-            src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
-            exp_reshaped[:, _squint_fix] = src_reshaped[:, _squint_fix]
-            self.last_speaking_exp = exp_reshaped.reshape(1, -1)
-            
-            # [v1.9.120] EMA Scrubbing: Forcefully clean the smoothing buffer on Release Start.
-            # This prevents the weighted average from carrying speaking "smiles" into the closure.
-            if hasattr(self, 'prev_exp_ema') and self.prev_exp_ema is not None:
-                ema_reshaped = self.prev_exp_ema.reshape(-1, 21, 3)
-                ema_reshaped[:, _squint_fix] = src_reshaped[:, _squint_fix]
-                self.prev_exp_ema = ema_reshaped.reshape(1, -1)
-        
-        # 2. Clear Logic (Attack / Re-entry)
-        if is_attack:
-            self.last_speaking_exp = None
-            
-        self.prev_vad_alpha = vad_current
-
-        # 3. Apply Logic
-        # Calculate effective alpha for expression blending
-        # If we are attacking, force 1.0 to avoid "Weak/Half-Closed" ghosting.
-        # [Update v1.9.103/105] Softer Onset & Mouth Boost
-        # Using sqrt(vad_current) to boost mouth opening at lower volumes.
-        # [Update v1.9.108] More aggressive mouth opening for quiet speakers
-        # v1.9.105 used 0.5, v1.9.108 uses 0.3
-        exp_blend_alpha = vad_current ** 0.3
-
-        if exp_blend_alpha < 1.0:
-            # If releasing (and not attacking), use frozen frame if available
-            if self.last_speaking_exp is not None and not is_attack:
-                 x_d_info["exp"] = self.last_speaking_exp.copy()
-            
-            x_d_info = ctrl_vad(x_d_info, x_s_info, exp_blend_alpha)
-            # [REMOVED v1.9.118] Moved suppression to the absolute end of __call__ for Final Lock.
-
-        # [v1.9.118] Adaptive Mouth Bias Guard (Applied BEFORE EMA)
-        # Threshold (0.6): Bias is 0.0 in transitions, ramps up in loud speech.
-        bias_alpha = kwargs.get("vad_alpha", 0.0)
-        if bias_alpha > 0.6:
-            # Linear ramp from 0.6 to 1.0
-            ramp_weight = (bias_alpha - 0.6) / 0.4
-            bias_val = 0.03 * ramp_weight
-            
-            lower_lip = [17, 19, 20]
-            corners = [7, 8]
-            exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
-            exp_reshaped[:, lower_lip, 1] += bias_val
-            exp_reshaped[:, corners, 1] += (bias_val * 0.3) # Harmonious corner follow
-            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
-
-        # [FIX] Expression Temporal Smoothing (EMA)
-        # Prevents inhumanly fast mouth open/close cycles by adding inertia.
-        # Human mouths have physical mass; they can't teleport.
-        
-        # Map user selection to decay value
-        mouth_smoothing_mode = kwargs.get("mouth_smoothing", "Normal")
-        if mouth_smoothing_mode == "None (Raw)":
-            exp_decay = 0.0
-        elif mouth_smoothing_mode == "Light":
-            exp_decay = 0.2
-        elif mouth_smoothing_mode == "Heavy":
-            exp_decay = 0.6
-        else:  # "Normal" (Default) [v1.9.108: Reduced from 0.5 to 0.3]
-            exp_decay = 0.0 # [Forced v1.9.127 Diagnostic]
-        
-        if exp_decay > 0:
-            if not hasattr(self, 'prev_exp_ema') or self.prev_exp_ema is None:
-                self.prev_exp_ema = x_d_info["exp"].copy()
-            
-            # [Update v1.9.103] Soft Reset EMA during Attack
-            # If we are starting to speak, reset the EMA to the current frame 
-            # to prevent the "Mouth Opening Lag" caused by long silence history.
-            if is_attack:
-                 self.prev_exp_ema = x_d_info["exp"].copy()
-            
-            # Apply EMA smoothing - let mouth opening transition naturally
-            x_d_info["exp"] = self.prev_exp_ema * exp_decay + x_d_info["exp"] * (1.0 - exp_decay)
-            self.prev_exp_ema = x_d_info["exp"].copy()
-            
-
+        # 2. Eye Blink selection (Native)
         delta_eye = 0
         if self.drive_eye and self.delta_eye_arr is not None:
             delta_eye = self.delta_eye_arr[
