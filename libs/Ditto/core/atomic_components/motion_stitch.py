@@ -643,13 +643,18 @@ class MotionStitch:
             # Using -2 (approx 0.08s ago)
             idx = -2 if len(self.exp_buffer) >= 2 else -1
             tmp_exp = self.exp_buffer[idx].copy()
-            # [v1.9.115] Pure Lip Caching: Scrub squint/smile residue (15, 16, 18) from cache
-            # This ensures the closure phase doesn't inherit a "frozen smile".
-            _squint_fix = [15, 16, 18]
+            _squint_fix = [6, 7, 8, 12, 14, 15, 16, 18] # Expanded smile set
             exp_reshaped = tmp_exp.reshape(-1, 21, 3)
             src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
             exp_reshaped[:, _squint_fix] = src_reshaped[:, _squint_fix]
             self.last_speaking_exp = exp_reshaped.reshape(1, -1)
+            
+            # [v1.9.120] EMA Scrubbing: Forcefully clean the smoothing buffer on Release Start.
+            # This prevents the weighted average from carrying speaking "smiles" into the closure.
+            if hasattr(self, 'prev_exp_ema') and self.prev_exp_ema is not None:
+                ema_reshaped = self.prev_exp_ema.reshape(-1, 21, 3)
+                ema_reshaped[:, _squint_fix] = src_reshaped[:, _squint_fix]
+                self.prev_exp_ema = ema_reshaped.reshape(1, -1)
         
         # 2. Clear Logic (Attack / Re-entry)
         if is_attack:
@@ -755,28 +760,26 @@ class MotionStitch:
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 
-        # [v1.9.119] Final Transition Lockdown (Absolute Last Step)
-        # Threshold (alpha < 1.0) defines the "Sensitive Transition Zone" (Opening/Closing).
+        # [v1.9.120] Final Transition Lockdown (Comprehensive)
+        # Defining the total set of indices that might trigger horizontal pull or squint.
+        # We allow 11, 13, 15 (Blinks) and 17, 19, 20 (Vertical Mouth).
         if exp_blend_alpha < 1.0:
-            # 1. Blink detection: If delta_eye has energy, skip brow/squint lock to allow blinks.
-            # delta_eye is typically (1, 63) or 0
             is_blinking = False
             if self.drive_eye and not isinstance(delta_eye, int):
                 if np.abs(delta_eye).max() > 1e-4:
                     is_blinking = True
 
-            _squint_points = [15, 16, 18]
-            _corner_points = [6, 12] # Fixes the "Widening Smile" closure pull
-            
+            _locked_points = [6, 7, 8, 12, 14, 16, 18] # Total isolation set
             exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
             src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
             
-            # Unconditionally lock Corners during transitions (stops horizontal stretch)
-            exp_reshaped[:, _corner_points] = src_reshaped[:, _corner_points]
+            # Lock secondary smile points unconditionally during transitions
+            exp_reshaped[:, _locked_points] = src_reshaped[:, _locked_points]
             
-            # Lock Squint/Brow only if not blinking (Physical Safety Net)
+            # Lock Left Squint (15) only if not blinking
             if not is_blinking:
-                exp_reshaped[:, _squint_points] = src_reshaped[:, _squint_points]
+                _blink_sq = [15]
+                exp_reshaped[:, _blink_sq] = src_reshaped[:, _blink_sq]
                 
             x_d_info["exp"] = exp_reshaped.reshape(1, -1)
         # [Diagnostic v1.9.71] Output Logger
