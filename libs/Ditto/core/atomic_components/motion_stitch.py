@@ -721,8 +721,8 @@ class MotionStitch:
             
         # [Feature v1.9.48] Apple Mouth Micro-Motion
         if "delta_mouth" in kwargs:
-             _lip = [6, 12, 14, 17, 19, 20]
-             # Broadcasting scalar to (1, 6, 3) or (1, 6)
+             _lip = [6, 7, 8, 12, 14, 17, 19, 20]
+             # Broadcasting scalar to (1, 8, 3) or (1, 8)
              x_d_info["exp"][:, _lip] += kwargs["delta_mouth"]
 
         # [Revert v1.9.55] User reports "Original code didn't have twitch".
