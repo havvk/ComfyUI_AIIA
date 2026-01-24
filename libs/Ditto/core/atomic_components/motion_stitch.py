@@ -745,21 +745,8 @@ class MotionStitch:
              exp_reshaped[:, _lip] += kwargs["delta_mouth"]
              x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
-        # [v1.9.124] Permanent Smile Suppression (Emotion: Neutral)
-        # If the character is intended to be Neutral (emo_idx 4), 
-        # we physically lock the smile/squint points (15, 16, 18) to source always.
-        if hasattr(self, 'emo') and self.emo == 4:
-            _squint_points = [15, 16, 18]
-            exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
-            src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
-            exp_reshaped[:, _squint_points] = src_reshaped[:, _squint_points]
-            x_d_info["exp"] = exp_reshaped.reshape(1, -1)
-            
-            if "kp" in x_d_info:
-                kp_reshaped = x_d_info["kp"].reshape(-1, 21, 3)
-                src_kp_reshaped = x_s_info["kp"].reshape(-1, 21, 3)
-                kp_reshaped[:, _squint_points] = src_kp_reshaped[:, _squint_points]
-                x_d_info["kp"] = kp_reshaped.reshape(1, -1)
+        # [v1.9.125] DIAGNOSTIC RESET: Removed all manual mouth biases.
+        # Letting AI model control the mouth (17, 19, 20) completely.
 
         # [Revert v1.9.55] User reports "Original code didn't have twitch".
         # Switching back to Legacy Function (but with [11,13] fix applied inside it).
@@ -776,59 +763,40 @@ class MotionStitch:
         
         x_d_info = ctrl_motion(x_d_info, **kwargs)
 
-        # [v1.9.124] Transition Total Isolation (The Iron Mask 2.0)
-        # Simplified threshold: Apply lock as soon as any volume drop occurs (alpha < 1.0).
-        # We synchronize both EXP and KP for absolute geometric alignment.
+        # [v1.9.125] MINIMAL TRANSITION SHIELD (Diagnostic Mode)
+        # We UNFREEZE pose/position and UNLOCK the mouth (17, 19, 20).
+        # We only lock eyes/cheeks to prevent the most jarring smile mutations.
         if exp_blend_alpha < 1.0:
-            print(f"[AIIA] v1.9.124 Transition Isolation (Alpha={exp_blend_alpha:.2f})")
+            print(f"[AIIA] v1.9.125 Diagnostic Mode (Alpha={exp_blend_alpha:.2f})")
             
-            # 1. Detect Blinks (Safety Net)
             is_blinking = False
             if self.drive_eye and not isinstance(delta_eye, int):
                 if np.abs(delta_eye).max() > 1e-4:
                     is_blinking = True
 
-            # 2. Vitality Preservation (Pose + Offsets)
-            for k, delta_k in [('pitch', 'delta_pitch'), ('yaw', 'delta_yaw'), ('roll', 'delta_roll')]:
-                if k in x_d_info and k in x_s_info:
-                    x_d_info[k] = x_s_info[k].copy()
-                    if delta_k in kwargs:
-                         x_d_info[k] = bin66_to_degree(x_d_info[k]) + kwargs[delta_k]
-            for k in ['t', 'scale']:
-                if k in x_d_info and k in x_s_info:
-                    x_d_info[k] = x_s_info[k].copy()
-
-            # 3. Landmark Isolation (EXP & KP synchronization)
+            # Shield against smile pops (Cheeks, Brows, Eyes)
+            _shield_points = [6, 7, 8, 12, 14, 15, 16, 18]
+            
             exp_reshaped = x_d_info["exp"].reshape(-1, 21, 3)
             src_reshaped = x_s_info["exp"].reshape(-1, 21, 3)
-            ai_mouth_y = exp_reshaped[:, [17, 19, 20], 1].copy()
             
-            # PHYSICAL LOCK on all expression points
-            exp_reshaped[:] = src_reshaped[:]
+            # Lock shield points only if not blinking
+            for p in _shield_points:
+                if p in [11, 13, 15] and is_blinking:
+                    continue
+                exp_reshaped[:, p] = src_reshaped[:, p]
             
-            # MANUAL MOUTH: Linear vertical ONLY
-            exp_reshaped[:, [17, 19, 20], 1] = src_reshaped[:, [17, 19, 20], 1] + (ai_mouth_y - src_reshaped[:, [17, 19, 20], 1]) * exp_blend_alpha
-
-            # RESTORE BLINKS (Physical Logic)
-            if is_blinking:
-                _eyes = [11, 13, 15]
-                orig_exp = x_d_info["exp"].reshape(-1, 21, 3).copy() 
-                exp_reshaped[:, _eyes] = orig_exp[:, _eyes]
             x_d_info["exp"] = exp_reshaped.reshape(1, -1)
 
-            # [v1.9.124] CRITICAL SYNC: Mirror lockdown to KP attribute
+            # Sync KP shield
             if "kp" in x_d_info:
                 kp_reshaped = x_d_info["kp"].reshape(-1, 21, 3)
                 src_kp_reshaped = x_s_info["kp"].reshape(-1, 21, 3)
-                kp_reshaped[:] = src_kp_reshaped[:]
-                # Keypoints don't usually carry blinks/lips well in separate weights, 
-                # locking them to source is the safest path to avoid distortion.
+                for p in _shield_points:
+                    if p in [11, 13, 15] and is_blinking:
+                        continue
+                    kp_reshaped[:, p] = src_kp_reshaped[:, p]
                 x_d_info["kp"] = kp_reshaped.reshape(1, -1)
-
-            # 4. STITCH-NET BYPASS: Total Isolation
-            self._bypass_stitch_this_frame = True 
-        else:
-            self._bypass_stitch_this_frame = False
         # [Diagnostic v1.9.71] Output Logger
         if hasattr(self, '_log_blink_output') and self._log_blink_output:
              out_exp = x_d_info["exp"]
@@ -902,12 +870,9 @@ class MotionStitch:
         
         x_d = transform_keypoint(x_d_info)
         
-        # [v1.9.123] Stitch-Net Bypass: 
-        # Prevent AI model from 'hallucinating' smiles during manual transitions.
-        if self.flag_stitching and not getattr(self, '_bypass_stitch_this_frame', False):
+        # [v1.9.125] Restore Native Stitch Net for Diagnosis
+        if self.flag_stitching:
             x_d = self.stitch_net(x_s, x_d)
-        elif self.flag_stitching:
-             print(f"  > [AIIA] Stitch-Net Bypassed for Purity")
 
         self.idx += 1
 
