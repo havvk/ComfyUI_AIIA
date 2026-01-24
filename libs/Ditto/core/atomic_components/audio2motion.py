@@ -206,9 +206,11 @@ class Audio2Motion:
             p_soft = e_x / e_x.sum()
             pitch_deg = np.sum(p_soft * np.arange(66)) * 3 - 97.5
             
-            # If looking up (>5 deg) during long silence, start recovery timer
-            if self.silence_frames > 50 and pitch_deg > 5.0:
+            # If looking up (>1.0 deg) during long silence, start recovery timer
+            if self.silence_frames > 50 and pitch_deg > 1.0:
                 self.look_up_timer += 1
+                if self.look_up_timer % 10 == 0:
+                     print(f"[Postural Diag] Pitch={pitch_deg:.2f}° | Timer={self.look_up_timer}/50 | Silence={self.silence_frames}")
             else:
                 self.look_up_timer = 0
             
@@ -216,6 +218,8 @@ class Audio2Motion:
             # Default 5% (0.05)
             gravity_vec = np.ones_like(last_pose) * 0.05
             if self.look_up_timer > 50:
+                if self.look_up_timer == 51:
+                    print(f"[Postural RECOVERY] Pitch stalled at {pitch_deg:.2f}°. Applying 20% Gravity to Pitch.")
                 # Ramp up restoring force to 20% to slowly pull head back to center
                 gravity_vec[0, 1:67] = 0.20
             
