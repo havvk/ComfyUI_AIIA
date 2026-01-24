@@ -314,7 +314,10 @@ class MotionStitch:
         d0=None,
         ch_info=None,
         overall_ctrl_info=None,
+        **kwargs
     ):
+        # [v1.9.130 Patch] Accepting **kwargs to avoid crash with AIIA nodes, 
+        # but ignoring them to maintain 100% official logic baseline.
         self.is_image_flag = is_image_flag
         if use_d_keys is None:
             if self.is_image_flag:

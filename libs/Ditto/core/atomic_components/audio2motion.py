@@ -79,7 +79,9 @@ class Audio2Motion:
         online_mode=False,
         v_min_max_for_clip=None,
         smo_k_d=3,
+        **kwargs
     ):
+        # [v1.9.130 Patch] Ignoring custom kwargs to maintain official baseline.
         self.smo_k_d = smo_k_d
         self.overlap_v2 = overlap_v2
         self.seq_frames = self.lmdm.seq_frames
