@@ -175,11 +175,11 @@ class Audio2Motion:
         self.global_time += 1
         delta_p = pitch_deg - self.s_pitch_deg
         
-        if self.clip_idx % 5 == 0:
-             # Use real accumulated frame count from sequence
-             real_f = res_kp_seq.shape[1]
-             tag = "[Postural HEARTBEAT]" if self.look_up_timer <= 50 else "[RECOVERY ACTIVE]"
-             print(f"{tag} Frame {real_f} | Raw={pitch_deg:.2f}° | Delta={delta_p:+.2f}° | Timer={self.look_up_timer}/50")
+        # [v1.9.149] Pulse Heartbeat (Every Chunk)
+        # 1:1 log frequency to eliminate blind spots
+        real_f = res_kp_seq.shape[1]
+        tag = "[Postural HEARTBEAT]" if self.look_up_timer <= 50 else "[RECOVERY ACTIVE]"
+        print(f"{tag} Frame {real_f} | Raw={pitch_deg:.2f}° | Delta={delta_p:+.2f}° | Timer={self.look_up_timer}/50")
 
         if self.fix_kp_cond == 0:  # 不重置
             # 1. Silence Intensity Boost
@@ -194,12 +194,9 @@ class Audio2Motion:
             drift_scales = np.ones_like(last_pose) * (0.0006 * boost_factor)
             new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
             
-            # [v1.9.148] Active Down-Pull Impulse
-            # If in recovery, force a downward trend in pitch momentum (Pitch is indices 1:67)
+            # [v1.9.149] Active Down-Pull Impulse (Boosted to 0.0012)
             if self.look_up_timer > 50:
-                # Inject a constant negative (UP -> DOWN) bias into the pitch drift
-                # This ensures the head isn't just "likely" to move down, but is ACTIVELY pushed.
-                new_drift[0, 1:67] -= 0.0008 
+                new_drift[0, 1:67] -= 0.0012 
             
             self.brownian_momentum = self.brownian_momentum * 0.92 + new_drift
             self.brownian_pos += self.brownian_momentum
@@ -216,21 +213,22 @@ class Audio2Motion:
             brow_indices = [217, 218, 220]
             brow_jitter = np.random.normal(0, 0.015 * boost_factor, len(brow_indices)).astype(np.float32)
             
-            # 5. Postural Auto-Correction (Anti-Stall) - [v1.9.148 Persistent Logging]
-            # Trigger if head is > 2.0 degrees ABOVE its original photo position.
+            # 5. Postural Auto-Correction (Anti-Stall) - [v1.9.149 Frame-Sync Fix]
             if self.silence_frames > 50 and delta_p < -2.0:
-                self.look_up_timer += 1
-                if self.look_up_timer % 10 == 0:
-                     diag_tag = "[昂首监测中]" if self.look_up_timer <= 50 else "[正在执行纠偏]"
-                     print(f"{diag_tag} Delta={delta_p:+.2f}° | Timer={self.look_up_timer}/50")
+                # v1.149: Increment by frames added, not just 1.
+                self.look_up_timer += self.valid_clip_len
+                if self.look_up_timer > 50:
+                     diag_tag = "[正在执行纠偏]"
+                     print(f"{diag_tag} Frame {real_f} | Delta={delta_p:+.2f}° | Push-Down Active")
             else:
                 # Reset only if significantly recovered (Hysteresis)
                 if delta_p > -0.5:
+                     if self.look_up_timer > 50:
+                         print(f"[Postural] Recovery Finished at Delta={delta_p:+.2f}°. Timer Reset.")
                      self.look_up_timer = 0
             
             gravity_vec = np.ones_like(last_pose) * 0.05
             if self.look_up_timer > 50:
-                # 20% gravity for all pitch coefficients
                 gravity_vec[0, 1:67] = 0.20
             # 6. Integration
             next_pose = last_pose + noise
