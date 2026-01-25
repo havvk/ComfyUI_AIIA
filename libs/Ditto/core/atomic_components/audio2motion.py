@@ -157,7 +157,7 @@ class Audio2Motion:
         else:
              return np.concatenate([res_kp_seq, pred_kp_seq], axis=1)
     
-    def _update_kp_cond(self, res_kp_seq, idx, step_len=0):
+    def _update_kp_cond(self, res_kp_seq, idx, step_len=0, is_onset=False):
         # [v1.9.144] Unconditional State Tracking
         # We process these outside the fix_kp_cond branches to ensure monitoring never stops.
         if idx <= 0:
@@ -285,14 +285,21 @@ class Audio2Motion:
                 # Yaw/Roll/T gets moderate gravity to prevent stiffness/teeth issues
                 gravity_vec[0, 67:202] = 0.40 
             
-            # 6. Integration
-            next_pose = last_pose + noise
-            for i, idx_in_kp in enumerate(brow_indices):
-                if idx_in_kp < next_pose.shape[1]:
-                    next_pose[0, idx_in_kp] += brow_jitter[i]
-
-            anchor = current_s_kp + self.brownian_pos
-            self.kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
+            # [v1.9.222] ONSET CONTINUITY (Removing Reset Snap)
+            # If we are starting speech (is_onset), we bypass the gravity pull
+            # and noise logic. We initialize the next AI latent condition 
+            # EXACTLY from the current physical state.
+            if is_onset:
+                 self.kp_cond = last_pose.copy()
+            else:
+                 # Standard Idle logic (Gravity/Noise/Sway)
+                 next_pose = last_pose + noise
+                 for i, idx_in_kp in enumerate(brow_indices):
+                     if idx_in_kp < next_pose.shape[1]:
+                         next_pose[0, idx_in_kp] += brow_jitter[i]
+     
+                 anchor = current_s_kp + self.brownian_pos
+                 self.kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
             
         elif self.fix_kp_cond > 0:
             if self.clip_idx % self.fix_kp_cond == 0:  # 重置
@@ -332,10 +339,10 @@ class Audio2Motion:
         # We pass self.global_time or absolute frame count to sync with VAD.
         # res_kp_seq.shape[1] is the correct current global frame.
         if res_kp_seq is not None:
-             self._update_kp_cond(res_kp_seq, res_kp_seq.shape[1], step_len)
+             self._update_kp_cond(res_kp_seq, res_kp_seq.shape[1], step_len, is_onset=reset)
         else:
              # First frame, lookahead from 0
-             self._update_kp_cond(self.s_kp_cond.reshape(1, 1, -1), 0, step_len)
+             self._update_kp_cond(self.s_kp_cond.reshape(1, 1, -1), 0, step_len, is_onset=reset)
 
         if reset:
             # [SOFT RESET] Only reset random seed for lip-sync consistency.
@@ -438,7 +445,7 @@ class Audio2Motion:
         self.clip_idx += 1
 
         idx = res_kp_seq.shape[1] - self.overlap_v2
-        self._update_kp_cond(res_kp_seq, idx, step_len=step_len)
+        self._update_kp_cond(res_kp_seq, idx, step_len=step_len, is_onset=False)
 
         return res_kp_seq
     
