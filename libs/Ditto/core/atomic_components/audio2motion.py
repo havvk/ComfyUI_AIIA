@@ -136,6 +136,7 @@ class Audio2Motion:
         print(f"[Postural Setup] Source Pitch Base: {self.s_pitch_deg:.2f}°")
 
         self.persistent_pressure = 0.60 # [v1.9.199] Persistent state for smooth transition
+        self.reset_seed_offset = 0  # [v1.9.220] Initialize for seed variation
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         # [v1.9.208] Robust Streaming Fusion Fix
@@ -343,17 +344,16 @@ class Audio2Motion:
             
             # Reset Random Seed to ensure Noise Sampling is consistent
             # [Update v1.9.108] Add clip_idx offset to prevent identical onset micro-motion
-            if seed is not None:
-                # [v1.9.220] Revert fuse length, fix talking state lag, and restore pressure indexing.
-                # The previous offset_seed was causing issues with consistent noise.
-                if reset:
-                    offset_seed = seed + self.reset_seed_offset
-                    torch.manual_seed(offset_seed)
-                    torch.cuda.manual_seed(offset_seed)
-                    torch.cuda.manual_seed_all(offset_seed)
-                    # [v1.9.219] Force instant state to allow mouth opening in the very first buffer
-                    self.is_talking_state = True
-                    self.persistent_pressure = 0.0 # Instant pressure release on onset
+            if reset:
+                # [v1.9.220] Use clip_idx to ensure each onset reset has slightly different noise
+                self.reset_seed_offset = self.clip_idx % 1000
+                offset_seed = seed + self.reset_seed_offset
+                torch.manual_seed(offset_seed)
+                torch.cuda.manual_seed(offset_seed)
+                torch.cuda.manual_seed_all(offset_seed)
+                # [v1.9.219] Force instant state to allow mouth opening in the very first buffer
+                self.is_talking_state = True
+                self.persistent_pressure = 0.0 # Instant pressure release on onset
             
             # [v1.9.139] Speech resets silence counter
             self.silence_frames = 0
