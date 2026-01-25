@@ -178,8 +178,7 @@ class Audio2Motion:
         # Always output current frame pitch and silence status
         real_f = res_kp_seq.shape[1]
         
-        # [v1.9.190] Postural Stability State Machine
-        # Trigger Limit: -8.0 deg (User limit). Safe Release: -2.0 deg.
+        # v1.9.300: Double protection. If the AI is in TALKING state, Hysteresis is ILLEGAL.
         if self.silence_frames >= 25 and not getattr(self, "is_talking_state", False):
              if not self.is_recovering and self.delta_p < -8.0:
                   self.is_recovering = True
@@ -277,14 +276,25 @@ class Audio2Motion:
                           print(f"[Postural] Recovery Finished (Delta={self.delta_p:+.2f}°). Timer reset.")
                      self.look_up_timer = 0
 
-            # [v1.9.228] DIRECT ONSET CONTINUITY
-            # If we are starting speech, we MUST bypass all gravity and latent
-            # complexification. The AI must start exactly from the physical tail.
+            # v1.9.300: Pure Speech Freedom. If talking, gravity is 0. 
+            # AI has 100% freedom to follow the physical head drift without centripetal force.
+            g_val = 0.0 if getattr(self, "is_talking_state", False) else 0.05
+            gravity_vec = np.ones_like(last_pose) * g_val
+            
+            if self.is_recovering:
+                # [v1.9.158] Decoupled Gravity (Safety fallback for non-speech)
+                g_p = 0.80 if self.look_up_timer > 100 else 0.60
+                gravity_vec[0, 1:67] = g_p
+            
+            # [v1.9.300] PURE PHYSICAL INHERITANCE
+            # If we are starting speech, we bypass all gravity/sway/noise.
+            # The AI condition MUST match the memory tail 100%.
             if is_onset:
                  self.kp_cond = last_pose.copy()
                  self.clean_kp_cond = last_pose.copy()
+                 # Safety: Reset momentum to prevent a 'rebound' snap
+                 self.brownian_momentum = np.zeros_like(self.brownian_momentum)
             else:
-                 # Standard Idle logic (Gravity/Noise/Sway)
                  next_pose = last_pose + noise
                  for i, idx_in_kp in enumerate(brow_indices):
                      if idx_in_kp < next_pose.shape[1]:
@@ -342,9 +352,14 @@ class Audio2Motion:
             self.silence_frames = 0
             self.is_talking_state = True
             self.persistent_pressure = 0.0 # Release positional pull instantly
-            print(f"[Ditto] Speech Onset Engagement (v1.9.229). Seed Offset={self.reset_seed_offset}")
+            print(f"[Ditto] Speech Onset Engagement (v1.9.300). Seed Offset={self.reset_seed_offset}")
         else:
-            self.silence_frames += step_len
+             # v1.9.300: Seal Silence Leak. If AI state machine says we are talking/anticipating,
+             # we MUST prevent silence_frames from leaking upwards, or Hysteresis will fire.
+             if getattr(self, "is_talking_state", False):
+                  self.silence_frames = 0
+             else:
+                  self.silence_frames += step_len
 
         # [v1.9.223/229] LATEST PHYSICAL MONITORING (Strictly Clean condition)
         if res_kp_seq is not None:
@@ -378,7 +393,7 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.228 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.300 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         # [v1.9.225] ONSET COORDINATE ALIGNMENT
         # ...
@@ -391,7 +406,7 @@ class Audio2Motion:
              
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.229). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.300). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose Only: 0:201)
         if self.warp_decay > 0.001:
