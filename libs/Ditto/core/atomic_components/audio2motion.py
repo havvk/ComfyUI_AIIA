@@ -135,41 +135,31 @@ class Audio2Motion:
         self.s_pitch_deg = np.sum(p_s * np.arange(66)) * 3 - 97.5
         print(f"[Postural Setup] Source Pitch Base: {self.s_pitch_deg:.2f}°")
 
+        self.persistent_pressure = 0.60 # [v1.9.199] Persistent state for smooth transition
+
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
-        ## ========================
-        ## offline fuse mode
-        ## last clip:  -------
-        ## fuse part:    *****
-        ## curr clip:    -------
-        ## output:       ^^
-        #
-        ## online fuse mode
-        ## last clip:  -------
-        ## fuse part:       **
-        ## curr clip:    -------
-        ## output:          ^^
-        ## ========================
-
-        if step_len is None:
-            step_len = self.valid_clip_len
-
-        fuse_r1_s = res_kp_seq.shape[1] - self.fuse_length
-        fuse_r1_e = res_kp_seq.shape[1]
+        # [v1.9.199] Robust Streaming Fusion
+        if res_kp_seq is None: return pred_kp_seq
         
-        # Calculate fuse range based on step_len
-        fuse_r2_s = self.seq_frames - step_len - self.fuse_length
-        fuse_r2_e = self.seq_frames - step_len
-
-        r1 = res_kp_seq[:, fuse_r1_s:fuse_r1_e]     # [1, fuse_len, dim]
-        r2 = pred_kp_seq[:, fuse_r2_s: fuse_r2_e]   # [1, fuse_len, dim]
+        # Determine how many frames in pred_kp_seq are NEW relative to res_kp_seq
+        # Standard SDK assumes pred_kp_seq has (context + new) frames.
+        # But our streaming lmdm call often produces exactly step_len frames.
+        new_frames_count = pred_kp_seq.shape[1]
         
-        alpha = override_alpha if override_alpha is not None else self.fuse_alpha
-        r_fuse = r1 * (1 - alpha) + r2 * alpha
-
-        res_kp_seq[:, fuse_r1_s:fuse_r1_e] = r_fuse    # fuse last
-        res_kp_seq = np.concatenate([res_kp_seq, pred_kp_seq[:, fuse_r2_e:]], 1)  # len(res_kp_seq) + valid_clip_len
-
-        return res_kp_seq
+        # If we have exactly the number of frames we want to add, just concatenate
+        # if the speaker logic handled continuity (which we do via kp_cond + warp).
+        # Otherwise, perform a standard overlap blend if context exists.
+        fuse_len = min(self.fuse_length, res_kp_seq.shape[1], new_frames_count)
+        
+        if fuse_len > 0:
+             r1 = res_kp_seq[:, -fuse_len:]
+             r2 = pred_kp_seq[:, :fuse_len]
+             alpha = override_alpha if override_alpha is not None else self.fuse_alpha
+             r_fuse = r1 * (1 - alpha) + r2 * alpha
+             res_kp_seq[:, -fuse_len:] = r_fuse
+             return np.concatenate([res_kp_seq, pred_kp_seq[:, fuse_len:]], axis=1)
+        else:
+             return np.concatenate([res_kp_seq, pred_kp_seq], axis=1)
     
     def _update_kp_cond(self, res_kp_seq, idx, step_len=0):
         # [v1.9.144] Unconditional State Tracking
@@ -373,70 +363,56 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.170] ZERO-PRESSURE SPEECH MODE
-        # 0% Pressure during speech (Full AI expression), 60% during silence (Stability).
-        if True:
-            # We use is_talking from state machine (VAD + Silence)
-            is_talking = getattr(self, "is_talking_state", False)
-            
-            # [v1.9.170] True Laissez-Faire: 0.0 pressure for speech!
-            pressure = 0.0 if is_talking else 0.60
-            soft_p = 0.0 if is_talking else 0.30
-            
-            # Anchor is ALWAYS the original photo + micro-drift
-            anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 1:202]
-            
-            for f in range(pred_kp_seq.shape[1]):
-                pred_kp_seq[0, f, 1:202] = pred_kp_seq[0, f, 1:202] * (1.0 - pressure) + anchor_p[0:201] * pressure
-            
-            if self.clip_idx % 20 == 0:
-                 mode_s = "SPEECH" if is_talking else "IDLE"
-                 print(f"[v1.9.198 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={self.delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
+        # [v1.9.199] SMOOTH PRESSURE TRANSITION
+        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.60
+        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 1:202]
         
-        # [v1.9.197] PERSISTENT DECAYING WARP (Continuity Fix)
-        # We handle transitions by maintaining a decaying offset across chunks.
-        effective_res_kp_seq = res_kp_seq
-        if effective_res_kp_seq is None:
-             effective_res_kp_seq = self.last_kp_frame if self.last_kp_frame is not None else self.s_kp_cond.reshape(1, 1, -1)
+        for f in range(pred_kp_seq.shape[1]):
+             # Gradually move pressure towards target (10-frame transition)
+             diff = target_pressure - self.persistent_pressure
+             move = np.clip(diff, -0.06, 0.06) # Max 6% change per frame (~0.4s total)
+             self.persistent_pressure += move
+             
+             # Apply current pressure state
+             curr_p = self.persistent_pressure
+             pred_kp_seq[0, f, 1:202] = pred_kp_seq[0, f, 1:202] * (1.0 - curr_p) + anchor_p[0:201] * curr_p
+             
+        if self.clip_idx % 20 == 0:
+             mode_s = "SPEECH" if target_pressure == 0 else "IDLE"
+             print(f"[v1.9.199 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
         
-        # Determine if we should trigger a new Warp (On Reset or Startup)
-        if reset or res_kp_seq is None:
-             actual_last = effective_res_kp_seq[:, -1:]
-             predicted_first = pred_kp_seq[:, 0:1]
-             self.warp_offset = actual_last - predicted_first
-             self.warp_decay = 1.0 # Full strength
-             if reset:
-                  print(f"[Ditto] Speech Onset Warp Engaged. Offset={np.abs(self.warp_offset).mean():.4f}")
+        # Fusion Sequence
+        if res_kp_seq is None:
+            res_kp_seq = pred_kp_seq
+            res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
+        else:
+            # Capture joint gap for Persistent Warp BEFORE fusion might slice it
+            # predicted_first[0, 0] is the very first frame of the NEW data
+            if reset:
+                 self.warp_offset = res_kp_seq[:, -1:] - pred_kp_seq[:, 0:1]
+                 self.warp_decay = 1.0
+                 print(f"[Ditto] Speech Onset Warp Engaged (v1.9.199). Offset={np.abs(self.warp_offset).mean():.4f}")
 
-        # Apply and Decay Offset
+            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=None, step_len=step_len)
+            res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - step_len - self.fuse_length, res_kp_seq.shape[1])
+
+        # [v1.9.199] Persistent Warp Application (Post-Fusion)
+        # We apply the decaying offset to the NEWLY ADDED frames in res_kp_seq
         if self.warp_decay > 0.001:
-             for f in range(pred_kp_seq.shape[1]):
-                  # We decay ~1/50 per frame (approx 2s at 25fps)
-                  pred_kp_seq[0, f] += (self.warp_offset * self.warp_decay).squeeze()
-                  self.warp_decay *= 0.94 # Decay factor (50 frames ~ 0.05 remain)
+             start_idx = res_kp_seq.shape[1] - pred_kp_seq.shape[1]
+             for f in range(start_idx, res_kp_seq.shape[1]):
+                  res_kp_seq[0, f] += (self.warp_offset * self.warp_decay).squeeze()
+                  self.warp_decay *= 0.94 # 50-frame window
              
              if self.warp_decay < 0.001:
                   self.warp_decay = 0.0
                   self.warp_offset = np.zeros_like(self.warp_offset)
-
-        if res_kp_seq is None:
-            res_kp_seq = pred_kp_seq   # [1, seq_frames, dim]
-            res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
-        else:
-            # [Removed] fuse_alpha=1.0 override. Use normal fusion for smooth blending.
-            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=None, step_len=step_len)
-            
-            res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - step_len - self.fuse_length, res_kp_seq.shape[1])
         
         # Store for next batch
         self.last_kp_frame = res_kp_seq[:, -1:]
         
         # [v1.9.153] Anchor Suppression Logic:
-        # If we are in recovery, the "Stable Center" should NO LONGER follow the AI's drift.
-        # Instead, we should actively pull the anchor back towards the 0-point (The Original Photo).
         if self.is_recovering:
-            # Force the anchor to decay back to neutral photo position
-            # This ensures recovery gravity pulls the head DOWN, not back to its CURRENT tilted position.
             self.brownian_pos = (self.brownian_pos * 0.7).astype(np.float32)
             if self.clip_idx % 5 == 0:
                  print(f"[Postural] Anchor Resetting... (Dist={np.abs(self.brownian_pos[0, 1:67]).mean():.4f})")
