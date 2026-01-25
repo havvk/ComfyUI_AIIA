@@ -367,44 +367,42 @@ class Audio2Motion:
              clean_history = res_kp_seq.copy()
              # Update conditioning with warped history during onset to force AI to start correctly.
              if self.warp_decay > 0.001 and not reset:
-                  clean_history[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
+                  clean_history[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
              
              self._update_kp_cond(clean_history, clean_history.shape[1], step_len, is_onset=reset)
         else:
              self._update_kp_cond(self.s_kp_cond.reshape(1, 1, -1), 0, step_len, is_onset=reset)
 
-        # [v1.9.219/301] JAW-ISOLATED PRESSURE (0:202)
-        # Pull Pose and Translation (X/Y/Z) to anchor during IDLE
+        # [v1.9.303] CRITICAL RESTORATION: Inference Call
+        pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
+
+        # [v1.9.219/303] JAW-ISOLATED PRESSURE (0:201)
+        # Pull Pose and Translation to anchor during IDLE
         target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.60
-        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:202]
+        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
              move = np.clip(diff, -0.06, 0.06) 
              self.persistent_pressure += move
              
-             # Apply pressure strictly to Position + Pose (0:202)
+             # Apply pressure strictly to Position + Pose (0:201)
              curr_p = self.persistent_pressure
-             pred_kp_seq[0, f, 0:202] = pred_kp_seq[0, f, 0:202] * (1.0 - curr_p) + anchor_p * curr_p
+             pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.302 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.303 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         # [v1.9.225] ONSET COORDINATE ALIGNMENT
         # ...
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
-        if reset or res_kp_seq is None:
-             actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
-             junc_idx = max(0, fuse_r2_s)
-             target_entry = pred_kp_seq[:, junc_idx : junc_idx + 1]
-             
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Onset Alignment (v1.9.302). Gap={np.abs(self.warp_offset[0,0,:201]).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.303). Gap={np.abs(self.warp_offset[0,0,:201]).mean():.4f}")
 
-        # Apply Warp (Pose Only: 0:201 - Reverting 202 to safe jaw)
+        # Apply Warp (Pose Only: 0:201)
         if self.warp_decay > 0.001:
              raw_start = pred_kp_seq[0, 0, 1:3].copy()
              # Apply uniform offset to the whole prediction buffer
@@ -455,7 +453,7 @@ class Audio2Motion:
         # Restore clean history for monitoring
         clean_res = res_kp_seq.copy()
         if self.warp_decay > 0.001:
-             clean_res[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
+             clean_res[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
              
         self._update_kp_cond(clean_res, idx, step_len=step_len, is_onset=False)
 
