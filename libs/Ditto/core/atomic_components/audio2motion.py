@@ -138,26 +138,21 @@ class Audio2Motion:
         self.persistent_pressure = 0.60 # [v1.9.199] Persistent state for smooth transition
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
-        # [v1.9.199] Robust Streaming Fusion
+        # [v1.9.208] Robust Streaming Fusion Fix
         if res_kp_seq is None: return pred_kp_seq
         
-        # Determine how many frames in pred_kp_seq are NEW relative to res_kp_seq
-        # Standard SDK assumes pred_kp_seq has (context + new) frames.
-        # But our streaming lmdm call often produces exactly step_len frames.
-        new_frames_count = pred_kp_seq.shape[1]
+        # Never use self.seq_frames (80) for slicing pred_kp_seq, 
+        # as pred_kp_seq might only contain step_len frames in streaming mode.
+        fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
+        fuse_r2_e = pred_kp_seq.shape[1] - step_len
         
-        # If we have exactly the number of frames we want to add, just concatenate
-        # if the speaker logic handled continuity (which we do via kp_cond + warp).
-        # Otherwise, perform a standard overlap blend if context exists.
-        fuse_len = min(self.fuse_length, res_kp_seq.shape[1], new_frames_count)
-        
-        if fuse_len > 0:
-             r1 = res_kp_seq[:, -fuse_len:]
-             r2 = pred_kp_seq[:, :fuse_len]
+        if self.fuse_length > 0 and fuse_r2_s >= 0:
+             r1 = res_kp_seq[:, -self.fuse_length:]
+             r2 = pred_kp_seq[:, fuse_r2_s:fuse_r2_e]
              alpha = override_alpha if override_alpha is not None else self.fuse_alpha
              r_fuse = r1 * (1 - alpha) + r2 * alpha
-             res_kp_seq[:, -fuse_len:] = r_fuse
-             return np.concatenate([res_kp_seq, pred_kp_seq[:, fuse_len:]], axis=1)
+             res_kp_seq[:, -self.fuse_length:] = r_fuse
+             return np.concatenate([res_kp_seq, pred_kp_seq[:, fuse_r2_e:]], axis=1)
         else:
              return np.concatenate([res_kp_seq, pred_kp_seq], axis=1)
     
@@ -379,7 +374,7 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if target_pressure == 0 else "IDLE"
-             print(f"[v1.9.199 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.208 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
         
         # Fusion Sequence
         if res_kp_seq is None:
@@ -391,17 +386,17 @@ class Audio2Motion:
             if reset:
                  self.warp_offset = res_kp_seq[:, -1:] - pred_kp_seq[:, 0:1]
                  self.warp_decay = 1.0
-                 print(f"[Ditto] Speech Onset Warp Engaged (v1.9.199). Offset={np.abs(self.warp_offset).mean():.4f}")
+                 print(f"[Ditto] Speech Onset Warp Engaged (v1.9.208 - Pose Only). Offset={np.abs(self.warp_offset).mean():.4f}")
 
             res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=None, step_len=step_len)
             res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - step_len - self.fuse_length, res_kp_seq.shape[1])
 
-        # [v1.9.199] Persistent Warp Application (Post-Fusion)
-        # We apply the decaying offset to the NEWLY ADDED frames in res_kp_seq
+        # [v1.9.208] Pose-Isolated Persistent Warp (Post-Fusion)
+        # Apply offset only to Head Pose/Pos (0:202). Expressions (202:) are untouched.
         if self.warp_decay > 0.001:
-             start_idx = res_kp_seq.shape[1] - pred_kp_seq.shape[1]
+             start_idx = res_kp_seq.shape[1] - step_len
              for f in range(start_idx, res_kp_seq.shape[1]):
-                  res_kp_seq[0, f] += (self.warp_offset * self.warp_decay).squeeze()
+                  res_kp_seq[0, f, :202] += self.warp_offset[0, 0, :202] * self.warp_decay
                   self.warp_decay *= 0.94 # 50-frame window
              
              if self.warp_decay < 0.001:
