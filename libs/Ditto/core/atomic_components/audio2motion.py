@@ -326,7 +326,8 @@ class Audio2Motion:
         for i in range(s, e):
             ss = max(0, i - half_k)
             ee = min(n, i + half_k + 1)
-            res_kp_seq[:, i, :201] = np.mean(new_res_kp_seq[:, ss:ee, :201], axis=1)
+            # v1.9.301: Expand to 202 to include Translation Z (Positioning Fix)
+            res_kp_seq[:, i, :202] = np.mean(new_res_kp_seq[:, ss:ee, :202], axis=1)
         return res_kp_seq
     
     def __call__(self, aud_cond, res_kp_seq=None, reset=False, step_len=None, seed=None):
@@ -352,7 +353,7 @@ class Audio2Motion:
             self.silence_frames = 0
             self.is_talking_state = True
             self.persistent_pressure = 0.0 # Release positional pull instantly
-            print(f"[Ditto] Speech Onset Engagement (v1.9.300). Seed Offset={self.reset_seed_offset}")
+            print(f"[Ditto] Speech Onset Engagement (v1.9.301). Seed Offset={self.reset_seed_offset}")
         else:
              # v1.9.300: Seal Silence Leak. If AI state machine says we are talking/anticipating,
              # we MUST prevent silence_frames from leaking upwards, or Hysteresis will fire.
@@ -361,39 +362,34 @@ class Audio2Motion:
              else:
                   self.silence_frames += step_len
 
-        # [v1.9.223/229] LATEST PHYSICAL MONITORING (Strictly Clean condition)
+        # [v1.9.223/229/301] PHYSICAL POSE CONDITIONING
         if res_kp_seq is not None:
-             # Important: We must pass the UNWARPED history to the AI for condition update.
-             # EXCEPT during Speech Onset (reset=True), where we pass the RAW physical pose 
-             # to force the AI to 'start' from the current drifted position.
              clean_history = res_kp_seq.copy()
+             # Update conditioning with warped history during onset to force AI to start correctly.
              if self.warp_decay > 0.001 and not reset:
-                  clean_history[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
+                  clean_history[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
              
              self._update_kp_cond(clean_history, clean_history.shape[1], step_len, is_onset=reset)
         else:
              self._update_kp_cond(self.s_kp_cond.reshape(1, 1, -1), 0, step_len, is_onset=reset)
 
-        pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
-        
-        # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
-        # We pull Position and Pose (0:201) to the anchor in IDLE.
-        # Index 201+ (Expressions) are EXCLUDED so the AI always has full control.
+        # [v1.9.219/301] JAW-ISOLATED PRESSURE (0:202)
+        # Pull Pose and Translation (X/Y/Z) to anchor during IDLE
         target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.60
-        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
+        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:202]
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
              move = np.clip(diff, -0.06, 0.06) 
              self.persistent_pressure += move
              
-             # Apply pressure strictly to Position + Pose (0:201)
+             # Apply pressure strictly to Position + Pose (0:202)
              curr_p = self.persistent_pressure
-             pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
+             pred_kp_seq[0, f, 0:202] = pred_kp_seq[0, f, 0:202] * (1.0 - curr_p) + anchor_p * curr_p
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.300 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.301 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         # [v1.9.225] ONSET COORDINATE ALIGNMENT
         # ...
@@ -406,12 +402,12 @@ class Audio2Motion:
              
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.300). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.301). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
 
-        # Apply Warp (Pose Only: 0:201)
+        # Apply Warp (Pose + Translation X/Y/Z: 0:202)
         if self.warp_decay > 0.001:
              # Apply uniform offset to the whole prediction buffer
-             pred_kp_seq[0, :, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
+             pred_kp_seq[0, :, :202] += self.warp_offset[0, 0, :202] * self.warp_decay
              
              # [v1.9.221] CONDITIONAL DECAY
              if not getattr(self, "is_talking_state", False):
@@ -454,7 +450,7 @@ class Audio2Motion:
         # Restore clean history for monitoring
         clean_res = res_kp_seq.copy()
         if self.warp_decay > 0.001:
-             clean_res[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
+             clean_res[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
              
         self._update_kp_cond(clean_res, idx, step_len=step_len, is_onset=False)
 
