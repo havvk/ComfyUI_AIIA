@@ -394,10 +394,13 @@ class Audio2Motion:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
              print(f"[v1.9.303 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
-        # [v1.9.225] ONSET COORDINATE ALIGNMENT
-        # ...
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
+        if reset or res_kp_seq is None:
+             actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
+             junc_idx = max(0, fuse_r2_s)
+             target_entry = pred_kp_seq[:, junc_idx : junc_idx + 1]
+             
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
              print(f"[Ditto Warp] Onset Alignment (v1.9.303). Gap={np.abs(self.warp_offset[0,0,:201]).mean():.4f}")
