@@ -381,16 +381,17 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if target_pressure == 0 else "IDLE"
-             print(f"[v1.9.208 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.214 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
         
         # Fusion Sequence
-        # [v1.9.213] PRE-FUSION SEAMLESS WARP (Strictly Pose Only: 0:201)
-        # 0:3 is Position, 3:201 is Head Pose. 201+ is Expressions.
+        # [v1.9.214] SURGICAL PRE-FUSION WARP (Pose Only: 0:201)
+        # We align the entire prediction buffer to history BEFORE fusion.
+        # Strict index [:201] ensures we don't touch any facial expression data.
         if reset or res_kp_seq is None:
              actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
              self.warp_offset = actual_last - pred_kp_seq[:, 0:1]
              self.warp_decay = 1.0
-             print(f"[Ditto] Speech Onset Warp Engaged (v1.9.213 - Pre-Fusion Pose). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto] Speech Onset Warp Engaged (v1.9.214 - Pose Only). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp BEFORE Fusion for perfect continuity
         if self.warp_decay > 0.001:
