@@ -345,7 +345,7 @@ class Audio2Motion:
             self.silence_frames = 0
             self.is_talking_state = True
             self.persistent_pressure = 0.0 # Release positional pull instantly
-            print(f"[Ditto] Speech Onset Engagement (v1.9.225). Seed Offset={self.reset_seed_offset}")
+            print(f"[Ditto] Speech Onset Engagement (v1.9.226). Seed Offset={self.reset_seed_offset}")
         else:
             self.silence_frames += step_len
 
@@ -362,11 +362,11 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
-        # We pull Position and Pose (0:201) to the anchor in IDLE.
-        # Index 201 (Jaw) is EXCLUDED so the AI always has full control of expressions.
+        # [v1.9.219] JAW-ISOLATED PRESSURE (0:202)
+        # We pull Position and Pose (0:202) to the anchor in IDLE.
+        # Index 202+ (Expressions) are EXCLUDED so the AI always has full control.
         target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.60
-        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
+        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:202]
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
@@ -379,7 +379,7 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.225 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.226 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         # [v1.9.225] ONSET COORDINATE ALIGNMENT
         # ...
@@ -392,7 +392,7 @@ class Audio2Motion:
              
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.225). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.226). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose Only: 0:202)
         if self.warp_decay > 0.001:
