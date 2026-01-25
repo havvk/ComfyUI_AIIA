@@ -153,7 +153,6 @@ class Audio2Motion:
         self.reset_seed_offset = 0  # [v1.9.220] Initialize for seed variety
         self.clean_kp_cond = self.s_kp_cond.copy() # [v1.9.223] The "Unwarped" latent state
         self.pose_deg_offset = np.zeros(3) # [v1.9.310] Orientation Warp State
-        self.pose_deg_offset = np.zeros(3) # [v1.9.310] Orientation Warp State
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         # [v1.9.208] Robust Streaming Fusion Fix
@@ -176,7 +175,7 @@ class Audio2Motion:
     
     def _update_kp_cond(self, res_kp_seq, idx, step_len=0, is_onset=False):
         # NaN Guard [v1.9.312]
-        res_kp_seq = np.nan_to_num(res_kp_seq)
+        res_kp_seq = np.nan_to_num(res_kp_seq).astype(np.float32)
         
         # [v1.9.144] Unconditional State Tracking
         if idx <= 0:
@@ -356,12 +355,12 @@ class Audio2Motion:
         aud_cond: (1, seq_frames, dim)
         step_len: int, optional. Frames to advance. Defaults to self.valid_clip_len.
         """
-        # [v1.9.312] Worker Health Pulse
-        print(f"[Ditto] Batch {self.clip_idx} start... (Reset={reset})")
+        # [v1.9.313] Heartbeat Stage 1: Entry
+        print(f"[Ditto Pulse] Batch {self.clip_idx} | Entry (Reset={reset})")
         
         # NaN / Inf Defense [v1.9.312]
-        self.kp_cond = np.nan_to_num(self.kp_cond)
-        self.brownian_pos = np.nan_to_num(self.brownian_pos)
+        self.kp_cond = np.nan_to_num(self.kp_cond).astype(np.float32)
+        self.brownian_pos = np.nan_to_num(self.brownian_pos).astype(np.float32)
         
         if step_len is None:
             step_len = self.valid_clip_len
@@ -400,8 +399,11 @@ class Audio2Motion:
         else:
              self._update_kp_cond(self.s_kp_cond.reshape(1, 1, -1), 0, step_len, is_onset=reset)
 
-        # [v1.9.303] CRITICAL RESTORATION: Inference Call
+        # Heartbeat Stage 2: Inference
+        print(f"[Ditto Pulse] Batch {self.clip_idx} | Inference Start...")
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
+        pred_kp_seq = np.nan_to_num(pred_kp_seq).astype(np.float32)
+        print(f"[Ditto Pulse] Batch {self.clip_idx} | Inference End. Shape={pred_kp_seq.shape}")
 
         # [v1.9.219/308] GENTLE STABILIZATION (Standardized 0:202)
         # Pull Pose/Translation to anchor during silence.
@@ -419,7 +421,7 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.312 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.313 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
@@ -445,15 +447,9 @@ class Audio2Motion:
 
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Onset Alignment (v1.9.312). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.313). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
              print(f"  > Degree Offsets [P,Y,R]: {self.pose_deg_offset}")
 
-        # Apply Warp (Position + Scale: 0:202)
-        if self.warp_decay > 0.001:
-             # Scale and Translation are scalars, additive warp works.
-             pred_kp_seq[0, :, 0] += self.warp_offset[0, 0, 0] * self.warp_decay # Scale
-             pred_kp_seq[0, :, 199:202] += self.warp_offset[0, 0, 199:202] * self.warp_decay # Translation
-             
              if reset:
                   print(f"  > [Warp Lock] Frame0 Trans Shift: {self.warp_offset[0, 0, 199:202]}")
 
@@ -509,8 +505,9 @@ class Audio2Motion:
              
         self._update_kp_cond(clean_res, idx, step_len=step_len, is_onset=False)
 
+        # Heartbeat Stage 3: Return
         if self.clip_idx % 20 == 0:
-             print(f"[Ditto] Batch {self.clip_idx} processed successfully.")
+             print(f"[Ditto Pulse] Batch {self.clip_idx} | Processed successfully.")
 
         return res_kp_seq
     
