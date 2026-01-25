@@ -90,9 +90,9 @@ class Audio2Motion:
         # for fuse
         self.online_mode = online_mode
         if self.online_mode:
-            self.fuse_length = min(self.overlap_v2, self.valid_clip_len)
+            self.fuse_length = min(20, self.valid_clip_len) # [v1.9.217] Increased to 20 (0.8s transition)
         else:
-            self.fuse_length = self.overlap_v2
+            self.fuse_length = 25 # [v1.9.217] Match STEP size
         self.fuse_alpha = np.arange(self.fuse_length, dtype=np.float32).reshape(1, -1, 1) / self.fuse_length
 
         self.fix_kp_cond = fix_kp_cond
@@ -358,52 +358,51 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.199] SMOOTH PRESSURE TRANSITION
+        # [v1.9.217] REFINED PRESSURE TRANSITION (Strict 0:201)
+        # We now include Index 0 (Pos X) in the pressure blending to avoid coordinate drift.
         target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.60
-        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 1:202]
+        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201] # 0:201 (Pos+Pose)
         
         for f in range(pred_kp_seq.shape[1]):
-             # Gradually move pressure towards target (10-frame transition)
              diff = target_pressure - self.persistent_pressure
-             move = np.clip(diff, -0.06, 0.06) # Max 6% change per frame (~0.4s total)
+             move = np.clip(diff, -0.06, 0.06) 
              self.persistent_pressure += move
              
-             # Apply current pressure state
+             # Apply pressure: 0:201 (Position + Head Pose)
              curr_p = self.persistent_pressure
-             pred_kp_seq[0, f, 1:202] = pred_kp_seq[0, f, 1:202] * (1.0 - curr_p) + anchor_p[0:201] * curr_p
+             pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if target_pressure == 0 else "IDLE"
-             print(f"[v1.9.216 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.217 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
         
         # Fusion Sequence
-        # [v1.9.216] PRECISION JUNCTION DIAGNOSTIC
+        # [v1.9.217] ANCHOR-AWARE WARP alignment
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
         if (reset or res_kp_seq is None):
              actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
              
-             # CLAMP Junc to at least 0. We align to the EARLIEST relevant frame.
+             # Calculate alignment at the very FIRST frame of the fusion window (Junc)
              junc_idx = max(0, fuse_r2_s)
              target_entry = pred_kp_seq[:, junc_idx : junc_idx + 1]
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0
              
-             # [v1.9.216] Detailed Diagnostic Logging
-             h_shape = res_kp_seq.shape if res_kp_seq is not None else "None"
-             print(f"[Ditto] Precision Warp Engaged (v1.9.216). "
-                   f"Junc={fuse_r2_s} (Clamped={junc_idx}), "
-                   f"PredShape={pred_kp_seq.shape}, HistShape={h_shape}, "
-                   f"Step={step_len}, FuseLen={self.fuse_length}, "
-                   f"Offset={np.abs(self.warp_offset).mean():.4f}")
+             # [v1.9.217] Junction Continuity Diagnostics
+             h_tail = actual_last[0, 0, :5] # Log first few coordinates
+             p_head = target_entry[0, 0, :5]
+             print(f"[Ditto Check] Junction Align (v1.9.217). Junc={junc_idx}, Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"       -> History Tail (0:5): {h_tail}")
+             print(f"       -> Pred Head (0:5)  : {p_head}")
 
         # Apply Warp alignment starting from the junction point
         if self.warp_decay > 0.001:
              start_f = max(0, fuse_r2_s)
              for f in range(start_f, pred_kp_seq.shape[1]):
-                  # ONLY warp head pose/pos (0:201). Leave expressions (201+) native.
+                  # STRICTLY 0:201 (Position + Pose). Expressions (201+) are native.
                   pred_kp_seq[0, f, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
-                  self.warp_decay *= 0.985 # Slower, stable decay
+                  self.warp_decay *= 0.990 # Slower, more stable transition back to AI
              
              if self.warp_decay < 0.001:
                   self.warp_decay = 0.0
