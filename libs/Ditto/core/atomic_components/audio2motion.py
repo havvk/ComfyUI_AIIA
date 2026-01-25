@@ -136,7 +136,8 @@ class Audio2Motion:
         print(f"[Postural Setup] Source Pitch Base: {self.s_pitch_deg:.2f}°")
 
         self.persistent_pressure = 0.60 # [v1.9.199] Persistent state for smooth transition
-        self.reset_seed_offset = 0  # [v1.9.220] Initialize for seed variation
+        self.reset_seed_offset = 0  # [v1.9.220] Initialize for seed variety
+        self.clean_kp_cond = self.s_kp_cond.copy() # [v1.9.223] The "Unwarped" latent state
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         # [v1.9.208] Robust Streaming Fusion Fix
@@ -282,24 +283,19 @@ class Audio2Motion:
                 # Pitch (Vertical) gets high gravity to prevent looking up
                 g_p = 0.80 if self.look_up_timer > 100 else 0.60
                 gravity_vec[0, 1:67] = g_p
-                # Yaw/Roll/T gets moderate gravity to prevent stiffness/teeth issues
-                gravity_vec[0, 67:202] = 0.40 
+            # [v1.9.223] CLEAN SPACE INTEGRATION
+            # We update self.clean_kp_cond to be the next latent state.
+            # This pose NEVER includes the warp offset, preventing feedback drift.
+            next_pose = last_pose + noise
+            for i, idx_in_kp in enumerate(brow_indices):
+                if idx_in_kp < next_pose.shape[1]:
+                    next_pose[0, idx_in_kp] += brow_jitter[i]
+
+            anchor = current_s_kp + self.brownian_pos
+            self.clean_kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
             
-            # [v1.9.222] ONSET CONTINUITY (Removing Reset Snap)
-            # If we are starting speech (is_onset), we bypass the gravity pull
-            # and noise logic. We initialize the next AI latent condition 
-            # EXACTLY from the current physical state.
-            if is_onset:
-                 self.kp_cond = last_pose.copy()
-            else:
-                 # Standard Idle logic (Gravity/Noise/Sway)
-                 next_pose = last_pose + noise
-                 for i, idx_in_kp in enumerate(brow_indices):
-                     if idx_in_kp < next_pose.shape[1]:
-                         next_pose[0, idx_in_kp] += brow_jitter[i]
-     
-                 anchor = current_s_kp + self.brownian_pos
-                 self.kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
+            # Since AI conditioning uses kp_cond, we sync it here.
+            self.kp_cond = self.clean_kp_cond.copy()
             
         elif self.fix_kp_cond > 0:
             if self.clip_idx % self.fix_kp_cond == 0:  # 重置
@@ -334,14 +330,17 @@ class Audio2Motion:
         if step_len is None:
             step_len = self.valid_clip_len
 
-        # [v1.9.163] Restore Condition Update
-        # Without this, self.kp_cond and self.current_neutralizer NEVER UPDATE.
-        # We pass self.global_time or absolute frame count to sync with VAD.
-        # res_kp_seq.shape[1] is the correct current global frame.
+        # [v1.9.223] LATEST PHYSICAL MONITORING (Strictly Clean condition)
         if res_kp_seq is not None:
-             self._update_kp_cond(res_kp_seq, res_kp_seq.shape[1], step_len, is_onset=reset)
+             # Important: We must pass the UNWARPED history to the AI for condition update.
+             # But since res_kp_seq is already warped, we subtract the current warp offset 
+             # to restore the 'clean' pose for the AI latent space.
+             clean_history = res_kp_seq.copy()
+             if self.warp_decay > 0.001:
+                  clean_history[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
+             
+             self._update_kp_cond(clean_history, clean_history.shape[1], step_len, is_onset=reset)
         else:
-             # First frame, lookahead from 0
              self._update_kp_cond(self.s_kp_cond.reshape(1, 1, -1), 0, step_len, is_onset=reset)
 
         if reset:
@@ -361,6 +360,7 @@ class Audio2Motion:
                 # [v1.9.219] Force instant state to allow mouth opening in the very first buffer
                 self.is_talking_state = True
                 self.persistent_pressure = 0.0 # Instant pressure release on onset
+                print(f"[Ditto] Speech Onset Engagement (v1.9.223). Seed Offset={self.reset_seed_offset}")
             
             # [v1.9.139] Speech resets silence counter
             self.silence_frames = 0
@@ -401,9 +401,11 @@ class Audio2Motion:
              target_entry = pred_kp_seq[:, junc_idx : junc_idx + 1]
              
              # New offset = physical gap. 
+             # This gap now accounts for the jump from (IdleAnchor) to (SpeechAI).
+             # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.221). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.223). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose Only: 0:201)
         if self.warp_decay > 0.001:
@@ -445,7 +447,13 @@ class Audio2Motion:
         self.clip_idx += 1
 
         idx = res_kp_seq.shape[1] - self.overlap_v2
-        self._update_kp_cond(res_kp_seq, idx, step_len=step_len, is_onset=False)
+        
+        # Restore clean history for monitoring
+        clean_res = res_kp_seq.copy()
+        if self.warp_decay > 0.001:
+             clean_res[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
+             
+        self._update_kp_cond(clean_res, idx, step_len=step_len, is_onset=False)
 
         return res_kp_seq
     
