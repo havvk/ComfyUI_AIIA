@@ -248,13 +248,13 @@ class Audio2Motion:
                 new_drift[0, 67:202] -= 0.0005 
                 if self.look_up_timer > 100:
                     new_drift[0, 1:67] += 0.0045 
-            self.brownian_momentum = self.brownian_momentum * 0.92 + new_drift
+            self.brownian_momentum = self.brownian_momentum * 0.85 + new_drift
             self.brownian_pos += self.brownian_momentum
             
             # 3. Compound Sine Sway
             t = self.global_time
             sway_f1 = np.sin(t * 0.04) * 0.002
-            sway_f2 = np.sin(t * 0.25) * 0.0004
+            sway_f2 = np.sin(t * 0.05) * 0.0004
             sway_f3 = np.sin(t * 0.005) * 0.0015
             sway = (sway_f1 + sway_f2 + sway_f3).astype(np.float32)
             current_s_kp = self.s_kp_cond + sway
@@ -285,8 +285,8 @@ class Audio2Motion:
                 g_p = 0.80 if self.look_up_timer > 100 else 0.60
                 
                 # [v1.9.400] MOUTH FIX: Strict Ceiling
-                # If head looks up too high (delta > 5.0), force it down regardless of timer.
-                if self.delta_p > 5.0:
+                # If head looks up too high (delta < -5.0), force it down regardless of timer.
+                if self.delta_p < -5.0:
                      g_p = 0.95 # Max gravity
                      self.brownian_momentum[0, 1:67] += 0.008 # Active push down
                 
