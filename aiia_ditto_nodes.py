@@ -770,7 +770,8 @@ class AIIA_DittoSampler:
                 # Blend in motion as alpha decreases (silence increases)
                 # We use (1.0 - alpha) as the weight for idle motion.
                 if alpha < 1.0:
-                    idle_weight = (1.0 - alpha)
+                    # [v1.9.193] Strict Silence Restriction: Taper off breathing faster to avoid interference
+                    idle_weight = max(0.0, 1.0 - alpha * 2.5)
                     
                     t = i / 25.0
                     # [Update v1.9.107] Restricted Pitch Sway:
