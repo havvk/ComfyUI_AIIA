@@ -152,6 +152,7 @@ class Audio2Motion:
         self.persistent_pressure = 0.60 # [v1.9.199] Persistent state for smooth transition
         self.reset_seed_offset = 0  # [v1.9.220] Initialize for seed variety
         self.clean_kp_cond = self.s_kp_cond.copy() # [v1.9.223] The "Unwarped" latent state
+        self.pose_deg_offset = np.zeros(3) # [v1.9.310] Orientation Warp State
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         # [v1.9.208] Robust Streaming Fusion Fix
@@ -402,9 +403,13 @@ class Audio2Motion:
              move = np.clip(diff, -0.06, 0.06) 
              self.persistent_pressure += move
              
+             # [v1.9.310 Restoration] Apply pressure strictly to Position + Pose (0:202)
+             curr_p = self.persistent_pressure
+             pred_kp_seq[0, f, 0:202] = pred_kp_seq[0, f, 0:202] * (1.0 - curr_p) + anchor_p * curr_p
+             
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.309 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.310 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
@@ -430,7 +435,7 @@ class Audio2Motion:
 
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Onset Alignment (v1.9.309). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.310). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
              print(f"  > Degree Offsets [P,Y,R]: {self.pose_deg_offset}")
 
         # Apply Warp (Position + Scale: 0:202)
