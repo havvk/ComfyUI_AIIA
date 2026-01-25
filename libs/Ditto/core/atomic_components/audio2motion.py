@@ -228,11 +228,12 @@ class Audio2Motion:
             if self.silence_frames > 50:
                 boost_factor = min(1.6, 1.0 + (self.silence_frames - 50) * 0.004)
             
-            noise_scale = 0.005 * boost_factor
+            # [v1.9.400] Stability Fix: Reduced noise by 80%
+            noise_scale = 0.001 * boost_factor
             noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
             
             # 2. Brownian Momentum Logic
-            drift_scales = np.ones_like(last_pose) * (0.0006 * boost_factor)
+            drift_scales = np.ones_like(last_pose) * (0.0001 * boost_factor)
             new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
             
             # [v1.9.160] Reverted Uward Nudge Bias
@@ -282,6 +283,13 @@ class Audio2Motion:
                 # [v1.9.158] Decoupled Gravity
                 # Pitch (Vertical) gets high gravity to prevent looking up
                 g_p = 0.80 if self.look_up_timer > 100 else 0.60
+                
+                # [v1.9.400] MOUTH FIX: Strict Ceiling
+                # If head looks up too high (delta > 5.0), force it down regardless of timer.
+                if self.delta_p > 5.0:
+                     g_p = 0.95 # Max gravity
+                     self.brownian_momentum[0, 1:67] += 0.008 # Active push down
+                
                 gravity_vec[0, 1:67] = g_p
             # [v1.9.223] CLEAN SPACE INTEGRATION
             # We update self.clean_kp_cond to be the next latent state.
