@@ -374,19 +374,28 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if target_pressure == 0 else "IDLE"
-             print(f"[v1.9.215 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.216 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
         
         # Fusion Sequence
-        # [v1.9.215] PRECISION JUNCTION WARP (Pose Only: 0:201)
-        # Align prediction to history at the exact fusion entry point (fuse_r2_s).
+        # [v1.9.216] PRECISION JUNCTION DIAGNOSTIC
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
-        if (reset or res_kp_seq is None) and fuse_r2_s >= 0:
+        if (reset or res_kp_seq is None):
              actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
-             target_entry = pred_kp_seq[:, fuse_r2_s : fuse_r2_s + 1]
+             
+             # CLAMP Junc to at least 0. We align to the EARLIEST relevant frame.
+             junc_idx = max(0, fuse_r2_s)
+             target_entry = pred_kp_seq[:, junc_idx : junc_idx + 1]
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0
-             print(f"[Ditto] Precision Warp Engaged (v1.9.215 - Junc={fuse_r2_s}). Offset={np.abs(self.warp_offset).mean():.4f}")
+             
+             # [v1.9.216] Detailed Diagnostic Logging
+             h_shape = res_kp_seq.shape if res_kp_seq is not None else "None"
+             print(f"[Ditto] Precision Warp Engaged (v1.9.216). "
+                   f"Junc={fuse_r2_s} (Clamped={junc_idx}), "
+                   f"PredShape={pred_kp_seq.shape}, HistShape={h_shape}, "
+                   f"Step={step_len}, FuseLen={self.fuse_length}, "
+                   f"Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp alignment starting from the junction point
         if self.warp_decay > 0.001:
