@@ -14,6 +14,20 @@ lmdm_cfg = {
 """
 
 
+# Helper for Bin-Shift Warping [v1.9.308]
+def _warp_orientation_bins(bins, delta_deg):
+    """
+    Shifts the probability mass of 66 bins by a degree delta.
+    Ditto uses 3 degrees per bin, range -97.5 to +97.5.
+    """
+    shift_bins = delta_deg / 3.0
+    indices = np.arange(66).astype(np.float32)
+    # Use linear interpolation to shift the distribution
+    shifted_indices = indices - shift_bins
+    new_bins = np.interp(shifted_indices, indices, bins[0], left=bins[0,0], right=bins[0,-1])[None]
+    return new_bins
+
+
 def _cvt_LP_motion_info(inp, mode, ignore_keys=()):
     ks_shape_map = [
         ['scale', (1, 1), 1], 
@@ -287,14 +301,13 @@ class Audio2Motion:
                 g_p = 0.80 if self.look_up_timer > 100 else 0.60
                 gravity_vec[0, 1:67] = g_p
             
-            # [v1.9.307] PURE POSTURAL CONTINUITY
-            # 1. Standardize 0:201 (excludes Jaw/Expressions)
+            # [v1.9.308] PRECISION POSTURAL CONTINUITY
+            # 1. Standardize 0:202 (includes Translation Z, excludes expressions)
             # 2. Inherit Pose/Trans from last IDLE state for Bit-Exact start
             if is_onset:
-                 self.kp_cond[:, 201:] = self.s_kp_cond[:, 201:]
-                 # self.kp_cond[:, :201] is inherited from previous IDLE frame
+                 self.kp_cond[:, 202:] = self.s_kp_cond[:, 202:]
+                 # self.kp_cond[:, :202] is inherited from previous IDLE frame
                  self.brownian_momentum = np.zeros_like(self.brownian_momentum)
-                 # Force instant kill of any IDLE-bound stabilization forces
                  self.persistent_pressure = 0.0
                  self.look_up_timer = 0
                  self.is_recovering = False
@@ -330,8 +343,8 @@ class Audio2Motion:
         for i in range(s, e):
             ss = max(0, i - half_k)
             ee = min(n, i + half_k + 1)
-            # [v1.9.306] Standardized Slice: 0:201 (Scale + Pose + Trans)
-            res_kp_seq[:, i, :201] = np.mean(new_res_kp_seq[:, ss:ee, :201], axis=1)
+            # [v1.9.308] Standardized Slice: 0:202 (Scale + Pose + Trans XYZ)
+            res_kp_seq[:, i, :202] = np.mean(new_res_kp_seq[:, ss:ee, :202], axis=1)
         return res_kp_seq
     
     def __call__(self, aud_cond, res_kp_seq=None, reset=False, step_len=None, seed=None):
@@ -356,8 +369,8 @@ class Audio2Motion:
             
             self.silence_frames = 0
             self.is_talking_state = True
-            # [v1.9.307] ABSOLUTE SPEECH ENGAGEMENT
-            print(f"[Ditto] Speech Onset Engagement (v1.9.307). Seed Offset={self.reset_seed_offset}")
+            # [v1.9.308] ABSOLUTE SPEECH ENGAGEMENT
+            print(f"[Ditto] Speech Onset Engagement (v1.9.308). Seed Offset={self.reset_seed_offset}")
         else:
              # v1.9.300: Seal Silence Leak. If AI state machine says we are talking/anticipating,
              # we MUST prevent silence_frames from leaking upwards, or Hysteresis will fire.
@@ -366,11 +379,11 @@ class Audio2Motion:
              else:
                   self.silence_frames += step_len
 
-        # [v1.9.306] LATENT CONDITIONING (Standardized 0:201)
+        # [v1.9.308] LATENT CONDITIONING (Standardized 0:202)
         if res_kp_seq is not None:
              clean_history = res_kp_seq.copy()
              if self.warp_decay > 0.001:
-                  clean_history[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
+                  clean_history[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
              
              self._update_kp_cond(clean_history, clean_history.shape[1], step_len, is_onset=reset)
         else:
@@ -379,23 +392,23 @@ class Audio2Motion:
         # [v1.9.303] CRITICAL RESTORATION: Inference Call
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
 
-        # [v1.9.219/306] GENTLE STABILIZATION (Standardized 0:201)
+        # [v1.9.219/308] GENTLE STABILIZATION (Standardized 0:202)
         # Pull Pose/Translation to anchor during silence.
         target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.15
-        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
+        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:202]
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
              move = np.clip(diff, -0.06, 0.06) 
              self.persistent_pressure += move
              
-             # Apply pressure strictly to Position + Pose (0:201)
+             # Apply pressure strictly to Position + Pose (0:202)
              curr_p = self.persistent_pressure
-             pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
+             pred_kp_seq[0, f, 0:202] = pred_kp_seq[0, f, 0:202] * (1.0 - curr_p) + anchor_p * curr_p
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.306 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.308 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
@@ -404,21 +417,40 @@ class Audio2Motion:
              junc_idx = max(0, fuse_r2_s)
              target_entry = pred_kp_seq[:, junc_idx : junc_idx + 1]
              
+             # [v1.9.308] PRECISE DEGREE OFFSET CALCULATION
+             # We must calculate the actual degree difference for Pose components (Pitch/Yaw/Roll)
+             # because simple additive shifts on probability bins are ignored by Softmax.
+             def _get_bin_deg(bins_arr):
+                 b = bins_arr.flatten()
+                 e = np.exp(b - np.max(b))
+                 p = e / e.sum()
+                 return np.sum(p * np.arange(66)) * 3 - 97.5
+
+             self.pose_deg_offset = np.array([
+                 _get_bin_deg(actual_last[0, 1:67]) - _get_bin_deg(target_entry[0, 1:67]),   # Pitch
+                 _get_bin_deg(actual_last[0, 67:133]) - _get_bin_deg(target_entry[0, 67:133]), # Yaw
+                 _get_bin_deg(actual_last[0, 133:199]) - _get_bin_deg(target_entry[0, 133:199])# Roll
+             ])
+
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Onset Alignment (v1.9.307). Gap={np.abs(self.warp_offset[0,0,:201]).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.308). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
+             print(f"  > Degree Offsets [P,Y,R]: {self.pose_deg_offset}")
 
-        # Apply Warp (Pose Only: 0:201)
+        # Apply Warp (Position + Scale: 0:202)
         if self.warp_decay > 0.001:
-             raw_start = pred_kp_seq[0, 0, 1:3].copy()
-             # Apply uniform offset to the whole prediction buffer
-             pred_kp_seq[0, :, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
-             post_start = pred_kp_seq[0, 0, 1:3].copy()
+             # Scale and Translation are scalars, additive warp works.
+             pred_kp_seq[0, :, 0] += self.warp_offset[0, 0, 0] * self.warp_decay # Scale
+             pred_kp_seq[0, :, 199:202] += self.warp_offset[0, 0, 199:202] * self.warp_decay # Translation
              
              if reset:
-                  print(f"  > [Warp Lock] Frame0 Shift: {raw_start} -> {post_start}")
+                  print(f"  > [Warp Lock] Frame0 Trans Shift: {self.warp_offset[0, 0, 199:201]}")
+             
+             if reset:
+                  print(f"  > [Warp Lock] Frame0 Trans Shift: {self.warp_offset[0, 0, 199:201]}")
 
-             # [v1.9.221] CONDITIONAL DECAY
+        # [v1.9.221] CONDITIONAL DECAY
+        if self.warp_decay > 0.001:
              if not getattr(self, "is_talking_state", False):
                   # Only decay during IDLE (silence) to return character to anchor
                   self.warp_decay *= 0.94 
@@ -427,6 +459,7 @@ class Audio2Motion:
                   pass # warp_decay stays at 1.0 (or current value)
              
              if self.warp_decay < 0.001:
+                  self.pose_deg_offset *= 0.0
                   self.warp_decay = 0.0
                   self.warp_offset = np.zeros_like(self.warp_offset)
 
@@ -459,9 +492,12 @@ class Audio2Motion:
         # Restore clean history for monitoring
         clean_res = res_kp_seq.copy()
         if self.warp_decay > 0.001:
-             clean_res[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
+             clean_res[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
              
         self._update_kp_cond(clean_res, idx, step_len=step_len, is_onset=False)
+
+        if self.clip_idx % 20 == 0:
+             print(f"[Ditto] Batch {self.clip_idx} processed successfully.")
 
         return res_kp_seq
     
@@ -475,5 +511,14 @@ class Audio2Motion:
         x_d_info_list = []
         for i in range(tmp_res_kp_seq.shape[0]):
             x_d_info = _cvt_LP_motion_info(tmp_res_kp_seq[i], 'arr2dic')   # {k: (1, dim)}
+            
+            # [v1.9.308] FINAL ORIENTATION WARP (Bin-Shift)
+            # If warping is active, we apply orientation shift to the bins.
+            if self.warp_decay > 0.001:
+                 # Shift probability mass by the PRECISE degree delta calculated at onset
+                 x_d_info['pitch'] = _warp_orientation_bins(x_d_info['pitch'], self.pose_deg_offset[0] * self.warp_decay)
+                 x_d_info['yaw']   = _warp_orientation_bins(x_d_info['yaw'],   self.pose_deg_offset[1] * self.warp_decay)
+                 x_d_info['roll']  = _warp_orientation_bins(x_d_info['roll'],  self.pose_deg_offset[2] * self.warp_decay)
+
             x_d_info_list.append(x_d_info)
         return x_d_info_list
