@@ -111,7 +111,8 @@ class Audio2Motion:
         self.lmdm.setup(sampling_timesteps)
 
         self.clip_idx = 0
-        self.warp_offset = None
+        self.warp_offset = np.zeros_like(self.s_kp_cond) # [v1.9.197] Persistent Warp Offset
+        self.warp_decay = 0.0 # [v1.9.197] Current decay multiplier
         self.brownian_pos = np.zeros_like(self.kp_cond)
         self.last_kp_frame = None # [v1.9.107] Persistence bridging
         self.global_time = 0 # [v1.9.107] For procedural breathing
@@ -397,35 +398,33 @@ class Audio2Motion:
             
             if self.clip_idx % 20 == 0:
                  mode_s = "SPEECH" if is_talking else "IDLE"
-                 print(f"[v1.9.196 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={self.delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
+                 print(f"[v1.9.197 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={self.delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
         
-        # [v1.9.156] Virtual Last Frame for Startup Stabilization
-        # If this is the VERY first chunk, we treat the source photo as the "prev frame"
-        # to trigger a 50-frame gentle glide into the AI's path.
+        # [v1.9.197] PERSISTENT DECAYING WARP (Continuity Fix)
+        # We handle transitions by maintaining a decaying offset across chunks.
         effective_res_kp_seq = res_kp_seq
         if effective_res_kp_seq is None:
-             if self.last_kp_frame is not None:
-                  effective_res_kp_seq = self.last_kp_frame 
-             else:
-                  # Force warp from source photo for Frame 0 stabilization
-                  effective_res_kp_seq = self.s_kp_cond.reshape(1, 1, -1)
+             effective_res_kp_seq = self.last_kp_frame if self.last_kp_frame is not None else self.s_kp_cond.reshape(1, 1, -1)
+        
+        # Determine if we should trigger a new Warp (On Reset or Startup)
+        if reset or res_kp_seq is None:
+             actual_last = effective_res_kp_seq[:, -1:]
+             predicted_first = pred_kp_seq[:, 0:1]
+             self.warp_offset = actual_last - predicted_first
+             self.warp_decay = 1.0 # Full strength
+             if reset:
+                  print(f"[Ditto] Speech Onset Warp Engaged. Offset={np.abs(self.warp_offset).mean():.4f}")
+
+        # Apply and Decay Offset
+        if self.warp_decay > 0.001:
+             for f in range(pred_kp_seq.shape[1]):
+                  # We decay ~1/50 per frame (approx 2s at 25fps)
+                  pred_kp_seq[0, f] += (self.warp_offset * self.warp_decay).squeeze()
+                  self.warp_decay *= 0.94 # Decay factor (50 frames ~ 0.05 remain)
              
-        if effective_res_kp_seq is not None:
-             # Calculate offset between last real frame and first new predicted frame
-             # pred_kp_seq shape: [1, seq_frames, dim]
-             actual_last = effective_res_kp_seq[:, -1:] # [1, 1, dim]
-             predicted_first = pred_kp_seq[:, 0:1] # [1, 1, dim]
-             
-             offset = actual_last - predicted_first # [1, 1, dim]
-             
-             # Apply decaying warp to the new sequence
-             # We want to return to the model's path over ~50 frames (v1.9.107: longer decay)
-             decay_len = 50
-             warp_len = min(decay_len, pred_kp_seq.shape[1])
-             weights = np.linspace(1.0, 0.0, warp_len).reshape(1, -1, 1)
-             
-             # Apply offset to warp zone
-             pred_kp_seq[:, :warp_len] += offset * weights
+             if self.warp_decay < 0.001:
+                  self.warp_decay = 0.0
+                  self.warp_offset = np.zeros_like(self.warp_offset)
 
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq   # [1, seq_frames, dim]
