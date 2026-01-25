@@ -345,7 +345,7 @@ class Audio2Motion:
             self.silence_frames = 0
             self.is_talking_state = True
             self.persistent_pressure = 0.0 # Release positional pull instantly
-            print(f"[Ditto] Speech Onset Engagement (v1.9.224). Seed Offset={self.reset_seed_offset}")
+            print(f"[Ditto] Speech Onset Engagement (v1.9.225). Seed Offset={self.reset_seed_offset}")
         else:
             self.silence_frames += step_len
 
@@ -354,7 +354,7 @@ class Audio2Motion:
              # Important: We must pass the UNWARPED history to the AI for condition update.
              clean_history = res_kp_seq.copy()
              if self.warp_decay > 0.001:
-                  clean_history[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
+                  clean_history[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
              
              self._update_kp_cond(clean_history, clean_history.shape[1], step_len, is_onset=reset)
         else:
@@ -373,36 +373,31 @@ class Audio2Motion:
              move = np.clip(diff, -0.06, 0.06) 
              self.persistent_pressure += move
              
-             # Apply pressure strictly to Position + Pose (0:201)
+             # Apply pressure strictly to Position + Pose (0:202)
              curr_p = self.persistent_pressure
-             pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
+             pred_kp_seq[0, f, 0:202] = pred_kp_seq[0, f, 0:202] * (1.0 - curr_p) + anchor_p * curr_p
              
-        # Fusion Sequence
-        # [v1.9.221] NON-DECAY SPEECH WARP
-        # We calculate the alignment gap at every speech onset (RESET).
-        # CRITICAL: This offset MUST stay static during speech. Decaying it during a sentence
-        # creates artificial velocity which causes the 'teleport' or 'sliding' effect.
+        if self.clip_idx % 20 == 0:
+             mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
+             print(f"[v1.9.225 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+
+        # [v1.9.225] ONSET COORDINATE ALIGNMENT
+        # ...
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
         if reset or res_kp_seq is None:
-             # actual_last is the physical tail of our history
              actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
-             
-             # target_entry is where we are about to start fusion (junction)
              junc_idx = max(0, fuse_r2_s)
              target_entry = pred_kp_seq[:, junc_idx : junc_idx + 1]
              
-             # New offset = physical gap. 
-             # This gap now accounts for the jump from (IdleAnchor) to (SpeechAI).
-             # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.224). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.225). Offset={np.abs(self.warp_offset).mean():.4f}")
 
-        # Apply Warp (Pose Only: 0:201)
+        # Apply Warp (Pose Only: 0:202)
         if self.warp_decay > 0.001:
              # Apply uniform offset to the whole prediction buffer
-             pred_kp_seq[0, :, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
+             pred_kp_seq[0, :, :202] += self.warp_offset[0, 0, :202] * self.warp_decay
              
              # [v1.9.221] CONDITIONAL DECAY
              if not getattr(self, "is_talking_state", False):
@@ -426,8 +421,10 @@ class Audio2Motion:
         # Store for next batch
         self.last_kp_frame = res_kp_seq[:, -1:]
         
-        # [v1.9.153] Anchor Suppression Logic:
-        if self.is_recovering:
+        # [v1.9.153/225] Anchor Suppression Logic:
+        # We MUST suppress this during speech, or else the violent 0.7 decay 
+        # causes a 'teleport back to reference' effect at onset.
+        if self.is_recovering and not getattr(self, "is_talking_state", False):
             self.brownian_pos = (self.brownian_pos * 0.7).astype(np.float32)
             if self.clip_idx % 5 == 0:
                  print(f"[Postural] Anchor Resetting... (Dist={np.abs(self.brownian_pos[0, 1:67]).mean():.4f})")
@@ -443,7 +440,7 @@ class Audio2Motion:
         # Restore clean history for monitoring
         clean_res = res_kp_seq.copy()
         if self.warp_decay > 0.001:
-             clean_res[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
+             clean_res[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
              
         self._update_kp_cond(clean_res, idx, step_len=step_len, is_onset=False)
 
