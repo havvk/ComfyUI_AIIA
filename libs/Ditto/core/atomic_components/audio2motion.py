@@ -353,7 +353,7 @@ class Audio2Motion:
             self.silence_frames = 0
             self.is_talking_state = True
             self.persistent_pressure = 0.0 # Release positional pull instantly
-            print(f"[Ditto] Speech Onset Engagement (v1.9.301). Seed Offset={self.reset_seed_offset}")
+            print(f"[Ditto] Speech Onset Engagement (v1.9.302). Seed Offset={self.reset_seed_offset}")
         else:
              # v1.9.300: Seal Silence Leak. If AI state machine says we are talking/anticipating,
              # we MUST prevent silence_frames from leaking upwards, or Hysteresis will fire.
@@ -389,7 +389,7 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.301 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.302 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         # [v1.9.225] ONSET COORDINATE ALIGNMENT
         # ...
@@ -402,13 +402,18 @@ class Audio2Motion:
              
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Onset Alignment (v1.9.301). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.302). Gap={np.abs(self.warp_offset[0,0,:201]).mean():.4f}")
 
-        # Apply Warp (Pose + Translation X/Y/Z: 0:202)
+        # Apply Warp (Pose Only: 0:201 - Reverting 202 to safe jaw)
         if self.warp_decay > 0.001:
+             raw_start = pred_kp_seq[0, 0, 1:3].copy()
              # Apply uniform offset to the whole prediction buffer
-             pred_kp_seq[0, :, :202] += self.warp_offset[0, 0, :202] * self.warp_decay
+             pred_kp_seq[0, :, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
+             post_start = pred_kp_seq[0, 0, 1:3].copy()
              
+             if reset:
+                  print(f"  > [Warp Lock] Frame0 Shift: {raw_start} -> {post_start}")
+
              # [v1.9.221] CONDITIONAL DECAY
              if not getattr(self, "is_talking_state", False):
                   # Only decay during IDLE (silence) to return character to anchor
