@@ -378,33 +378,38 @@ class Audio2Motion:
              curr_p = self.persistent_pressure
              pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
              
-        if self.clip_idx % 20 == 0:
-             mode_s = "SPEECH" if target_pressure == 0 else "IDLE"
-             print(f"[v1.9.219 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
-        
         # Fusion Sequence
-        # [v1.9.219] STATIC BATCH WARP
-        # Per-frame decay within a buffer causes artificial motion (drifting).
-        # We now calculate the offset at the junction and apply it UNIFORMLY to the batch.
+        # [v1.9.221] NON-DECAY SPEECH WARP
+        # We calculate the alignment gap at every speech onset (RESET).
+        # CRITICAL: This offset MUST stay static during speech. Decaying it during a sentence
+        # creates artificial velocity which causes the 'teleport' or 'sliding' effect.
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
-        if (reset or res_kp_seq is None):
+        if reset or res_kp_seq is None:
+             # actual_last is the physical tail of our history
              actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
+             
+             # target_entry is where we are about to start fusion (junction)
              junc_idx = max(0, fuse_r2_s)
              target_entry = pred_kp_seq[:, junc_idx : junc_idx + 1]
-             self.warp_offset = actual_last - target_entry
-             self.warp_decay = 1.0 # RESET warp decay to full correction
              
-             print(f"[Ditto Warp] Onset Alignment (v1.9.219). Offset={np.abs(self.warp_offset).mean():.4f}")
+             # New offset = physical gap. 
+             self.warp_offset = actual_last - target_entry
+             self.warp_decay = 1.0 # Engage full power
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.221). Offset={np.abs(self.warp_offset).mean():.4f}")
 
-        # Apply STATIC Warp (Uniform offset for the whole buffer)
+        # Apply Warp (Pose Only: 0:201)
         if self.warp_decay > 0.001:
-             # Add the same correction to every frame in this batch.
-             # This preserves the raw AI motion fidelity (velocity/acceleration).
+             # Apply uniform offset to the whole prediction buffer
              pred_kp_seq[0, :, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
              
-             # Decay the warp offset ONLY between batches (very slowly)
-             self.warp_decay *= 0.96 # ~4% decay per 70-frame batch
+             # [v1.9.221] CONDITIONAL DECAY
+             if not getattr(self, "is_talking_state", False):
+                  # Only decay during IDLE (silence) to return character to anchor
+                  self.warp_decay *= 0.94 
+             else:
+                  # During SPEECH, keep alignment 100% static to prevent 'sliding'
+                  pass # warp_decay stays at 1.0 (or current value)
              
              if self.warp_decay < 0.001:
                   self.warp_decay = 0.0
