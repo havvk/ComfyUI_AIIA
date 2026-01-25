@@ -460,8 +460,8 @@ class StreamSDK:
                              else:
                                  # onset_idx == 0. We are at Onset.
                                  if silence_frames_count >= min_silence_for_reset:
-                                     # do_reset = True
-                                    print(f"[Ditto] Speech Onset at Frame {idx}. RESET SKIPPED (Silence: {silence_frames_count}) [Debug Fix].")
+                                     do_reset = True
+                                    print(f"[Ditto] Speech Onset at Frame {idx}. RESET triggered (Silence: {silence_frames_count}).")
                                  
                                  silence_frames_count = 0
                                  # Handle trailing
