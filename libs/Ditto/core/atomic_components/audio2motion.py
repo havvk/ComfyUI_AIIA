@@ -376,7 +376,7 @@ class Audio2Motion:
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
-             move = np.clip(diff, -0.01, 0.01) 
+             move = np.clip(diff, -0.002, 0.002) 
              self.persistent_pressure += move
              
              # Apply pressure strictly to Position + Pose (0:201)
@@ -418,7 +418,7 @@ class Audio2Motion:
              # [v1.9.221] CONDITIONAL DECAY
              if not getattr(self, "is_talking_state", False):
                   # Only decay during IDLE (silence) to return character to anchor
-                  self.warp_decay *= 0.94 
+                  self.warp_decay *= 0.98 
              else:
                   # During SPEECH, keep alignment 100% static to prevent 'sliding'
                   pass # warp_decay stays at 1.0 (or current value)
