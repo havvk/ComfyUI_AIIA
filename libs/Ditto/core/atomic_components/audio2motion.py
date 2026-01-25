@@ -153,6 +153,7 @@ class Audio2Motion:
         self.reset_seed_offset = 0  # [v1.9.220] Initialize for seed variety
         self.clean_kp_cond = self.s_kp_cond.copy() # [v1.9.223] The "Unwarped" latent state
         self.pose_deg_offset = np.zeros(3) # [v1.9.310] Orientation Warp State
+        self.pose_deg_offset = np.zeros(3) # [v1.9.310] Orientation Warp State
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         # [v1.9.208] Robust Streaming Fusion Fix
@@ -174,8 +175,10 @@ class Audio2Motion:
              return np.concatenate([res_kp_seq, pred_kp_seq], axis=1)
     
     def _update_kp_cond(self, res_kp_seq, idx, step_len=0, is_onset=False):
+        # NaN Guard [v1.9.312]
+        res_kp_seq = np.nan_to_num(res_kp_seq)
+        
         # [v1.9.144] Unconditional State Tracking
-        # We process these outside the fix_kp_cond branches to ensure monitoring never stops.
         if idx <= 0:
             return # Skip for first frame setup
         last_pose = res_kp_seq[:, idx-1]
@@ -353,6 +356,13 @@ class Audio2Motion:
         aud_cond: (1, seq_frames, dim)
         step_len: int, optional. Frames to advance. Defaults to self.valid_clip_len.
         """
+        # [v1.9.312] Worker Health Pulse
+        print(f"[Ditto] Batch {self.clip_idx} start... (Reset={reset})")
+        
+        # NaN / Inf Defense [v1.9.312]
+        self.kp_cond = np.nan_to_num(self.kp_cond)
+        self.brownian_pos = np.nan_to_num(self.brownian_pos)
+        
         if step_len is None:
             step_len = self.valid_clip_len
 
@@ -409,7 +419,7 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.311 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.312 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
@@ -435,7 +445,7 @@ class Audio2Motion:
 
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Onset Alignment (v1.9.311). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.312). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
              print(f"  > Degree Offsets [P,Y,R]: {self.pose_deg_offset}")
 
         # Apply Warp (Position + Scale: 0:202)
