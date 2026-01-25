@@ -261,20 +261,21 @@ class Audio2Motion:
             brow_indices = [217, 218, 220]
             brow_jitter = np.random.normal(0, 0.015 * boost_factor, len(brow_indices)).astype(np.float32)
             
-            # 5. Postural Auto-Correction Logic [v1.9.150 Robustness Patch]
-            # Shorten silence threshold to 25 frames (1.0 second) to combat jittery audio
-            # Only trigger if notably higher than source (> 2.0 deg Higher -> Delta < -2.0)
-            if self.silence_frames >= 25 and self.delta_p < -2.0:
+            # [v1.9.306] SPEECH LOCKDOWN: Block Hysteresis during speech
+            is_talking = getattr(self, "is_talking_state", False)
+            
+            if not is_talking and self.silence_frames >= 25 and self.delta_p < -2.0:
                 self.look_up_timer += step_len
                 if self.look_up_timer > 50:
                      tag = "[纠偏活跃]" if self.look_up_timer <= 100 else "[极限强驱]"
                      print(f"{tag} Frame {real_f} | Delta={self.delta_p:+.2f}° | Applying Pressure.")
             else:
                 # ONLY RESET if we are back in the safe zone (Hysteresis)
-                if self.delta_p >= -0.5:
+                if is_talking or self.delta_p >= -0.5:
                      if self.look_up_timer > 50:
-                          print(f"[Postural] Recovery Finished (Delta={self.delta_p:+.2f}°). Timer reset.")
+                          print(f"[Postural] Recovery Finished/Interrupted (Delta={self.delta_p:+.2f}°). Timer reset.")
                      self.look_up_timer = 0
+                     self.is_recovering = False
 
             # v1.9.300: Pure Speech Freedom. If talking, gravity is 0. 
             # AI has 100% freedom to follow the physical head drift without centripetal force.
@@ -286,15 +287,15 @@ class Audio2Motion:
                 g_p = 0.80 if self.look_up_timer > 100 else 0.60
                 gravity_vec[0, 1:67] = g_p
             
-            # [v1.9.305] SELECTIVE LATENT CONTINUITY
-            # We no longer reset the entire latent state to origin at onset.
-            # We only zero out expressions to prevent mouth ghosting, 
-            # while preserving the Postural Latent (0:202) for perfect continuity.
+            # [v1.9.306] HYBRID LATENT CONTINUITY
+            # 1. Reset expressions (201+) to prevent mouth ghosting
+            # 2. Preserve Pose/Trans (0:201) for physical continuity
             if is_onset:
-                 # Standardize expression wipe
-                 self.kp_cond[:, 202:] = self.s_kp_cond[:, 202:]
-                 # self.kp_cond[:, :202] is preserved from previous IDLE state
+                 self.kp_cond[:, 201:] = self.s_kp_cond[:, 201:]
                  self.brownian_momentum = np.zeros_like(self.brownian_momentum)
+                 # Kill recovery state instantly to prevent gravity snap
+                 self.is_recovering = False 
+                 self.look_up_timer = 0
             else:
                  next_pose = last_pose + noise
                  for i, idx_in_kp in enumerate(brow_indices):
@@ -330,8 +331,8 @@ class Audio2Motion:
         for i in range(s, e):
             ss = max(0, i - half_k)
             ee = min(n, i + half_k + 1)
-            # [v1.9.304] Slice Safety: 0:202 includes Translation Z (201) but STOPS before Jaw (202).
-            res_kp_seq[:, i, :202] = np.mean(new_res_kp_seq[:, ss:ee, :202], axis=1)
+            # [v1.9.306] Standardized Slice: 0:201 (Scale + Pose + Trans)
+            res_kp_seq[:, i, :201] = np.mean(new_res_kp_seq[:, ss:ee, :201], axis=1)
         return res_kp_seq
     
     def __call__(self, aud_cond, res_kp_seq=None, reset=False, step_len=None, seed=None):
@@ -369,14 +370,11 @@ class Audio2Motion:
              else:
                   self.silence_frames += step_len
 
-        # [v1.9.223/229/304] DEEP LATENT ISOLATION
+        # [v1.9.306] LATENT CONDITIONING (Standardized 0:201)
         if res_kp_seq is not None:
              clean_history = res_kp_seq.copy()
-             # Always unwarp the history passed to the AI latent state.
-             # This ensures the AI thinks it is starting from 'Reference' 
-             # and doesn't trigger a corrective snap.
              if self.warp_decay > 0.001:
-                  clean_history[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
+                  clean_history[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
              
              self._update_kp_cond(clean_history, clean_history.shape[1], step_len, is_onset=reset)
         else:
@@ -385,24 +383,23 @@ class Audio2Motion:
         # [v1.9.303] CRITICAL RESTORATION: Inference Call
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
 
-        # [v1.9.219/305] GENTLE STABILIZATION (0:202)
+        # [v1.9.219/306] GENTLE STABILIZATION (Standardized 0:201)
         # Pull Pose/Translation to anchor during silence.
-        # Reduced to 0.15 to avoid 'vacuum snap' and preserve natural posture.
         target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.15
-        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:202]
+        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
              move = np.clip(diff, -0.06, 0.06) 
              self.persistent_pressure += move
              
-             # Apply pressure strictly to Position + Pose (0:202)
+             # Apply pressure strictly to Position + Pose (0:201)
              curr_p = self.persistent_pressure
-             pred_kp_seq[0, f, 0:202] = pred_kp_seq[0, f, 0:202] * (1.0 - curr_p) + anchor_p * curr_p
+             pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.305 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.306 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
@@ -413,13 +410,13 @@ class Audio2Motion:
              
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Onset Alignment (v1.9.305). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.306). Gap={np.abs(self.warp_offset[0,0,:201]).mean():.4f}")
 
-        # Apply Warp (Pose + Translation X/Y/Z: 0:202)
+        # Apply Warp (Pose Only: 0:201)
         if self.warp_decay > 0.001:
              raw_start = pred_kp_seq[0, 0, 1:3].copy()
              # Apply uniform offset to the whole prediction buffer
-             pred_kp_seq[0, :, :202] += self.warp_offset[0, 0, :202] * self.warp_decay
+             pred_kp_seq[0, :, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
              post_start = pred_kp_seq[0, 0, 1:3].copy()
              
              if reset:
@@ -466,7 +463,7 @@ class Audio2Motion:
         # Restore clean history for monitoring
         clean_res = res_kp_seq.copy()
         if self.warp_decay > 0.001:
-             clean_res[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
+             clean_res[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
              
         self._update_kp_cond(clean_res, idx, step_len=step_len, is_onset=False)
 
