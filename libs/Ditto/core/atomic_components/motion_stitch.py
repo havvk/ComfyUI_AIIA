@@ -534,7 +534,7 @@ class MotionStitch:
         self.fix_exp_a3 = _a2
         
         # [Debug v1.9.208] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.304. LATEST VERSION LOADED.")
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.305. LATEST VERSION LOADED.")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -574,7 +574,8 @@ class MotionStitch:
 
         self.overall_ctrl_info = overall_ctrl_info
 
-        self.d0 = d0
+        if d0 is not None:
+             self.d0 = d0
         self.idx = 0
 
     def _set_scale_ratio(self, scale_ratio=1):

@@ -286,15 +286,14 @@ class Audio2Motion:
                 g_p = 0.80 if self.look_up_timer > 100 else 0.60
                 gravity_vec[0, 1:67] = g_p
             
-            # [v1.9.304] PURE LATENT ISOLATION
-            # The AI model must ALWAYS be conditioned on 'centered' coordinates
-            # to prevent it from 'panicking' and snapping back to origin.
+            # [v1.9.305] SELECTIVE LATENT CONTINUITY
+            # We no longer reset the entire latent state to origin at onset.
+            # We only zero out expressions to prevent mouth ghosting, 
+            # while preserving the Postural Latent (0:202) for perfect continuity.
             if is_onset:
-                 # Even at onset, we give the AI a 'Clean' starting point.
-                 # The physical Warp Offset (calculated below) will handle 
-                 # the translation to our current drifted head position.
-                 self.kp_cond = self.s_kp_cond.copy()
-                 self.clean_kp_cond = self.s_kp_cond.copy()
+                 # Standardize expression wipe
+                 self.kp_cond[:, 202:] = self.s_kp_cond[:, 202:]
+                 # self.kp_cond[:, :202] is preserved from previous IDLE state
                  self.brownian_momentum = np.zeros_like(self.brownian_momentum)
             else:
                  next_pose = last_pose + noise
@@ -305,6 +304,9 @@ class Audio2Motion:
                  anchor = current_s_kp + self.brownian_pos
                  self.clean_kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
                  self.kp_cond = self.clean_kp_cond.copy()
+                 
+            # [v1.9.304 Guard] If latent isolation is needed, we would unwarp here, 
+            # but v1.9.305 pursues 'Pure Direct Continuity'.
             
         elif self.fix_kp_cond > 0:
             if self.clip_idx % self.fix_kp_cond == 0:  # 重置
@@ -354,8 +356,11 @@ class Audio2Motion:
             
             self.silence_frames = 0
             self.is_talking_state = True
-            self.persistent_pressure = 0.0 # Release positional pull instantly
-            print(f"[Ditto] Speech Onset Engagement (v1.9.302). Seed Offset={self.reset_seed_offset}")
+            # [v1.9.305] STOP THE JUMP.
+            # Setting pressure to 0.0 instantly causes a mechanical 'snap' 
+            # from the stablized center back to the drifted pose.
+            # We preserve self.persistent_pressure and let it decay naturally.
+            print(f"[Ditto] Speech Onset Engagement (v1.9.305). Seed Offset={self.reset_seed_offset}")
         else:
              # v1.9.300: Seal Silence Leak. If AI state machine says we are talking/anticipating,
              # we MUST prevent silence_frames from leaking upwards, or Hysteresis will fire.
@@ -380,9 +385,10 @@ class Audio2Motion:
         # [v1.9.303] CRITICAL RESTORATION: Inference Call
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
 
-        # [v1.9.219/304] JAW-SAFE POSITIONAL PRESSURE (0:202)
-        # Pull Pose and Translation (X/Y/Z) to anchor during IDLE
-        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.60
+        # [v1.9.219/305] GENTLE STABILIZATION (0:202)
+        # Pull Pose/Translation to anchor during silence.
+        # Reduced to 0.15 to avoid 'vacuum snap' and preserve natural posture.
+        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.15
         anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:202]
         
         for f in range(pred_kp_seq.shape[1]):
@@ -396,7 +402,7 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.304 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.305 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
@@ -407,7 +413,7 @@ class Audio2Motion:
              
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Onset Alignment (v1.9.304). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.305). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
 
         # Apply Warp (Pose + Translation X/Y/Z: 0:202)
         if self.warp_decay > 0.001:
