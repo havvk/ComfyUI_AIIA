@@ -179,11 +179,11 @@ class Audio2Motion:
         real_f = res_kp_seq.shape[1]
         
         # [v1.9.190] Postural Stability State Machine
-        # Trigger Limit: -8.0 deg (User limit). Safe Release: -2.0 deg.
+        # Trigger Limit: -15.0 deg (Relaxed). Safe Release: -2.0 deg.
         if self.silence_frames >= 25:
-             if not self.is_recovering and self.delta_p < -8.0:
+             if not self.is_recovering and self.delta_p < -15.0:
                   self.is_recovering = True
-                  print(f"[Hysteresis Trigger] Delta={self.delta_p:+.2f}° Breach (< -8.0). Engaging downward pressure.")
+                  print(f"[Hysteresis Trigger] Delta={self.delta_p:+.2f}° Breach (< -15.0). Engaging downward pressure.")
              elif self.is_recovering and self.delta_p >= -2.0:
                   self.is_recovering = False
                   self.look_up_timer = 0
@@ -371,12 +371,12 @@ class Audio2Motion:
         # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
         # We pull Position and Pose (0:201) to the anchor in IDLE.
         # Index 201 (Jaw) is EXCLUDED so the AI always has full control of expressions.
-        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.60
+        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.30
         anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
-             move = np.clip(diff, -0.06, 0.06) 
+             move = np.clip(diff, -0.01, 0.01) 
              self.persistent_pressure += move
              
              # Apply pressure strictly to Position + Pose (0:201)
