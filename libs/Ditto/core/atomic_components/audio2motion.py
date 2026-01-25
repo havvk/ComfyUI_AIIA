@@ -409,7 +409,7 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.310 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.311 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
@@ -435,7 +435,7 @@ class Audio2Motion:
 
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Onset Alignment (v1.9.310). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.311). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
              print(f"  > Degree Offsets [P,Y,R]: {self.pose_deg_offset}")
 
         # Apply Warp (Position + Scale: 0:202)
@@ -445,10 +445,7 @@ class Audio2Motion:
              pred_kp_seq[0, :, 199:202] += self.warp_offset[0, 0, 199:202] * self.warp_decay # Translation
              
              if reset:
-                  print(f"  > [Warp Lock] Frame0 Trans Shift: {self.warp_offset[0, 0, 199:201]}")
-             
-             if reset:
-                  print(f"  > [Warp Lock] Frame0 Trans Shift: {self.warp_offset[0, 0, 199:201]}")
+                  print(f"  > [Warp Lock] Frame0 Trans Shift: {self.warp_offset[0, 0, 199:202]}")
 
         # [v1.9.221] CONDITIONAL DECAY
         if self.warp_decay > 0.001:
@@ -474,17 +471,22 @@ class Audio2Motion:
         # Store for next batch
         self.last_kp_frame = res_kp_seq[:, -1:]
         
-        # [v1.9.153/225] Anchor Suppression Logic:
-        # We MUST suppress this during speech, or else the violent 0.7 decay 
-        # causes a 'teleport back to reference' effect at onset.
+        # [v1.9.311] Feedback Loop Break (Anchor Suppression)
         if self.is_recovering and not getattr(self, "is_talking_state", False):
-            self.brownian_pos = (self.brownian_pos * 0.7).astype(np.float32)
+            # During IDLE recovery, we MUST drain brownian_pos to origin.
+            # Otherwise, gravity pulls to an already-drifted anchor.
+            self.brownian_pos = (self.brownian_pos * 0.6).astype(np.float32)
             if self.clip_idx % 5 == 0:
-                 print(f"[Postural] Anchor Resetting... (Dist={np.abs(self.brownian_pos[0, 1:67]).mean():.4f})")
+                 print(f"[RECOVERY LOCK] Anchor Resetting... (Dist={np.abs(self.brownian_pos[0, 1:67]).mean():.4f})")
         else:
             # Normal speech persistence: anchor follows AI slowly to prevent rubber-banding
             target_drift = (self.last_kp_frame - self.s_kp_cond).squeeze()
+            if len(target_drift.shape) == 2: target_drift = target_drift[0]
             self.brownian_pos = (self.brownian_pos * 0.9 + target_drift * 0.1).astype(np.float32)
+
+        # NaN Safety [v1.9.311]
+        self.brownian_pos = np.nan_to_num(self.brownian_pos)
+        self.kp_cond = np.nan_to_num(self.kp_cond)
 
         self.clip_idx += 1
 
