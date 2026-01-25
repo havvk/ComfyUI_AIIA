@@ -265,7 +265,6 @@ class StreamSDK:
         try:
             self._writer_worker()
         except Exception as e:
-            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -286,7 +285,6 @@ class StreamSDK:
         try:
             self._putback_worker()
         except Exception as e:
-            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -297,29 +295,18 @@ class StreamSDK:
             except queue.Empty:
                 continue
             if item is None:
-                while not self.stop_event.is_set():
-                    try:
-                        self.writer_queue.put(None, timeout=1)
-                        break
-                    except queue.Full:
-                        continue
+                self.writer_queue.put(None)
                 break
             frame_idx, render_img = item
             frame_rgb = self.source_info["img_rgb_lst"][frame_idx]
             M_c2o = self.source_info["M_c2o_lst"][frame_idx]
             res_frame_rgb = self.putback(frame_rgb, render_img, M_c2o)
-            while not self.stop_event.is_set():
-                try:
-                    self.writer_queue.put(res_frame_rgb, timeout=1)
-                    break
-                except queue.Full:
-                    continue
+            self.writer_queue.put(res_frame_rgb)
 
     def decode_f3d_worker(self):
         try:
             self._decode_f3d_worker()
         except Exception as e:
-            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -330,27 +317,16 @@ class StreamSDK:
             except queue.Empty:
                 continue
             if item is None:
-                while not self.stop_event.is_set():
-                    try:
-                        self.putback_queue.put(None, timeout=1)
-                        break
-                    except queue.Full:
-                        continue
+                self.putback_queue.put(None)
                 break
             frame_idx, f_3d = item
             render_img = self.decode_f3d(f_3d)
-            while not self.stop_event.is_set():
-                try:
-                    self.putback_queue.put([frame_idx, render_img], timeout=1)
-                    break
-                except queue.Full:
-                    continue
+            self.putback_queue.put([frame_idx, render_img])
 
     def warp_f3d_worker(self):
         try:
             self._warp_f3d_worker()
         except Exception as e:
-            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -361,28 +337,17 @@ class StreamSDK:
             except queue.Empty:
                 continue
             if item is None:
-                while not self.stop_event.is_set():
-                    try:
-                        self.decode_f3d_queue.put(None, timeout=1)
-                        break
-                    except queue.Full:
-                        continue
+                self.decode_f3d_queue.put(None)
                 break
             frame_idx, x_s, x_d = item
             f_s = self.source_info["f_s_lst"][frame_idx]
             f_3d = self.warp_f3d(f_s, x_s, x_d)
-            while not self.stop_event.is_set():
-                try:
-                    self.decode_f3d_queue.put([frame_idx, f_3d], timeout=1)
-                    break
-                except queue.Full:
-                    continue
+            self.decode_f3d_queue.put([frame_idx, f_3d])
 
     def motion_stitch_worker(self):
         try:
             self._motion_stitch_worker()
         except Exception as e:
-            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -393,34 +358,19 @@ class StreamSDK:
             except queue.Empty:
                 continue
             if item is None:
-                while not self.stop_event.is_set():
-                    try:
-                        self.warp_f3d_queue.put(None, timeout=1)
-                        break
-                    except queue.Full:
-                        continue
+                self.warp_f3d_queue.put(None)
                 break
             
             frame_idx, x_d_info, ctrl_kwargs = item
-            
-            # [v1.9.315] MotionStitch Pulse
-            if frame_idx % 50 == 0:
-                 print(f"[Ditto Pulse] MotionStitch | Frame {frame_idx} processing...")
-            
             x_s_info = self.source_info["x_s_info_lst"][frame_idx]
             x_s, x_d = self.motion_stitch(x_s_info, x_d_info, **ctrl_kwargs)
-            while not self.stop_event.is_set():
-                try:
-                    self.warp_f3d_queue.put([frame_idx, x_s, x_d], timeout=1)
-                    break
-                except queue.Full:
-                    continue
+            self.warp_f3d_queue.put([frame_idx, x_s, x_d])
 
     def audio2motion_worker(self):
         try:
+            # self._audio2motion_worker()
             self._audio2motion_offline()
         except Exception as e:
-            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -542,13 +492,8 @@ class StreamSDK:
 
             x_d_info_list = self.audio2motion.cvt_fmt(res_kp_seq)
 
-            print(f"[Ditto Pulse] Audio2Motion | Pushing {len(x_d_info_list)} frames to MotionStitch...")
             gen_frame_idx = 0
             for x_d_info in x_d_info_list:
-                if self.stop_event.is_set():
-                     print(f"[Ditto Pulse] Audio2Motion | ABORTING push loop (Global stop detected).")
-                     break
-                     
                 frame_idx = _mirror_index(gen_frame_idx, self.source_info_frames)
                 ctrl_kwargs = self._get_ctrl_info(gen_frame_idx)
 
@@ -562,12 +507,7 @@ class StreamSDK:
 
             break
 
-        while not self.stop_event.is_set():
-            try:
-                self.motion_stitch_queue.put(None, timeout=1)
-                break
-            except queue.Full:
-                continue
+        self.motion_stitch_queue.put(None)
 
         
     def _audio2motion_worker(self):
@@ -667,21 +607,11 @@ class StreamSDK:
             if is_end:
                 break
         
-        while not self.stop_event.is_set():
-            try:
-                self.motion_stitch_queue.put(None, timeout=1)
-                break
-            except queue.Full:
-                continue
+        self.motion_stitch_queue.put(None)
 
     def close(self):
         # flush frames
-        while not self.stop_event.is_set():
-            try:
-                self.audio2motion_queue.put(None, timeout=1)
-                break
-            except queue.Full:
-                continue
+        self.audio2motion_queue.put(None)
         # Wait for worker threads to finish
         for thread in self.thread_list:
             thread.join()
