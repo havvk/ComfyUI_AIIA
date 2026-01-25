@@ -277,25 +277,22 @@ class Audio2Motion:
                           print(f"[Postural] Recovery Finished (Delta={self.delta_p:+.2f}°). Timer reset.")
                      self.look_up_timer = 0
 
-            gravity_vec = np.ones_like(last_pose) * 0.05
-            if self.is_recovering:
-                # [v1.9.158] Decoupled Gravity
-                # Pitch (Vertical) gets high gravity to prevent looking up
-                g_p = 0.80 if self.look_up_timer > 100 else 0.60
-                gravity_vec[0, 1:67] = g_p
-            # [v1.9.223] CLEAN SPACE INTEGRATION
-            # We update self.clean_kp_cond to be the next latent state.
-            # This pose NEVER includes the warp offset, preventing feedback drift.
-            next_pose = last_pose + noise
-            for i, idx_in_kp in enumerate(brow_indices):
-                if idx_in_kp < next_pose.shape[1]:
-                    next_pose[0, idx_in_kp] += brow_jitter[i]
-
-            anchor = current_s_kp + self.brownian_pos
-            self.clean_kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
-            
-            # Since AI conditioning uses kp_cond, we sync it here.
-            self.kp_cond = self.clean_kp_cond.copy()
+            # [v1.9.228] DIRECT ONSET CONTINUITY
+            # If we are starting speech, we MUST bypass all gravity and latent
+            # complexification. The AI must start exactly from the physical tail.
+            if is_onset:
+                 self.kp_cond = last_pose.copy()
+                 self.clean_kp_cond = last_pose.copy()
+            else:
+                 # Standard Idle logic (Gravity/Noise/Sway)
+                 next_pose = last_pose + noise
+                 for i, idx_in_kp in enumerate(brow_indices):
+                     if idx_in_kp < next_pose.shape[1]:
+                         next_pose[0, idx_in_kp] += brow_jitter[i]
+     
+                 anchor = current_s_kp + self.brownian_pos
+                 self.clean_kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
+                 self.kp_cond = self.clean_kp_cond.copy()
             
         elif self.fix_kp_cond > 0:
             if self.clip_idx % self.fix_kp_cond == 0:  # 重置
@@ -345,7 +342,7 @@ class Audio2Motion:
             self.silence_frames = 0
             self.is_talking_state = True
             self.persistent_pressure = 0.0 # Release positional pull instantly
-            print(f"[Ditto] Speech Onset Engagement (v1.9.227). Seed Offset={self.reset_seed_offset}")
+            print(f"[Ditto] Speech Onset Engagement (v1.9.228). Seed Offset={self.reset_seed_offset}")
         else:
             self.silence_frames += step_len
 
@@ -379,7 +376,7 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.227 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.228 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         # [v1.9.225] ONSET COORDINATE ALIGNMENT
         # ...
@@ -392,7 +389,7 @@ class Audio2Motion:
              
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.227). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.228). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose Only: 0:201)
         if self.warp_decay > 0.001:
