@@ -386,6 +386,7 @@ class Audio2Motion:
                 pred_kp_seq[0, f, 1:202] = pred_kp_seq[0, f, 1:202] * (1.0 - pressure) + anchor_p[0:201] * pressure
             
             if self.clip_idx % 20 == 0:
+                 mode_s = "SPEECH" if is_talking else "IDLE"
                  print(f"[v1.9.190 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={self.delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
         
         # [v1.9.156] Virtual Last Frame for Startup Stabilization
