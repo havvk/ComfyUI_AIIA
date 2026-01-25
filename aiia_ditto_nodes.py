@@ -789,12 +789,8 @@ class AIIA_DittoSampler:
                     self.last_idle_roll = d_roll
                     self.sway_decay_remaining = DECAY_FRAMES
                     
-                    # [Feature v1.9.49] Mouth Micro-Motion (Breathing)
-                    # Refined: Positive-Only sine wave to prevent "Pursed Lips" (Negative Offset).
-                    # Slower freq (2.0) and lower amp (0.004 peak) for subtlety.
-                    # Formula: (sin + 1) * 0.5 ranges 0 to 1. 
-                    # Max opening = 0.005 * idle_weight.
-                    d_mouth = (math.sin(t * 2.0) + 1.0) * 0.5 * 0.005 * idle_weight
+                    # [Deactivated v1.9.194] Mouth Micro-Motion (Breathing)
+                    d_mouth = 0.0 # Force zero for troubleshooting
                     
                     # We need to ADD this to the global controls (hd_rot_p, etc.)
                     
