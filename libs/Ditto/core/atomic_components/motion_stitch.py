@@ -533,8 +533,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.194] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.194. LATEST VERSION LOADED.")
+        # [Debug v1.9.195] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.195. LATEST VERSION LMDM LOADED.")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -706,12 +706,11 @@ class MotionStitch:
             gain = 1.0 
             exp_reshaped[:, lower_lip, 1][mask] *= gain
 
-        # 2. Volumetric Mouth Micro-Motion (Breathing - Y-Axis Only for Symmetry)
+        # 2. Volumetric Mouth Micro-Motion (Breathing + Corners 6,12 Restored)
         if "delta_mouth" in kwargs:
-             # [v1.9.193] Exclude corners (6,12) to prevent lateral asymmetry
-             # Only apply vertical opening to lower lip center areas
-             _lower_lip_center = [14, 17, 19, 20]
-             exp_reshaped[:, _lower_lip_center, 1] += kwargs["delta_mouth"]
+             _lip_and_corners = [6, 12, 14, 17, 19, 20]
+             # [Restored v1.9.195] Targeting all 3 axes [:, :] for high-fidelity 3D expansion
+             exp_reshaped[:, _lip_and_corners] += kwargs["delta_mouth"]
              
         # Restore flattened state
         x_d_info["exp"] = exp_reshaped.reshape(1, -1)
