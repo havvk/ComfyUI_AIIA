@@ -195,7 +195,7 @@ class Audio2Motion:
         if self.is_recovering:
              self.look_up_timer += step_len
         
-        # [v1.9.170] ZERO-PRESSURE SPEECH STATE MACHINE
+        # [v1.9.215] ZERO-PRESSURE SPEECH STATE MACHINE (Baseline Restoration)
         # Decisions are based on Silence Frames (Universal) + VAD Lookahead (Optional)
         is_currently_talking = self.silence_frames < 25
         has_upcoming_speech = False
@@ -204,13 +204,6 @@ class Audio2Motion:
              lookahead = self.vad_timeline[idx : idx + 50]
              has_upcoming_speech = len(lookahead) > 0 and np.max(lookahead) > 0.1
         
-        # [v1.9.213] Internal VAD Reset (Streaming Stability)
-        # If we see speech coming, internally reset the silence counter.
-        if has_upcoming_speech:
-             self.silence_frames = 0
-             self.is_recovering = False
-             is_currently_talking = True
-
         # We store the state for pressure selection in __call__
         self.is_talking_state = is_currently_talking or has_upcoming_speech
         
@@ -381,25 +374,27 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if target_pressure == 0 else "IDLE"
-             print(f"[v1.9.214 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.215 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
         
         # Fusion Sequence
-        # [v1.9.214] SURGICAL PRE-FUSION WARP (Pose Only: 0:201)
-        # We align the entire prediction buffer to history BEFORE fusion.
-        # Strict index [:201] ensures we don't touch any facial expression data.
-        if reset or res_kp_seq is None:
-             actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
-             self.warp_offset = actual_last - pred_kp_seq[:, 0:1]
-             self.warp_decay = 1.0
-             print(f"[Ditto] Speech Onset Warp Engaged (v1.9.214 - Pose Only). Offset={np.abs(self.warp_offset).mean():.4f}")
+        # [v1.9.215] PRECISION JUNCTION WARP (Pose Only: 0:201)
+        # Align prediction to history at the exact fusion entry point (fuse_r2_s).
+        fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
-        # Apply Warp BEFORE Fusion for perfect continuity
+        if (reset or res_kp_seq is None) and fuse_r2_s >= 0:
+             actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
+             target_entry = pred_kp_seq[:, fuse_r2_s : fuse_r2_s + 1]
+             self.warp_offset = actual_last - target_entry
+             self.warp_decay = 1.0
+             print(f"[Ditto] Precision Warp Engaged (v1.9.215 - Junc={fuse_r2_s}). Offset={np.abs(self.warp_offset).mean():.4f}")
+
+        # Apply Warp alignment starting from the junction point
         if self.warp_decay > 0.001:
-             for f in range(pred_kp_seq.shape[1]):
-                  # STRICTLY warp head pose/pos. Do NOT touch expressions (201+).
-                  # Index 201 is the first expression parameter (Jaw).
+             start_f = max(0, fuse_r2_s)
+             for f in range(start_f, pred_kp_seq.shape[1]):
+                  # ONLY warp head pose/pos (0:201). Leave expressions (201+) native.
                   pred_kp_seq[0, f, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
-                  self.warp_decay *= 0.98 # Slower, stable decay
+                  self.warp_decay *= 0.985 # Slower, stable decay
              
              if self.warp_decay < 0.001:
                   self.warp_decay = 0.0
