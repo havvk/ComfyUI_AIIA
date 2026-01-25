@@ -533,8 +533,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.189] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.189. LATEST VERSION LOADED.")
+        # [Debug v1.9.190] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.190. LATEST VERSION LOADED.")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
@@ -701,8 +701,8 @@ class MotionStitch:
         # Only boost if the AI is actually trying to open the mouth (y > 0)
         mask = y_intent > 0.001
         if np.any(mask):
-            # [v1.9.189] Volumetric Jaw Excitation (Boosted to 1.2)
-            gain = 1.0 + 1.2 * np.exp(-y_intent[mask] / 0.04)
+            # [v1.9.190] Volumetric Jaw Excitation (Boosted to 1.5)
+            gain = 1.0 + 1.5 * np.exp(-y_intent[mask] / 0.04)
             exp_reshaped[:, lower_lip, 1][mask] *= gain
 
         # 2. Volumetric Mouth Micro-Motion (Breathing + Corners 7,8)

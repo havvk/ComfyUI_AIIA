@@ -119,8 +119,9 @@ class Audio2Motion:
         self.brownian_momentum = np.zeros_like(self.kp_cond) # [v1.9.139] Postural inertia
         self.look_up_timer = 0 # [v1.9.141] Timer for anti-stall recovery
         self.is_recovering = False # [v1.9.155] Hysteresis state flag
-        self.target_bias_deg = -3.5 # [v1.9.189] Aesthetic Sweet Spot (Target Delta)
-        self.current_push = 0.0012 # [v1.9.189] Constant Chin-Tuck Pressure
+        self.target_bias_deg = -1.5 # [v1.9.190] Tightened Sweet Spot (Target Delta)
+        self.current_push = 0.0018 # [v1.9.190] Increased Chin-Tuck Pressure
+        self.delta_p = 0.0 # [v1.9.190] SAFETY: Fixed AttributeError
         
         # [v1.9.170] Pure Photo Anchor (Reverted Neutralizer)
         self.photo_base_neutralizer = np.zeros_like(self.s_kp_cond)
@@ -189,16 +190,16 @@ class Audio2Motion:
         # Always output current frame pitch and silence status
         real_f = res_kp_seq.shape[1]
         
-        # [v1.9.155] Hysteresis Logic
-        # [v1.9.160] Reverted Stress Test to Standard Safety Zone: 0 ~ -10.0 deg. 
+        # [v1.9.190] Postural Stability State Machine
+        # Trigger Limit: -8.0 deg (User limit). Safe Release: -2.0 deg.
         if self.silence_frames >= 25:
-             if not self.is_recovering and self.delta_p < -10.0:
+             if not self.is_recovering and self.delta_p < -8.0:
                   self.is_recovering = True
-                  print(f"[Hysteresis Trigger] Delta={self.delta_p:+.2f}° Breach. Force engaged.")
-             elif self.is_recovering and self.delta_p >= -1.0:
+                  print(f"[Hysteresis Trigger] Delta={self.delta_p:+.2f}° Breach (< -8.0). Engaging downward pressure.")
+             elif self.is_recovering and self.delta_p >= -2.0:
                   self.is_recovering = False
                   self.look_up_timer = 0
-                  print(f"[Hysteresis Release] Delta={self.delta_p:+.2f}°. Neutral zone reached.")
+                  print(f"[Hysteresis Release] Delta={self.delta_p:+.2f}° Zone Cleared (> -2.0).")
         else:
              # Stop recovering if talking starts
              if self.is_recovering:
@@ -248,13 +249,13 @@ class Audio2Motion:
             # [v1.9.164] Predictive Physics Push
             new_drift[0, 1:67] += self.current_push
             
-            # [v1.9.189] Decoupled Axis Force (Chin-Tuck Mode)
+            # [v1.9.190] Decoupled Axis Force (Active Chin-Tuck)
             if self.is_recovering:
-                # Add drift (push down) to recover from looking up too much
-                new_drift[0, 1:67] += 0.0035 
-                new_drift[0, 67:202] -= 0.0010 
+                # Add drift (push down/forward) to recover from high-tilt
+                new_drift[0, 1:67] += 0.0045 
+                new_drift[0, 67:202] -= 0.0005 
                 if self.look_up_timer > 100:
-                    new_drift[0, 1:67] += 0.0035 
+                    new_drift[0, 1:67] += 0.0045 
             self.brownian_momentum = self.brownian_momentum * 0.92 + new_drift
             self.brownian_pos += self.brownian_momentum
             
@@ -385,8 +386,7 @@ class Audio2Motion:
                 pred_kp_seq[0, f, 1:202] = pred_kp_seq[0, f, 1:202] * (1.0 - pressure) + anchor_p[0:201] * pressure
             
             if self.clip_idx % 20 == 0:
-                 mode_s = "SPEECH" if is_talking else "IDLE"
-                 print(f"[v1.9.189 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={self.delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
+                 print(f"[v1.9.190 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={self.delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
         
         # [v1.9.156] Virtual Last Frame for Startup Stabilization
         # If this is the VERY first chunk, we treat the source photo as the "prev frame"
