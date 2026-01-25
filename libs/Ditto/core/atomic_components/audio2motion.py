@@ -345,7 +345,7 @@ class Audio2Motion:
             self.silence_frames = 0
             self.is_talking_state = True
             self.persistent_pressure = 0.0 # Release positional pull instantly
-            print(f"[Ditto] Speech Onset Engagement (v1.9.226). Seed Offset={self.reset_seed_offset}")
+            print(f"[Ditto] Speech Onset Engagement (v1.9.227). Seed Offset={self.reset_seed_offset}")
         else:
             self.silence_frames += step_len
 
@@ -354,7 +354,7 @@ class Audio2Motion:
              # Important: We must pass the UNWARPED history to the AI for condition update.
              clean_history = res_kp_seq.copy()
              if self.warp_decay > 0.001:
-                  clean_history[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
+                  clean_history[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
              
              self._update_kp_cond(clean_history, clean_history.shape[1], step_len, is_onset=reset)
         else:
@@ -362,24 +362,24 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.219] JAW-ISOLATED PRESSURE (0:202)
-        # We pull Position and Pose (0:202) to the anchor in IDLE.
-        # Index 202+ (Expressions) are EXCLUDED so the AI always has full control.
+        # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
+        # We pull Position and Pose (0:201) to the anchor in IDLE.
+        # Index 201+ (Expressions) are EXCLUDED so the AI always has full control.
         target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.60
-        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:202]
+        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
              move = np.clip(diff, -0.06, 0.06) 
              self.persistent_pressure += move
              
-             # Apply pressure strictly to Position + Pose (0:202)
+             # Apply pressure strictly to Position + Pose (0:201)
              curr_p = self.persistent_pressure
-             pred_kp_seq[0, f, 0:202] = pred_kp_seq[0, f, 0:202] * (1.0 - curr_p) + anchor_p * curr_p
+             pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.226 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.227 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         # [v1.9.225] ONSET COORDINATE ALIGNMENT
         # ...
@@ -392,12 +392,12 @@ class Audio2Motion:
              
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.226). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.227). Offset={np.abs(self.warp_offset).mean():.4f}")
 
-        # Apply Warp (Pose Only: 0:202)
+        # Apply Warp (Pose Only: 0:201)
         if self.warp_decay > 0.001:
              # Apply uniform offset to the whole prediction buffer
-             pred_kp_seq[0, :, :202] += self.warp_offset[0, 0, :202] * self.warp_decay
+             pred_kp_seq[0, :, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
              
              # [v1.9.221] CONDITIONAL DECAY
              if not getattr(self, "is_talking_state", False):
@@ -440,7 +440,7 @@ class Audio2Motion:
         # Restore clean history for monitoring
         clean_res = res_kp_seq.copy()
         if self.warp_decay > 0.001:
-             clean_res[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
+             clean_res[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
              
         self._update_kp_cond(clean_res, idx, step_len=step_len, is_onset=False)
 
