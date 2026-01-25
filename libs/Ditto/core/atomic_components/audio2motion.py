@@ -180,7 +180,7 @@ class Audio2Motion:
         
         # [v1.9.190] Postural Stability State Machine
         # Trigger Limit: -8.0 deg (User limit). Safe Release: -2.0 deg.
-        if self.silence_frames >= 25:
+        if self.silence_frames >= 25 and not getattr(self, "is_talking_state", False):
              if not self.is_recovering and self.delta_p < -8.0:
                   self.is_recovering = True
                   print(f"[Hysteresis Trigger] Delta={self.delta_p:+.2f}° Breach (< -8.0). Engaging downward pressure.")
