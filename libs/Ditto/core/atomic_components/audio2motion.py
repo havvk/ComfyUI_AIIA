@@ -204,6 +204,13 @@ class Audio2Motion:
              lookahead = self.vad_timeline[idx : idx + 50]
              has_upcoming_speech = len(lookahead) > 0 and np.max(lookahead) > 0.1
         
+        # [v1.9.213] Internal VAD Reset (Streaming Stability)
+        # If we see speech coming, internally reset the silence counter.
+        if has_upcoming_speech:
+             self.silence_frames = 0
+             self.is_recovering = False
+             is_currently_talking = True
+
         # We store the state for pressure selection in __call__
         self.is_talking_state = is_currently_talking or has_upcoming_speech
         
@@ -377,31 +384,32 @@ class Audio2Motion:
              print(f"[v1.9.208 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
         
         # Fusion Sequence
-        if res_kp_seq is None:
-            res_kp_seq = pred_kp_seq
-            res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
-        else:
-            # Capture joint gap for Persistent Warp BEFORE fusion might slice it
-            # predicted_first[0, 0] is the very first frame of the NEW data
-            if reset:
-                 self.warp_offset = res_kp_seq[:, -1:] - pred_kp_seq[:, 0:1]
-                 self.warp_decay = 1.0
-                 print(f"[Ditto] Speech Onset Warp Engaged (v1.9.208 - Pose Only). Offset={np.abs(self.warp_offset).mean():.4f}")
+        # [v1.9.213] PRE-FUSION SEAMLESS WARP (Strictly Pose Only: 0:201)
+        # 0:3 is Position, 3:201 is Head Pose. 201+ is Expressions.
+        if reset or res_kp_seq is None:
+             actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
+             self.warp_offset = actual_last - pred_kp_seq[:, 0:1]
+             self.warp_decay = 1.0
+             print(f"[Ditto] Speech Onset Warp Engaged (v1.9.213 - Pre-Fusion Pose). Offset={np.abs(self.warp_offset).mean():.4f}")
 
-            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=None, step_len=step_len)
-            res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - step_len - self.fuse_length, res_kp_seq.shape[1])
-
-        # [v1.9.208] Pose-Isolated Persistent Warp (Post-Fusion)
-        # Apply offset only to Head Pose/Pos (0:202). Expressions (202:) are untouched.
+        # Apply Warp BEFORE Fusion for perfect continuity
         if self.warp_decay > 0.001:
-             start_idx = res_kp_seq.shape[1] - step_len
-             for f in range(start_idx, res_kp_seq.shape[1]):
-                  res_kp_seq[0, f, :202] += self.warp_offset[0, 0, :202] * self.warp_decay
-                  self.warp_decay *= 0.94 # 50-frame window
+             for f in range(pred_kp_seq.shape[1]):
+                  # STRICTLY warp head pose/pos. Do NOT touch expressions (201+).
+                  # Index 201 is the first expression parameter (Jaw).
+                  pred_kp_seq[0, f, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
+                  self.warp_decay *= 0.98 # Slower, stable decay
              
              if self.warp_decay < 0.001:
                   self.warp_decay = 0.0
                   self.warp_offset = np.zeros_like(self.warp_offset)
+
+        if res_kp_seq is None:
+            res_kp_seq = pred_kp_seq[:, :step_len]
+            res_kp_seq = self._smo(res_kp_seq, 0, res_kp_seq.shape[1])
+        else:
+            res_kp_seq = self._fuse(res_kp_seq, pred_kp_seq, override_alpha=None, step_len=step_len)
+            res_kp_seq = self._smo(res_kp_seq, res_kp_seq.shape[1] - step_len - self.fuse_length, res_kp_seq.shape[1])
         
         # Store for next batch
         self.last_kp_frame = res_kp_seq[:, -1:]
