@@ -230,15 +230,8 @@ class Audio2Motion:
         if self.clip_idx % 20 == 0:
              print(f"{tag} Frame {idx:04d} | Delta={self.delta_p:+.2f}° | Silence={self.silence_frames:03d}")
 
-        # [v1.9.196] Postural Anticipation (Speech Onset Prep)
-        # If we detect speech is coming (but not yet talking), we slowly pull 
-        # the head back to center so it aligns with the AI model's starting pose.
-        if has_upcoming_speech and not is_currently_talking:
-             # Smoothly decay idle drift over ~2s window
-             self.brownian_pos = (self.brownian_pos * 0.94).astype(np.float32)
-             self.brownian_momentum = (self.brownian_momentum * 0.92).astype(np.float32)
-             if self.clip_idx % 20 == 0:
-                  print(f"[Postural] Anticipation Active: Aligning head for speech onset...")
+        # [Deactivated v1.9.198] Postural Anticipation (Speech Onset Prep)
+        # We rely exclusively on the Persistent Warp logic for better isolation.
 
         # 5. Postural Auto-Correction Logic [REPLACED by v1.9.160 STATIC + v1.9.162 PREDICTIVE]
 
@@ -398,7 +391,7 @@ class Audio2Motion:
             
             if self.clip_idx % 20 == 0:
                  mode_s = "SPEECH" if is_talking else "IDLE"
-                 print(f"[v1.9.197 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={self.delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
+                 print(f"[v1.9.198 {mode_s}] Pressure: {pressure*100:.0f}% (Delta={self.delta_p:+.2f} Target={self.target_bias_deg:+.1f})")
         
         # [v1.9.197] PERSISTENT DECAYING WARP (Continuity Fix)
         # We handle transitions by maintaining a decaying offset across chunks.
