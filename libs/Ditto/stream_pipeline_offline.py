@@ -265,6 +265,7 @@ class StreamSDK:
         try:
             self._writer_worker()
         except Exception as e:
+            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -285,6 +286,7 @@ class StreamSDK:
         try:
             self._putback_worker()
         except Exception as e:
+            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -307,6 +309,7 @@ class StreamSDK:
         try:
             self._decode_f3d_worker()
         except Exception as e:
+            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -327,6 +330,7 @@ class StreamSDK:
         try:
             self._warp_f3d_worker()
         except Exception as e:
+            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -348,6 +352,7 @@ class StreamSDK:
         try:
             self._motion_stitch_worker()
         except Exception as e:
+            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -362,15 +367,19 @@ class StreamSDK:
                 break
             
             frame_idx, x_d_info, ctrl_kwargs = item
-            x_s_info = self.source_info["x_s_info_lst"][frame_idx]
+            
+            # [v1.9.314] MotionStitch Pulse
+            if frame_idx % 50 == 0:
+                 print(f"[Ditto Pulse] MotionStitch | Frame {frame_idx} processing...")
+                 
             x_s, x_d = self.motion_stitch(x_s_info, x_d_info, **ctrl_kwargs)
             self.warp_f3d_queue.put([frame_idx, x_s, x_d])
 
     def audio2motion_worker(self):
         try:
-            # self._audio2motion_worker()
             self._audio2motion_offline()
         except Exception as e:
+            traceback.print_exc()
             self.worker_exception = e
             self.stop_event.set()
 
@@ -492,8 +501,13 @@ class StreamSDK:
 
             x_d_info_list = self.audio2motion.cvt_fmt(res_kp_seq)
 
+            print(f"[Ditto Pulse] Audio2Motion | Pushing {len(x_d_info_list)} frames to MotionStitch...")
             gen_frame_idx = 0
             for x_d_info in x_d_info_list:
+                if self.stop_event.is_set():
+                     print(f"[Ditto Pulse] Audio2Motion | ABORTING push loop (Global stop detected).")
+                     break
+                     
                 frame_idx = _mirror_index(gen_frame_idx, self.source_info_frames)
                 ctrl_kwargs = self._get_ctrl_info(gen_frame_idx)
 
