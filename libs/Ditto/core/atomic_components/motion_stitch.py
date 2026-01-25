@@ -533,8 +533,8 @@ class MotionStitch:
         self.fix_exp_a2 = (1 - _a1) + _a1 * _a2
         self.fix_exp_a3 = _a2
         
-        # [Debug v1.9.195] Verify Code Sync
-        print(f"[AIIA Debug] MotionStitch Setup: v1.9.195. LATEST VERSION LMDM LOADED.")
+        # [Debug v1.9.196] Verify Code Sync
+        print(f"[AIIA Debug] MotionStitch Setup: v1.9.196. LATEST VERSION LMDM LOADED.")
 
 
         if self.drive_eye and self.delta_eye_arr is not None:
