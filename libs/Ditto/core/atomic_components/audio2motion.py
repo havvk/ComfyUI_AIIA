@@ -90,7 +90,7 @@ class Audio2Motion:
         # for fuse
         self.online_mode = online_mode
         if self.online_mode:
-            self.fuse_length = min(self.overlap_v2, self.valid_clip_len) # [v1.9.218] Reverted to 10
+            self.fuse_length = min(self.overlap_v2, self.valid_clip_len) # [v1.9.219] Reverted to 10 for rapid opening
         else:
             self.fuse_length = self.overlap_v2
         self.fuse_alpha = np.arange(self.fuse_length, dtype=np.float32).reshape(1, -1, 1) / self.fuse_length
@@ -261,7 +261,7 @@ class Audio2Motion:
             brow_jitter = np.random.normal(0, 0.015 * boost_factor, len(brow_indices)).astype(np.float32)
             
             # 5. Postural Auto-Correction Logic [v1.9.150 Robustness Patch]
-            # Shorten silence threshold to 25 frames (1 second) to combat jittery audio
+            # Shorten silence threshold to 25 frames (1.0 second) to combat jittery audio
             # Only trigger if notably higher than source (> 2.0 deg Higher -> Delta < -2.0)
             if self.silence_frames >= 25 and self.delta_p < -2.0:
                 self.look_up_timer += step_len
@@ -346,13 +346,14 @@ class Audio2Motion:
             if seed is not None:
                 # [v1.9.220] Revert fuse length, fix talking state lag, and restore pressure indexing.
                 # The previous offset_seed was causing issues with consistent noise.
-                # The `clip_idx` offset is now handled by `reset_seed_offset`.
-                offset_seed = seed + self.reset_seed_offset
-                torch.manual_seed(offset_seed)
-                torch.cuda.manual_seed(offset_seed)
-                torch.cuda.manual_seed_all(offset_seed)
-                # [v1.9.218] Instant state update to prevent mouth suppression lag
-                self.is_talking_state = True 
+                if reset:
+                    offset_seed = seed + self.reset_seed_offset
+                    torch.manual_seed(offset_seed)
+                    torch.cuda.manual_seed(offset_seed)
+                    torch.cuda.manual_seed_all(offset_seed)
+                    # [v1.9.219] Force instant state to allow mouth opening in the very first buffer
+                    self.is_talking_state = True
+                    self.persistent_pressure = 0.0 # Instant pressure release on onset
             
             # [v1.9.139] Speech resets silence counter
             self.silence_frames = 0
@@ -362,27 +363,29 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.218] PRESSURE TRANSITION (Reverted to 1:202 for Baseline match)
-        # Pressure only pulls Pose (1:201) and first Jaw byte (201). 
-        # This matched the perfect mouth performance of v1.9.208.
+        # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
+        # We pull Position and Pose (0:201) to the anchor in IDLE.
+        # Index 201 (Jaw) is EXCLUDED so the AI always has full control of expressions.
         target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.60
-        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 1:202]
+        anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
              move = np.clip(diff, -0.06, 0.06) 
              self.persistent_pressure += move
              
-             # Apply pressure: 1:202 
+             # Apply pressure strictly to Position + Pose (0:201)
              curr_p = self.persistent_pressure
-             pred_kp_seq[0, f, 1:202] = pred_kp_seq[0, f, 1:202] * (1.0 - curr_p) + anchor_p * curr_p
+             pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if target_pressure == 0 else "IDLE"
-             print(f"[v1.9.218 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.219 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
         
         # Fusion Sequence
-        # [v1.9.218] REFINED JUNCTION WARP (Pose Only: 0:201)
+        # [v1.9.219] STATIC BATCH WARP
+        # Per-frame decay within a buffer causes artificial motion (drifting).
+        # We now calculate the offset at the junction and apply it UNIFORMLY to the batch.
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
         if (reset or res_kp_seq is None):
@@ -390,22 +393,18 @@ class Audio2Motion:
              junc_idx = max(0, fuse_r2_s)
              target_entry = pred_kp_seq[:, junc_idx : junc_idx + 1]
              self.warp_offset = actual_last - target_entry
-             self.warp_decay = 1.0
+             self.warp_decay = 1.0 # RESET warp decay to full correction
              
-             # Diagnostics
-             h_tail = actual_last[0, 0, :5]
-             p_head = target_entry[0, 0, :5]
-             print(f"[Ditto Check] Junction Align (v1.9.218). Junc={junc_idx}, Offset={np.abs(self.warp_offset).mean():.4f}")
-             print(f"       -> History Tail (0:5): {h_tail}")
-             print(f"       -> Pred Head (0:5)  : {p_head}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.219). Offset={np.abs(self.warp_offset).mean():.4f}")
 
-        # Apply Warp alignment
+        # Apply STATIC Warp (Uniform offset for the whole buffer)
         if self.warp_decay > 0.001:
-             start_f = max(0, fuse_r2_s)
-             for f in range(start_f, pred_kp_seq.shape[1]):
-                  # STRICTLY Pose Only (0:201). Never touch expressions.
-                  pred_kp_seq[0, f, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
-                  self.warp_decay *= 0.985 # Balanced decay
+             # Add the same correction to every frame in this batch.
+             # This preserves the raw AI motion fidelity (velocity/acceleration).
+             pred_kp_seq[0, :, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
+             
+             # Decay the warp offset ONLY between batches (very slowly)
+             self.warp_decay *= 0.96 # ~4% decay per 70-frame batch
              
              if self.warp_decay < 0.001:
                   self.warp_decay = 0.0
