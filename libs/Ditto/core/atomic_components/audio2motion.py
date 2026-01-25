@@ -292,7 +292,13 @@ class Audio2Motion:
                     next_pose[0, idx_in_kp] += brow_jitter[i]
 
             anchor = current_s_kp + self.brownian_pos
-            self.clean_kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
+            if is_onset:
+                 # [v1.9.400] ABSOLUTE GRAVITY SUPPRESSION
+                 # At speech onset, we MUST NOT pull the AI towards the reference pose.
+                 # This ensures the model continues from the character's ACTUAL physical state.
+                 self.clean_kp_cond = next_pose
+            else:
+                 self.clean_kp_cond = next_pose * (1.0 - gravity_vec) + anchor * gravity_vec
             
             # Since AI conditioning uses kp_cond, we sync it here.
             self.kp_cond = self.clean_kp_cond.copy()
@@ -385,6 +391,10 @@ class Audio2Motion:
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
         if reset or res_kp_seq is None:
+             # [v1.9.400] INSTANT PRESSURE RELEASE
+             # Kill residual IDLE anchor pull-force immediately to prevent 'Hard Reset' feeling.
+             self.persistent_pressure = 0.0
+
              # actual_last is the physical tail of our history
              actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
              
@@ -397,12 +407,13 @@ class Audio2Motion:
              # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.224). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.400). Offset={np.abs(self.warp_offset).mean():.4f}")
 
-        # Apply Warp (Pose Only: 0:201)
+        # Apply Warp (Pose + Translation Full: 0:202)
         if self.warp_decay > 0.001:
              # Apply uniform offset to the whole prediction buffer
-             pred_kp_seq[0, :, :201] += self.warp_offset[0, 0, :201] * self.warp_decay
+             # [v1.9.400] Adjusted slice to 0:202 to include Z-axis but EXCLUDE expression.
+             pred_kp_seq[0, :, :202] += self.warp_offset[0, 0, :202] * self.warp_decay
              
              # [v1.9.221] CONDITIONAL DECAY
              if not getattr(self, "is_talking_state", False):
@@ -443,7 +454,7 @@ class Audio2Motion:
         # Restore clean history for monitoring
         clean_res = res_kp_seq.copy()
         if self.warp_decay > 0.001:
-             clean_res[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
+             clean_res[0, :, :202] -= self.warp_offset[0, 0, :202] * self.warp_decay
              
         self._update_kp_cond(clean_res, idx, step_len=step_len, is_onset=False)
 
