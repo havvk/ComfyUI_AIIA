@@ -316,7 +316,7 @@ class Audio2Motion:
         for i in range(s, e):
             ss = max(0, i - half_k)
             ee = min(n, i + half_k + 1)
-            res_kp_seq[:, i, :202] = np.mean(new_res_kp_seq[:, ss:ee, :202], axis=1)
+            res_kp_seq[:, i, :201] = np.mean(new_res_kp_seq[:, ss:ee, :201], axis=1)
         return res_kp_seq
     
     def __call__(self, aud_cond, res_kp_seq=None, reset=False, step_len=None, seed=None):
@@ -342,15 +342,17 @@ class Audio2Motion:
             self.silence_frames = 0
             self.is_talking_state = True
             self.persistent_pressure = 0.0 # Release positional pull instantly
-            print(f"[Ditto] Speech Onset Engagement (v1.9.228). Seed Offset={self.reset_seed_offset}")
+            print(f"[Ditto] Speech Onset Engagement (v1.9.229). Seed Offset={self.reset_seed_offset}")
         else:
             self.silence_frames += step_len
 
-        # [v1.9.223] LATEST PHYSICAL MONITORING (Strictly Clean condition)
+        # [v1.9.223/229] LATEST PHYSICAL MONITORING (Strictly Clean condition)
         if res_kp_seq is not None:
              # Important: We must pass the UNWARPED history to the AI for condition update.
+             # EXCEPT during Speech Onset (reset=True), where we pass the RAW physical pose 
+             # to force the AI to 'start' from the current drifted position.
              clean_history = res_kp_seq.copy()
-             if self.warp_decay > 0.001:
+             if self.warp_decay > 0.001 and not reset:
                   clean_history[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
              
              self._update_kp_cond(clean_history, clean_history.shape[1], step_len, is_onset=reset)
@@ -389,7 +391,7 @@ class Audio2Motion:
              
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.228). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.229). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose Only: 0:201)
         if self.warp_decay > 0.001:
