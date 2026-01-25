@@ -330,11 +330,28 @@ class Audio2Motion:
         if step_len is None:
             step_len = self.valid_clip_len
 
+        # [v1.9.224] INSTANT STATE RESET (Fixing Onset Snap)
+        # We must reset silence and pressure BEFORE calling _update_kp_cond
+        # so that the very first batch of speech is identified as "Talking".
+        if reset:
+            # RESET random seed for lip-sync consistency
+            if seed is not None:
+                self.reset_seed_offset = self.clip_idx % 1000
+                offset_seed = seed + self.reset_seed_offset
+                torch.manual_seed(offset_seed)
+                torch.cuda.manual_seed(offset_seed)
+                torch.cuda.manual_seed_all(offset_seed)
+            
+            self.silence_frames = 0
+            self.is_talking_state = True
+            self.persistent_pressure = 0.0 # Release positional pull instantly
+            print(f"[Ditto] Speech Onset Engagement (v1.9.224). Seed Offset={self.reset_seed_offset}")
+        else:
+            self.silence_frames += step_len
+
         # [v1.9.223] LATEST PHYSICAL MONITORING (Strictly Clean condition)
         if res_kp_seq is not None:
              # Important: We must pass the UNWARPED history to the AI for condition update.
-             # But since res_kp_seq is already warped, we subtract the current warp offset 
-             # to restore the 'clean' pose for the AI latent space.
              clean_history = res_kp_seq.copy()
              if self.warp_decay > 0.001:
                   clean_history[0, :, :201] -= self.warp_offset[0, 0, :201] * self.warp_decay
@@ -342,31 +359,6 @@ class Audio2Motion:
              self._update_kp_cond(clean_history, clean_history.shape[1], step_len, is_onset=reset)
         else:
              self._update_kp_cond(self.s_kp_cond.reshape(1, 1, -1), 0, step_len, is_onset=reset)
-
-        if reset:
-            # [SOFT RESET] Only reset random seed for lip-sync consistency.
-            # DO NOT reset kp_cond to reference - let model continue from current idle state.
-            # This allows natural transition from idle to speaking without visual discontinuity.
-            
-            # Reset Random Seed to ensure Noise Sampling is consistent
-            # [Update v1.9.108] Add clip_idx offset to prevent identical onset micro-motion
-            if reset:
-                # [v1.9.220] Use clip_idx to ensure each onset reset has slightly different noise
-                self.reset_seed_offset = self.clip_idx % 1000
-                offset_seed = seed + self.reset_seed_offset
-                torch.manual_seed(offset_seed)
-                torch.cuda.manual_seed(offset_seed)
-                torch.cuda.manual_seed_all(offset_seed)
-                # [v1.9.219] Force instant state to allow mouth opening in the very first buffer
-                self.is_talking_state = True
-                self.persistent_pressure = 0.0 # Instant pressure release on onset
-                print(f"[Ditto] Speech Onset Engagement (v1.9.223). Seed Offset={self.reset_seed_offset}")
-            
-            # [v1.9.139] Speech resets silence counter
-            self.silence_frames = 0
-        else:
-            # Increment silence counter during idle
-            self.silence_frames += step_len
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
@@ -405,7 +397,7 @@ class Audio2Motion:
              # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.223). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.224). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose Only: 0:201)
         if self.warp_decay > 0.001:
