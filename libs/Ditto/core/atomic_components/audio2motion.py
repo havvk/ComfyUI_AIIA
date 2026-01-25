@@ -176,6 +176,8 @@ class Audio2Motion:
     def _update_kp_cond(self, res_kp_seq, idx, step_len=0, is_onset=False):
         # NaN Guard [v1.9.312]
         res_kp_seq = np.nan_to_num(res_kp_seq).astype(np.float32)
+        self.kp_cond = np.nan_to_num(self.kp_cond).astype(np.float32)
+        self.brownian_pos = np.nan_to_num(self.brownian_pos).astype(np.float32)
         
         # [v1.9.144] Unconditional State Tracking
         if idx <= 0:
@@ -421,7 +423,7 @@ class Audio2Motion:
              
         if self.clip_idx % 20 == 0:
              mode_s = "SPEECH" if getattr(self, "is_talking_state", False) else "IDLE"
-             print(f"[v1.9.314 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
+             print(f"[v1.9.316 {mode_s}] Pressure: {self.persistent_pressure*100:.0f}% (Delta={self.delta_p:+.2f})")
 
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
@@ -447,7 +449,7 @@ class Audio2Motion:
 
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Onset Alignment (v1.9.314). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment (v1.9.316). Gap={np.abs(self.warp_offset[0,0,:202]).mean():.4f}")
              print(f"  > Degree Offsets [P,Y,R]: {self.pose_deg_offset}")
 
              if reset:
