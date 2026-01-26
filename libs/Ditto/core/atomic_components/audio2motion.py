@@ -437,10 +437,17 @@ class Audio2Motion:
              else:
                   # During SPEECH, keep alignment 100% static to prevent 'sliding'
                   pass # warp_decay stays at 1.0 (or current value)
-             
-             if self.warp_decay < 0.001:
-                  self.warp_decay = 0.0
-                  self.warp_offset = np.zeros_like(self.warp_offset)
+        
+        # [AIIA Diagnostic v1.9.401] Trajectory Logger
+        if self.clip_idx % 10 == 0 or reset:
+             t_state = "RESET" if reset else ("TALK" if getattr(self, "is_talking_state", False) else "IDLE")
+             drift_mag = np.abs(self.brownian_pos).mean() * 1000
+             press = self.persistent_pressure
+             print(f"[Traj] {t_state} Frame {self.clip_idx} | DriftMag={drift_mag:.2f} | Press={press:.2f} | WarpDecay={self.warp_decay:.2f}") 
+
+        if self.warp_decay < 0.001:
+             self.warp_decay = 0.0
+             self.warp_offset = np.zeros_like(self.warp_offset)
 
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq[:, :step_len]
