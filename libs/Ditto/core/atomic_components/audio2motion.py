@@ -402,7 +402,8 @@ class Audio2Motion:
         # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
         # We pull Position and Pose (0:201) to the anchor in IDLE.
         # Index 201 (Jaw) is EXCLUDED so the AI always has full control of expressions.
-        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.80
+        # [v1.9.402] Reduced Pressure 0.8 -> 0.4 to prevent "Hard Lock" to Reference.
+        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.40
         anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
@@ -434,7 +435,7 @@ class Audio2Motion:
              # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.401 - PHYSICS FIXED). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.402 - DECAY RESTORED). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose + Translation Full: 0:202)
         if self.warp_decay > 0.001:
@@ -447,8 +448,11 @@ class Audio2Motion:
                   # Only decay during IDLE (silence) to return character to anchor
                   self.warp_decay *= 0.95 
              else:
-                  # During SPEECH, keep alignment 100% static to prevent 'sliding'
-                  pass # warp_decay stays at 1.0 (or current value)
+                  # [v1.9.402] Restored Decay for Speech
+                  # We MUST decay the warp to release the head from the "Reference Lock".
+                  # A slow decay (0.96) prevents the "Violent Slide" while ensuring the AI
+                  # eventually gains full control of the head pose.
+                  self.warp_decay *= 0.96
         
         # [AIIA Diagnostic v1.9.401] Trajectory Logger
         if self.clip_idx % 10 == 0 or reset:
