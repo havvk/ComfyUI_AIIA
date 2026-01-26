@@ -260,9 +260,10 @@ class Audio2Motion:
                  target_anchor[0, 1:67] += breath_pitch # Pitch
                  target_anchor[0, 67:133] += breath_yaw # Yaw
                  
-                 # Interpolate: Move 2% towards target per frame
-                 # This guarantees "Slow and Stable"
-                 self.brownian_pos = current_anchor * 0.98 + target_anchor * 0.02
+                 # Interpolate: Move 10% towards target per frame (Faster Return)
+                 # [v1.9.503] Increased speed 0.02 -> 0.10 to prevent "Drift Accumulation".
+                 # We must ensure the head returns to 0 BEFORE the next speech starts.
+                 self.brownian_pos = current_anchor * 0.90 + target_anchor * 0.10
                  
             else:
                  # [Legacy 322e065 Logic] Active Physics for Speech/Short Pauses
@@ -320,11 +321,16 @@ class Audio2Motion:
 
             gravity_vec = np.ones_like(last_pose) * 0.05
             
-            # [v1.9.502] Gravity Boost for Procedural Idle
-            # If we are in "Planned Path" mode, we want the head to follow the path STRICTLY.
-            # 0.05 is too weak (head trails behind). 0.50 forces compliance.
+            # [v1.9.503] Ramped Gravity Logic for Procedural Idle
+            # Instead of snapping to 0.50 (Violent Shake), we ramp up from 0.05 to 0.50.
+            # Transition happens over 30 frames (approx 1s) after idle starts.
             if do_procedural_idle:
-                 gravity_vec = np.ones_like(last_pose) * 0.50
+                 # silence_frames starts at 26 here.
+                 progress = min(1.0, (self.silence_frames - 25) / 30.0)
+                 target_g = 0.50
+                 base_g = 0.05
+                 current_g = base_g + (target_g - base_g) * progress
+                 gravity_vec = np.ones_like(last_pose) * current_g
 
             if self.is_recovering:
                 g_p = 0.80 if self.look_up_timer > 100 else 0.60
@@ -454,7 +460,7 @@ class Audio2Motion:
              # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.501 - PROCEDURAL IDLE). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.503 - RAMPED IDLE). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose + Translation Full: 0:202)
         if self.warp_decay > 0.001:
