@@ -253,15 +253,15 @@ class Audio2Motion:
                 # new_drift[0, 67:202] -= 0.0005 
                 # if self.look_up_timer > 100:
                 #     new_drift[0, 1:67] += 0.0045 
-            self.brownian_momentum = self.brownian_momentum * 0.85 + new_drift
-            self.brownian_pos += self.brownian_momentum
+            # [v1.9.400] Refactored to Mean-Reverting Process (Ornstein-Uhlenbeck)
+            # We remove momentum integration to prevent ANY possibility of runaway drift.
+            # pos = pos * decay + noise
+            # This guarantees the noise hovers around 0.0 with a restoring force.
+            self.brownian_pos = self.brownian_pos * 0.96 + new_drift
             
-            # [v1.9.400] Anchor Center Decay
-            # During deep silence, we want the Anchor to slowly return to the absolute reference (0,0,0)
-            # so that the next speech onset starts from a "Clean State" near the reference photo.
+            # [v1.9.400] Stronger Center Decay during silence
             if self.silence_frames > 25:
-                 self.brownian_momentum *= 0.5 # Kill velocity fast
-                 self.brownian_pos *= 0.90     # Pull position back fast
+                 self.brownian_pos *= 0.90
             
             # 3. Compound Sine Sway
             t = self.global_time
