@@ -179,11 +179,11 @@ class Audio2Motion:
         real_f = res_kp_seq.shape[1]
         
         # [v1.9.190] Postural Stability State Machine
-        # Trigger Limit: -15.0 deg (Relaxed). Safe Release: -2.0 deg.
+        # Trigger Limit: -10.0 deg (Gentle). Safe Release: -2.0 deg.
         if self.silence_frames >= 25:
-             if not self.is_recovering and self.delta_p < -15.0:
+             if not self.is_recovering and self.delta_p < -10.0:
                   self.is_recovering = True
-                  print(f"[Hysteresis Trigger] Delta={self.delta_p:+.2f}° Breach (< -15.0). Engaging downward pressure.")
+                  print(f"[Hysteresis Trigger] Delta={self.delta_p:+.2f}° Breach (< -10.0). Engaging downward pressure.")
              elif self.is_recovering and self.delta_p >= -2.0:
                   self.is_recovering = False
                   self.look_up_timer = 0
@@ -244,7 +244,7 @@ class Audio2Motion:
             # [v1.9.190] Decoupled Axis Force (Active Chin-Tuck)
             if self.is_recovering:
                 # Add drift (push down/forward) to recover from high-tilt
-                new_drift[0, 1:67] += 0.0045 
+                new_drift[0, 1:67] += 0.001 # [v1.9.400] Gentle Nudge (was 0.0045)
                 new_drift[0, 67:202] -= 0.0005 
                 if self.look_up_timer > 100:
                     new_drift[0, 1:67] += 0.0045 
@@ -284,11 +284,8 @@ class Audio2Motion:
                 # Pitch (Vertical) gets high gravity to prevent looking up
                 g_p = 0.80 if self.look_up_timer > 100 else 0.60
                 
-                # [v1.9.400] MOUTH FIX: Strict Ceiling
-                # If head looks up too high (delta < -5.0), force it down regardless of timer.
-                if self.delta_p < -5.0:
-                     g_p = 0.95 # Max gravity
-                     self.brownian_momentum[0, 1:67] += 0.008 # Active push down
+                # [v1.9.400] MOVED to Hysteresis: Gentle Safe Correction
+                # We removed the active sharp push here to prevent teleportation.
                 
                 gravity_vec[0, 1:67] = g_p
             # [v1.9.223] CLEAN SPACE INTEGRATION
