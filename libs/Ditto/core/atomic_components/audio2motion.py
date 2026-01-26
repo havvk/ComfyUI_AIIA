@@ -242,15 +242,17 @@ class Audio2Motion:
             # [v1.9.160] Reverted Uward Nudge Bias
             
             # [v1.9.164] Predictive Physics Push
-            new_drift[0, 1:67] += self.current_push
+            # [v1.9.401] DISABLED: This accumulation causes runaway drift (Head Droop).
+            # new_drift[0, 1:67] += self.current_push
             
             # [v1.9.190] Decoupled Axis Force (Active Chin-Tuck)
             if self.is_recovering:
                 # Add drift (push down/forward) to recover from high-tilt
-                new_drift[0, 1:67] += 0.001 # [v1.9.400] Gentle Nudge (was 0.0045)
-                new_drift[0, 67:202] -= 0.0005 
-                if self.look_up_timer > 100:
-                    new_drift[0, 1:67] += 0.0045 
+                pass
+                # new_drift[0, 1:67] += 0.001 # [v1.9.400] Gentle Nudge (was 0.0045)
+                # new_drift[0, 67:202] -= 0.0005 
+                # if self.look_up_timer > 100:
+                #     new_drift[0, 1:67] += 0.0045 
             self.brownian_momentum = self.brownian_momentum * 0.85 + new_drift
             self.brownian_pos += self.brownian_momentum
             
