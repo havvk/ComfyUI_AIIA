@@ -15,9 +15,11 @@ class AIIA_Subtitle_Gen:
             "required": {
                 "segments_info": ("STRING", {"forceInput": True}),
                 "format": (["SRT", "ASS", "Both"], {"default": "SRT"}),
+                "save_file": ("BOOLEAN", {"default": False, "label_on": "Save to Disk", "label_off": "Memory Only"}),
             },
             "optional": {
                 "ass_style": ("STRING", {"default": "Default", "multiline": False}),
+                "filename_prefix": ("STRING", {"default": "aiia_subtitle"}),
             }
         }
 
@@ -25,8 +27,9 @@ class AIIA_Subtitle_Gen:
     RETURN_NAMES = ("srt_content", "ass_content")
     FUNCTION = "generate_subtitle"
     CATEGORY = "AIIA/Subtitle"
+    OUTPUT_NODE = True
 
-    def generate_subtitle(self, segments_info, format="SRT", ass_style="Default"):
+    def generate_subtitle(self, segments_info, format="SRT", save_file=False, ass_style="Default", filename_prefix="aiia_subtitle"):
         try:
             segments = json.loads(segments_info)
         except Exception as e:
@@ -45,6 +48,27 @@ class AIIA_Subtitle_Gen:
         
         if format in ["ASS", "Both"]:
             ass_out = self._generate_ass(segments, ass_style)
+            
+        # File Saving Logic
+        if save_file:
+            output_dir = folder_paths.get_output_directory()
+            
+            # Timestamp (uniques)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            if format in ["SRT", "Both"]:
+                srt_name = f"{filename_prefix}_{timestamp}.srt"
+                srt_path = os.path.join(output_dir, srt_name)
+                with open(srt_path, "w", encoding="utf-8") as f:
+                    f.write(srt_out)
+                print(f"[AIIA Subtitle] Saved SRT to: {srt_path}")
+                
+            if format in ["ASS", "Both"]:
+                ass_name = f"{filename_prefix}_{timestamp}.ass"
+                ass_path = os.path.join(output_dir, ass_name)
+                with open(ass_path, "w", encoding="utf-8") as f:
+                    f.write(ass_out)
+                print(f"[AIIA Subtitle] Saved ASS to: {ass_path}")
 
         return (srt_out, ass_out)
 
@@ -70,10 +94,10 @@ class AIIA_Subtitle_Gen:
         # 2. Assign colors to speakers
         # Simple palette: White, Yellow, Cyan, Green, Orange, Pink, LightBlue
         palette = [
-            "&H00FFFFFF", # White
-            "&H0000FFFF", # Yellow (BGR)
-            "&H00FFFF00", # Cyan
-            "&H0000FF00", # Green
+            "&H00FFFFFF", # White (Pure)
+            "&H0000D7FF", # Gold/Yellow (Cinematic)
+            "&H00FFFF00", # Cyan (Standard)
+            "&H0000FF00", # Green (Lime)
             "&H000080FF", # Orange
             "&H00FF80FF", # Pink
             "&H00FFC0C0"  # LightBlue
@@ -84,7 +108,10 @@ class AIIA_Subtitle_Gen:
         
         # Base Style String Template
         # Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, ...
-        base_style = "Arial,20,{primary_color},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1"
+        # Base Style String Template
+        # Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, ...
+        # Changes: Bold=1, Outline=2, Shadow=1 for professional look
+        base_style = "Arial,40,{primary_color},&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,2,1,2,10,10,10,1"
         
         sorted_speakers = sorted(list(speakers))
         for i, spk in enumerate(sorted_speakers):
