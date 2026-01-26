@@ -296,7 +296,10 @@ class Audio2Motion:
                           print(f"[Postural] Recovery Finished (Delta={self.delta_p:+.2f}°). Timer reset.")
                      self.look_up_timer = 0
 
-            gravity_vec = np.ones_like(last_pose) * 0.05
+            # [v1.9.400] Strong Gravity during Silence
+            # We must pull the AI's conditioning history strongly towards the reference
+            # to prevent the model from "hallucinating" a droop or drift over time.
+            gravity_vec = np.ones_like(last_pose) * 0.20 # Increased from 0.05
             if self.is_recovering:
                 # [v1.9.158] Decoupled Gravity
                 # Pitch (Vertical) gets high gravity to prevent looking up
