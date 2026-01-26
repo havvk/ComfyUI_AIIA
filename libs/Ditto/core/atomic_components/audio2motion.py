@@ -452,7 +452,7 @@ class Audio2Motion:
              # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.400). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.501 - PROCEDURAL IDLE). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose + Translation Full: 0:202)
         if self.warp_decay > 0.001:
