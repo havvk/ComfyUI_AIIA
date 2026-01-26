@@ -376,12 +376,12 @@ class Audio2Motion:
         # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
         # We pull Position and Pose (0:201) to the anchor in IDLE.
         # Index 201 (Jaw) is EXCLUDED so the AI always has full control of expressions.
-        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.30
+        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.50
         anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
-             move = np.clip(diff, -0.002, 0.002) 
+             move = np.clip(diff, -0.004, 0.004) 
              self.persistent_pressure += move
              
              # Apply pressure strictly to Position + Pose (0:201)
@@ -423,7 +423,7 @@ class Audio2Motion:
              # [v1.9.221] CONDITIONAL DECAY
              if not getattr(self, "is_talking_state", False):
                   # Only decay during IDLE (silence) to return character to anchor
-                  self.warp_decay *= 0.98 
+                  self.warp_decay *= 0.96 
              else:
                   # During SPEECH, keep alignment 100% static to prevent 'sliding'
                   pass # warp_decay stays at 1.0 (or current value)
