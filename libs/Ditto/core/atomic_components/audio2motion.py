@@ -254,6 +254,12 @@ class Audio2Motion:
             self.brownian_momentum = self.brownian_momentum * 0.85 + new_drift
             self.brownian_pos += self.brownian_momentum
             
+            # [v1.9.400] Anchor Center Decay
+            # During deep silence, we want the Anchor to slowly return to the absolute reference (0,0,0)
+            # so that the next speech onset starts from a "Clean State" near the reference photo.
+            if self.silence_frames > 25:
+                 self.brownian_pos *= 0.95
+            
             # 3. Compound Sine Sway
             t = self.global_time
             sway_f1 = np.sin(t * 0.04) * 0.002
