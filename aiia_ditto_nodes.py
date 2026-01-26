@@ -62,6 +62,8 @@ try:
         # This avoids assuming 'libs' is a resolvable package
         from stream_pipeline_offline import StreamSDK
         from core.atomic_components.cfg import parse_cfg
+        import core.atomic_components.audio2motion as a2m_debug
+        print(f"[AIIA Debug] audio2motion loaded from: {a2m_debug.__file__}")
     DITTO_AVAILABLE = True
 except ImportError as e:
     logging.error(f"Failed to import Ditto libs: {e}")
