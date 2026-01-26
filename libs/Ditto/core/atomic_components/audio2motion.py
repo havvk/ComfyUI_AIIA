@@ -204,7 +204,10 @@ class Audio2Motion:
         
         if self.vad_timeline is not None:
              lookahead = self.vad_timeline[idx : idx + 50]
-             has_upcoming_speech = len(lookahead) > 0 and np.max(lookahead) > 0.1
+             # [v1.9.400] Disable Lookahead in Offline Mode
+             # We want the system to enter 'Idle Return' immediately when silence starts, instead of waiting.
+             # has_upcoming_speech = len(lookahead) > 0 and np.max(lookahead) > 0.1
+             has_upcoming_speech = False
         
         # We store the state for pressure selection in __call__
         self.is_talking_state = is_currently_talking or has_upcoming_speech
@@ -376,12 +379,12 @@ class Audio2Motion:
         # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
         # We pull Position and Pose (0:201) to the anchor in IDLE.
         # Index 201 (Jaw) is EXCLUDED so the AI always has full control of expressions.
-        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.50
+        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.80
         anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
              diff = target_pressure - self.persistent_pressure
-             move = np.clip(diff, -0.004, 0.004) 
+             move = np.clip(diff, -0.01, 0.01) 
              self.persistent_pressure += move
              
              # Apply pressure strictly to Position + Pose (0:201)
@@ -423,7 +426,7 @@ class Audio2Motion:
              # [v1.9.221] CONDITIONAL DECAY
              if not getattr(self, "is_talking_state", False):
                   # Only decay during IDLE (silence) to return character to anchor
-                  self.warp_decay *= 0.96 
+                  self.warp_decay *= 0.95 
              else:
                   # During SPEECH, keep alignment 100% static to prevent 'sliding'
                   pass # warp_decay stays at 1.0 (or current value)
