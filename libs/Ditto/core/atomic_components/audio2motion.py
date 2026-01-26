@@ -140,11 +140,7 @@ class Audio2Motion:
         self.reset_seed_offset = 0  # [v1.9.220] Initialize for seed variety
         self.clean_kp_cond = self.s_kp_cond.copy() # [v1.9.223] The "Unwarped" latent state
         
-        
-        # [DEBUG] NUCLEAR OPTION: FORCE CRASH TO REVEAL PATH
-        print(f"I AM LOADING FROM: {os.path.abspath(__file__)}")
-        raise RuntimeError(f"VERIFYING LOAD PATH: {os.path.abspath(__file__)}")
-
+        print(f"[Ditto] DEBUG: Running audio2motion from {os.path.abspath(__file__)}")
         print("[Ditto] PHYSICS ENGINE: MEAN-REVERTING (OU Process) LOADED. Runaway Drift Impossible.")
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
@@ -435,7 +431,7 @@ class Audio2Motion:
              # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.400). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.401 - PHYSICS FIXED). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose + Translation Full: 0:202)
         if self.warp_decay > 0.001:
