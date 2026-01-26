@@ -420,36 +420,37 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
-        # [v1.9.504] DIRECT OUTPUT OVERWRITE (The "Nuclear Option")
-        # Problem: Even with gravity 0.50, the AI model (LMDM) still hallucinates drift during silence.
-        # Solution: We Bypass the AI entirely during Procedural Idle.
-        # We FORCE the output to be the interpolated path to Reference.
+        # [v1.9.505] HYBRID OVERWRITE (Head Locked, Eyes Alive)
+        # We Force the Head (0:202) to return to Reference.
+        # But we KEEP the AI's Expression (202:) so it can blink/breathe naturally.
         if do_procedural_idle:
               # Calculate Interpolated Pose for this entire batch (step_len frames)
-              # Start: self.last_kp_frame (from previous batch)
-              # End: target_idle_pose (Reference + Breath)
-              
-              # Generate frames
               f_start = self.last_kp_frame
               steps = pred_kp_seq.shape[1]
               overwritten_seq = []
               
-              current_pos = f_start
+              current_pos = f_start.copy() # Important: Copy to avoid mutating last_kp_frame state
               
-              # Use faster return speed (0.10) to ensure we hit reference quickly
+              # Return Speed 0.10 (Fast Glide to Reference)
               return_speed = 0.10
               
               for i in range(steps):
-                   # Interpolate
+                   # Interpolate entire vector first
                    current_pos = current_pos * (1.0 - return_speed) + target_idle_pose * return_speed
-                   overwritten_seq.append(current_pos)
+                   # Store ONLY the Pose part (0:202)
+                   # We will splice this into pred_kp_seq later
+                   overwritten_seq.append(current_pos[:, :, :202])
               
-              # Stack and replace pred_kp_seq
-              # Shape: [1, steps, dim]
-              pred_kp_seq = np.concatenate(overwritten_seq, axis=1)
+              # Stack interpolated poses
+              # Shape: [1, steps, 202]
+              fixed_head = np.concatenate(overwritten_seq, axis=1)
               
-              # Since we are forcing the pose to be Reference-Relative, the Anchor is irrelevant.
-              # We disable the "Pressure" logic for this batch to avoid double-counting.
+              # Inject into Prediction (Hybrid)
+              # Head (0:202) -> Forced to Reference
+              # Exp (202:)  -> AI Generated (Blinking/Micro-expression)
+              pred_kp_seq[:, :, :202] = fixed_head
+              
+              # Disable pressure logic since Head is already forced
               pass
 
         # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
@@ -496,7 +497,7 @@ class Audio2Motion:
              # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.504 - DIRECT OVERWRITE). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.505 - HYBRID OVERWRITE). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose + Translation Full: 0:202)
         if self.warp_decay > 0.001:
