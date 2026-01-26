@@ -756,43 +756,41 @@ class AIIA_DittoSampler:
             # Only applied when alpha < 1.0.
             
             idle_amp = 7.0 
-            DECAY_FRAMES = 25 # ~1.0s
             
-            # [v1.9.605] Active Trajectory Planner (Global Envelope)
-            # To prevent "Snap to Reference" when speech starts, we must fade out the 
-            # procedural motion well BEFORE the speech onset (Lookahead Anticipation).
+            # [v1.9.710] Continuous Vitality Planner (Distance-to-Boundary Envelope)
+            # Instead of a simple inverse of speech, we calculate an envelope based on 
+            # the distance to the nearest speech boundary (onset/offset).
+            # This allows vitality to return during long speech segments while protecting the "Snap" at edges.
             
-            # 1. Base Idle Mask (inverted alpha)
-            idle_mask = 1.0 - dataset_alpha
-            idle_mask = np.clip(idle_mask, 0.0, 1.0)
+            # 1. Identify Boundaries
+            # Using target_alpha (raw 0/1 VAD) to find start/end of speech blocks.
+            boundaries = np.where(np.diff(target_alpha, prepend=target_alpha[0]) != 0)[0].tolist()
+            if 0 not in boundaries: boundaries.insert(0, 0)
+            if (num_frames - 1) not in boundaries: boundaries.append(num_frames - 1)
             
-            # 2. Anticipation Fade Out (Backward Pass)
-            # Ensures motion reaches 0.0 BEFORE speech starts.
-            FADE_FRAMES = 25.0
-            decay_step = 1.0 / FADE_FRAMES
-            
-            curr_val = 1.0
-            for i in range(num_frames - 1, -1, -1):
-                if dataset_alpha[i] > 0.01: # Speech active (or attacking)
-                    curr_val = 0.0
-                else:
-                    curr_val = min(idle_mask[i], curr_val + decay_step)
-                idle_mask[i] = curr_val
-
-            # 3. Recovery Fade In (Forward Pass)
-            # Ensures motion ramps up slowly AFTER speech ends.
-            curr_val = 0.0
+            # 2. Compute Distance to Nearest Boundary for each frame
+            envelope = np.zeros(num_frames, dtype=np.float32)
             for i in range(num_frames):
-                if dataset_alpha[i] > 0.01:
-                    curr_val = 0.0
-                else:
-                    curr_val = min(idle_mask[i], curr_val + decay_step)
-                idle_mask[i] = curr_val
-
-            # 4. Apply Procedural Motion
+                # Distance to the nearest boundary
+                d = min(abs(i - b) for b in boundaries)
+                
+                # Ramp Settings
+                # Silence Recovery: 25 frames (1.0s)
+                # Speech Recovery: 100 frames (4.0s) - User preferred 4s for long speech
+                is_speech = target_alpha[i] > 0.5
+                ramp_scale = 100.0 if is_speech else 25.0
+                
+                # Calculate local weight (0.0 at boundary, ramping to target)
+                weight = min(1.0, d / ramp_scale)
+                
+                # Peak Vitality: Silence=1.0, Speech=0.6 (Keep speech motion slightly lower)
+                target_peak = 0.6 if is_speech else 1.0
+                envelope[i] = weight * target_peak
+            
+            # 3. Apply Procedural Motion
             for i in range(num_frames):
                 alpha = float(dataset_alpha[i])
-                weight = float(idle_mask[i]) # The smooth envelope
+                weight = float(envelope[i]) # The progressive vitality envelope
                 
                 info_dict = {}
                 
