@@ -466,10 +466,10 @@ class StreamSDK:
                                       # [v1.9.400] STITCHER RESET (Fix Onset Jump)
                                       # We must clear the Stitcher's expression buffer so it doesn't 
                                       # smooth the new speech with the old silence (closed mouth).
-                                      if hasattr(self.motion_stitch, 'exp_buffer'):
-                                           self.motion_stitch.exp_buffer = []
-                                           self.motion_stitch.last_speaking_exp = None
-                                           print(f"  > Stitcher Buffer Cleared.")
+                                      # if hasattr(self.motion_stitch, "exp_buffer"):
+                                           # self.motion_stitch.exp_buffer = []
+                                           # self.motion_stitch.last_speaking_exp = None
+                                           # print(f"  > Stitcher Buffer Cleared.")
                                  
                                  silence_frames_count = 0
                                  # Handle trailing

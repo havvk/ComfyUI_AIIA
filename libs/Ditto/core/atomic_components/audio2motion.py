@@ -393,17 +393,19 @@ class Audio2Motion:
         # so that the very first batch of speech is identified as "Talking".
         if reset:
             # RESET random seed for lip-sync consistency
-            if seed is not None:
-                self.reset_seed_offset = self.clip_idx % 1000
-                offset_seed = seed + self.reset_seed_offset
-                torch.manual_seed(offset_seed)
-                torch.cuda.manual_seed(offset_seed)
-                torch.cuda.manual_seed_all(offset_seed)
+            # RESET random seed for lip-sync consistency
+            # [v1.9.507] Disabled Seed Reset to prevent jitter at onset
+            # if seed is not None:
+            #     self.reset_seed_offset = self.clip_idx % 1000
+            #     offset_seed = seed + self.reset_seed_offset
+            #     torch.manual_seed(offset_seed)
+            #     torch.cuda.manual_seed(offset_seed)
+            #     torch.cuda.manual_seed_all(offset_seed)
             
             self.silence_frames = 0
             self.is_talking_state = True
             # self.persistent_pressure = 0.0 # Release positional pull instantly -> CHANGED: Let it decay naturally (v1.9.400 Fix)
-            print(f"[Ditto] Speech Onset Engagement (v1.9.224). Seed Offset={self.reset_seed_offset} | Pressure Retained: {self.persistent_pressure:.2f}")
+            print(f"[Ditto] Speech Onset Engagement (v1.9.224). Silence Counter Reset. | Pressure Retained: {self.persistent_pressure:.2f}")
         else:
             self.silence_frames += step_len
 
@@ -423,20 +425,33 @@ class Audio2Motion:
         # [v1.9.505] HYBRID OVERWRITE (Head Locked, Eyes Alive)
         # We Force the Head (0:202) to return to Reference.
         # But we KEEP the AI's Expression (202:) so it can blink/breathe naturally.
+        
+        # Define the idle condition (Silence > 5 frames)
+        do_procedural_idle = (self.silence_frames > 5)
+        # Target is the Reference Pose (s_kp_cond)
+        target_idle_pose = self.s_kp_cond.reshape(1, 1, -1)
+        
         if do_procedural_idle:
               # Calculate Interpolated Pose for this entire batch (step_len frames)
               f_start = self.last_kp_frame
               steps = pred_kp_seq.shape[1]
               overwritten_seq = []
               
-              current_pos = f_start.copy() # Important: Copy to avoid mutating last_kp_frame state
+              if f_start is None:
+                   # Fallback if we haven't processed any speech yet
+                   current_pos = target_idle_pose.copy()
+              else:
+                   current_pos = f_start.copy() # Important: Copy to avoid mutating last_kp_frame state
               
-              # Return Speed 0.10 (Fast Glide to Reference)
-              return_speed = 0.10
+              # [v1.9.509] HARD LOCK TEST (User Request)
+              # Objective: Prove we have absolute control over silence trajectory.
+              # Logic: Force Head (0:202) to be EXACTLY the Reference Pose. No interpolation.
+              print(f"[Ditto] SILENCE HARD LOCK ENGAGED. Reference Pose Enforced.")
               
               for i in range(steps):
-                   # Interpolate entire vector first
-                   current_pos = current_pos * (1.0 - return_speed) + target_idle_pose * return_speed
+                   # HARD LOCK: No interpolation. Just stick to target.
+                   current_pos = target_idle_pose.copy()
+                   
                    # Store ONLY the Pose part (0:202)
                    # We will splice this into pred_kp_seq later
                    overwritten_seq.append(current_pos[:, :, :202])
@@ -451,7 +466,12 @@ class Audio2Motion:
               pred_kp_seq[:, :, :202] = fixed_head
               
               # Disable pressure logic since Head is already forced
-              pass
+              # [v1.9.508] DISABLE WARP ADDITION
+              # acts to kill the "Double Warp" (Violent Rotation) issue.
+              # Since f_start is already warped (Screen Space), and we interpolate to Reference,
+              # we do NOT want to add the warp offset again.
+              self.warp_decay = 0.0
+              self.warp_offset[:] = 0.0
 
         # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
         # We pull Position and Pose (0:201) to the anchor in IDLE.
@@ -464,14 +484,21 @@ class Audio2Motion:
 
         anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
-        for f in range(pred_kp_seq.shape[1]):
-             diff = target_pressure - self.persistent_pressure
-             move = np.clip(diff, -0.01, 0.01) 
-             self.persistent_pressure += move
-             
-             # Apply pressure strictly to Position + Pose (0:201)
-             curr_p = self.persistent_pressure
-             pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
+        # [v1.9.510] NOISE LEAK FIX
+        # Only apply pressure/brownian noise if NOT in Procedural Idle.
+        # This guarantees absolute stillness when locked.
+        if not do_procedural_idle:
+             for f in range(pred_kp_seq.shape[1]):
+                  diff = target_pressure - self.persistent_pressure
+                  move = np.clip(diff, -0.01, 0.01) 
+                  self.persistent_pressure += move
+                  
+                  # Apply pressure strictly to Position + Pose (0:201)
+                  curr_p = self.persistent_pressure
+                  pred_kp_seq[0, f, 0:201] = pred_kp_seq[0, f, 0:201] * (1.0 - curr_p) + anchor_p * curr_p
+        else:
+             # Force pressure to 0 so it doesn't "resume" with high pressure later
+             self.persistent_pressure = 0.0
              
         # Fusion Sequence
         # [v1.9.221] NON-DECAY SPEECH WARP
@@ -495,9 +522,12 @@ class Audio2Motion:
              # New offset = physical gap. 
              # This gap now accounts for the jump from (IdleAnchor) to (SpeechAI).
              # Since it's calculated in coordinate space, it effectively heals the snap.
-             self.warp_offset = actual_last - target_entry
-             self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.505 - HYBRID OVERWRITE). Offset={np.abs(self.warp_offset).mean():.4f}")
+             # [v1.9.507] WARP RESET DISABLED
+             # Rely on Smooth Procedural Idle return instead of snapping.
+             # self.warp_offset = actual_last - target_entry
+             # self.warp_decay = 1.0 # Engage full power
+             # print(f"[Ditto Warp] Speech Onset Aligned (v1.9.505 - HYBRID OVERWRITE). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Onset Alignment Skipped (Smooth Transition).")
 
         # Apply Warp (Pose + Translation Full: 0:202)
         if self.warp_decay > 0.001:
