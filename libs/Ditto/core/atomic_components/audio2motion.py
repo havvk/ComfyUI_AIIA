@@ -401,7 +401,8 @@ class Audio2Motion:
         if reset or res_kp_seq is None:
              # [v1.9.400] INSTANT PRESSURE RELEASE
              # Kill residual IDLE anchor pull-force immediately to prevent 'Hard Reset' feeling.
-             # self.persistent_pressure = 0.0 -> CHANGED: Let it decay (Fix Teleport)
+             # We rely 100% on Warp Offset to bridge the gap continuity.
+             self.persistent_pressure = 0.0
 
              # actual_last is the physical tail of our history
              actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
