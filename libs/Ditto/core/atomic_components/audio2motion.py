@@ -140,7 +140,11 @@ class Audio2Motion:
         self.reset_seed_offset = 0  # [v1.9.220] Initialize for seed variety
         self.clean_kp_cond = self.s_kp_cond.copy() # [v1.9.223] The "Unwarped" latent state
         
-        print(f"[Ditto] DEBUG: Running audio2motion from {os.path.abspath(__file__)}")
+        
+        # [DEBUG] NUCLEAR OPTION: FORCE CRASH TO REVEAL PATH
+        print(f"I AM LOADING FROM: {os.path.abspath(__file__)}")
+        raise RuntimeError(f"VERIFYING LOAD PATH: {os.path.abspath(__file__)}")
+
         print("[Ditto] PHYSICS ENGINE: MEAN-REVERTING (OU Process) LOADED. Runaway Drift Impossible.")
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
