@@ -319,14 +319,15 @@ class Audio2Motion:
                      self.look_up_timer = 0
 
             gravity_vec = np.ones_like(last_pose) * 0.05
+            
+            # [v1.9.502] Gravity Boost for Procedural Idle
+            # If we are in "Planned Path" mode, we want the head to follow the path STRICTLY.
+            # 0.05 is too weak (head trails behind). 0.50 forces compliance.
+            if do_procedural_idle:
+                 gravity_vec = np.ones_like(last_pose) * 0.50
+
             if self.is_recovering:
-                # [v1.9.158] Decoupled Gravity
-                # Pitch (Vertical) gets high gravity to prevent looking up
                 g_p = 0.80 if self.look_up_timer > 100 else 0.60
-                
-                # [v1.9.400] MOVED to Hysteresis: Gentle Safe Correction
-                # We removed the active sharp push here to prevent teleportation.
-                
                 gravity_vec[0, 1:67] = g_p
             # [v1.9.223] CLEAN SPACE INTEGRATION
             # We update self.clean_kp_cond to be the next latent state.
@@ -416,7 +417,8 @@ class Audio2Motion:
         # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
         # We pull Position and Pose (0:201) to the anchor in IDLE.
         # Index 201 (Jaw) is EXCLUDED so the AI always has full control of expressions.
-        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.80
+        # [v1.9.502] Reduced Pressure 0.8 -> 0.4
+        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.40
         anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
@@ -482,15 +484,9 @@ class Audio2Motion:
         # Store for next batch
         self.last_kp_frame = res_kp_seq[:, -1:]
         
-        # [v1.9.153] Anchor Suppression Logic:
-        if self.is_recovering:
-            self.brownian_pos = (self.brownian_pos * 0.7).astype(np.float32)
-            if self.clip_idx % 5 == 0:
-                 print(f"[Postural] Anchor Resetting... (Dist={np.abs(self.brownian_pos[0, 1:67]).mean():.4f})")
-        else:
-            # Normal speech persistence: anchor follows AI slowly to prevent rubber-banding
-            target_drift = (self.last_kp_frame - self.s_kp_cond).squeeze()
-            self.brownian_pos = (self.brownian_pos * 0.9 + target_drift * 0.1).astype(np.float32)
+        # [v1.9.502] ZOMBIE CODE PERMANENTLY DELETED.
+        # (This space previously contained lines 450-457 which caused infinite drift)
+        pass
 
         self.clip_idx += 1
 
