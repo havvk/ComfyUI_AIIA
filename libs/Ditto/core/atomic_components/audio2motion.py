@@ -468,15 +468,10 @@ class Audio2Motion:
         # Store for next batch
         self.last_kp_frame = res_kp_seq[:, -1:]
         
-        # [v1.9.153] Anchor Suppression Logic:
-        if self.is_recovering:
-            self.brownian_pos = (self.brownian_pos * 0.7).astype(np.float32)
-            if self.clip_idx % 5 == 0:
-                 print(f"[Postural] Anchor Resetting... (Dist={np.abs(self.brownian_pos[0, 1:67]).mean():.4f})")
-        else:
-            # Normal speech persistence: anchor follows AI slowly to prevent rubber-banding
-            target_drift = (self.last_kp_frame - self.s_kp_cond).squeeze()
-            self.brownian_pos = (self.brownian_pos * 0.9 + target_drift * 0.1).astype(np.float32)
+        # [v1.9.153] ZOMBIE CODE DELETED. 
+        # This was causing the "Head Drooping" / "Runaway Drift" by overriding the Mean-Reverting Physics.
+        # It was accumulating drift from the previous frame into brownian_pos.
+        pass
 
         self.clip_idx += 1
 
