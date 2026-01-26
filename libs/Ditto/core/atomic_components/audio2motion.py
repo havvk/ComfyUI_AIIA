@@ -258,10 +258,12 @@ class Audio2Motion:
                 # if self.look_up_timer > 100:
                 #     new_drift[0, 1:67] += 0.0045 
             # [v1.9.400] Refactored to Mean-Reverting Process (Ornstein-Uhlenbeck)
-            # We remove momentum integration to prevent ANY possibility of runaway drift.
-            # pos = pos * decay + noise
-            # This guarantees the noise hovers around 0.0 with a restoring force.
             self.brownian_pos = self.brownian_pos * 0.96 + new_drift
+            
+            if self.clip_idx % 10 == 0:
+                 print(f"[Ditto Debug] Step {self.clip_idx} | DriftInput: Mean={np.abs(new_drift).mean():.6f} Max={np.abs(new_drift).max():.6f} | Pos: Mean={np.abs(self.brownian_pos).mean():.6f}")
+
+            # [v1.9.400] Stronger Center Decay during silence
             
             # [v1.9.400] Stronger Center Decay during silence
             if self.silence_frames > 25:
