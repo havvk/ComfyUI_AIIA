@@ -460,8 +460,16 @@ class StreamSDK:
                              else:
                                  # onset_idx == 0. We are at Onset.
                                  if silence_frames_count >= min_silence_for_reset:
-                                     do_reset = True
+                                      do_reset = True
                                      print(f"[Ditto] Speech Onset at Frame {idx}. RESET triggered (Silence: {silence_frames_count}).")
+                                    
+                                     # [v1.9.400] STITCHER RESET (Fix Onset Jump)
+                                     # We must clear the Stitcher's expression buffer so it doesn't 
+                                     # smooth the new speech with the old silence (closed mouth).
+                                     if hasattr(motion_stitcher, 'exp_buffer'):
+                                          motion_stitcher.exp_buffer = []
+                                          motion_stitcher.last_speaking_exp = None
+                                          print(f"  > Stitcher Buffer Cleared.")
                                  
                                  silence_frames_count = 0
                                  # Handle trailing
