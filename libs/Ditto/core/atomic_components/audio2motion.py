@@ -258,7 +258,8 @@ class Audio2Motion:
             # During deep silence, we want the Anchor to slowly return to the absolute reference (0,0,0)
             # so that the next speech onset starts from a "Clean State" near the reference photo.
             if self.silence_frames > 25:
-                 self.brownian_pos *= 0.95
+                 self.brownian_momentum *= 0.5 # Kill velocity fast
+                 self.brownian_pos *= 0.90     # Pull position back fast
             
             # 3. Compound Sine Sway
             t = self.global_time
