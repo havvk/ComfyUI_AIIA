@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import os
 from ..models.lmdm import LMDM
 
 
@@ -139,9 +138,6 @@ class Audio2Motion:
         self.persistent_pressure = 0.60 # [v1.9.199] Persistent state for smooth transition
         self.reset_seed_offset = 0  # [v1.9.220] Initialize for seed variety
         self.clean_kp_cond = self.s_kp_cond.copy() # [v1.9.223] The "Unwarped" latent state
-        
-        print(f"[Ditto] DEBUG: Running audio2motion from {os.path.abspath(__file__)}")
-        print("[Ditto] PHYSICS ENGINE: MEAN-REVERTING (OU Process) LOADED. Runaway Drift Impossible.")
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         # [v1.9.208] Robust Streaming Fusion Fix
@@ -230,45 +226,71 @@ class Audio2Motion:
         # 5. Postural Auto-Correction Logic [REPLACED by v1.9.160 STATIC + v1.9.162 PREDICTIVE]
 
         if self.fix_kp_cond == 0:  # 不重置
-            # 1. Silence Intensity Boost
-            boost_factor = 1.0
-            if self.silence_frames > 50:
-                boost_factor = min(1.6, 1.0 + (self.silence_frames - 50) * 0.004)
-            
-            # [v1.9.400] Stability Fix: Reduced noise by 80%
-            noise_scale = 0.001 * boost_factor
-            noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
-            
-            # 2. Brownian Momentum Logic
-            drift_scales = np.ones_like(last_pose) * (0.0001 * boost_factor)
-            new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
-            
-            # [v1.9.160] Reverted Uward Nudge Bias
-            
-            # [v1.9.164] Predictive Physics Push
-            # [v1.9.401] DISABLED: This accumulation causes runaway drift (Head Droop).
-            # new_drift[0, 1:67] += self.current_push
-            
-            # [v1.9.190] Decoupled Axis Force (Active Chin-Tuck)
-            if self.is_recovering:
-                # Add drift (push down/forward) to recover from high-tilt
-                pass
-                # new_drift[0, 1:67] += 0.001 # [v1.9.400] Gentle Nudge (was 0.0045)
-                # new_drift[0, 67:202] -= 0.0005 
-                # if self.look_up_timer > 100:
-                #     new_drift[0, 1:67] += 0.0045 
-            # [v1.9.400] Refactored to Mean-Reverting Process (Ornstein-Uhlenbeck)
-            self.brownian_pos = self.brownian_pos * 0.96 + new_drift
-            
-            if self.clip_idx % 10 == 0:
-                 print(f"[Ditto Debug] Step {self.clip_idx} | DriftInput: Mean={np.abs(new_drift).mean():.6f} Max={np.abs(new_drift).max():.6f} | Pos: Mean={np.abs(self.brownian_pos).mean():.6f}")
+            # [v1.9.500] PROCEDURAL IDLE (Deterministic Interpolation)
+            # User Request: "Calculate path... slow speed... stable change."
+            # We bypass drift accumulating physics during silence and use a planned path.
 
-            # [v1.9.400] Stronger Center Decay during silence
+            do_procedural_idle = False
+            target_idle_pose = self.s_kp_cond # Reference Photo
             
-            # [v1.9.400] Stronger Center Decay during silence
+            # Identify "Long Silence" to trigger this mode
             if self.silence_frames > 25:
-                 self.brownian_pos *= 0.90
+                 do_procedural_idle = True
             
+            if do_procedural_idle:
+                 # Override standard noise/brownian logic
+                 noise = np.zeros_like(last_pose) 
+                 new_drift = np.zeros_like(last_pose)
+                 
+                 # Procedural Path:
+                 # Current Position -> Reference Position
+                 # Speed: Very Slow (lerp factor 0.02)
+                 # Behavior: Breath pattern around Reference
+                 
+                 t = self.global_time
+                 # Gentle Sine Breath (Pitch/Yaw)
+                 breath_pitch = np.sin(t * 0.03) * 0.002
+                 breath_yaw = np.sin(t * 0.04) * 0.003
+                 
+                 # Current Anchor Position
+                 current_anchor = self.brownian_pos
+                 
+                 # Target: Zero (Reference) + Breath
+                 target_anchor = np.zeros_like(current_anchor)
+                 target_anchor[0, 1:67] += breath_pitch # Pitch
+                 target_anchor[0, 67:133] += breath_yaw # Yaw
+                 
+                 # Interpolate: Move 2% towards target per frame
+                 # This guarantees "Slow and Stable"
+                 self.brownian_pos = current_anchor * 0.98 + target_anchor * 0.02
+                 
+            else:
+                 # [Legacy 322e065 Logic] Active Physics for Speech/Short Pauses
+                 # 1. Silence Intensity Boost
+                 boost_factor = 1.0
+                 if self.silence_frames > 50:
+                     boost_factor = min(1.6, 1.0 + (self.silence_frames - 50) * 0.004)
+                 
+                 noise_scale = 0.001 * boost_factor
+                 noise = np.random.normal(0, noise_scale, last_pose.shape).astype(np.float32)
+                 
+                 drift_scales = np.ones_like(last_pose) * (0.0001 * boost_factor)
+                 new_drift = np.random.normal(0, drift_scales, last_pose.shape).astype(np.float32)
+                 
+                 # [v1.9.164] Predictive Physics Push (Restored from 322e065)
+                 new_drift[0, 1:67] += self.current_push
+                 
+                 # [v1.9.190] Decoupled Axis Force (Active Chin-Tuck)
+                 if self.is_recovering:
+                     new_drift[0, 1:67] += 0.001 
+                     new_drift[0, 67:202] -= 0.0005 
+                     if self.look_up_timer > 100:
+                         new_drift[0, 1:67] += 0.0045 
+                 
+                 self.brownian_momentum = self.brownian_momentum * 0.85 + new_drift
+                 self.brownian_pos += self.brownian_momentum
+
+            # Shared Logic
             # 3. Compound Sine Sway
             t = self.global_time
             sway_f1 = np.sin(t * 0.04) * 0.002
@@ -279,16 +301,16 @@ class Audio2Motion:
             
             # 4. Micro-Brow Jitters (Expression Indices 15, 16, 18 -> offset 202)
             brow_indices = [217, 218, 220]
-            brow_jitter = np.random.normal(0, 0.015 * boost_factor, len(brow_indices)).astype(np.float32)
+            brow_jitter = np.random.normal(0, 0.015, len(brow_indices)).astype(np.float32)
             
             # 5. Postural Auto-Correction Logic [v1.9.150 Robustness Patch]
             # Shorten silence threshold to 25 frames (1.0 second) to combat jittery audio
             # Only trigger if notably higher than source (> 2.0 deg Higher -> Delta < -2.0)
             if self.silence_frames >= 25 and self.delta_p < -2.0:
-                self.look_up_timer += step_len
-                if self.look_up_timer > 50:
-                     tag = "[纠偏活跃]" if self.look_up_timer <= 100 else "[极限强驱]"
-                     print(f"{tag} Frame {real_f} | Delta={self.delta_p:+.2f}° | Applying Pressure.")
+                 self.look_up_timer += step_len
+                 if self.look_up_timer > 50:
+                      tag = "[纠偏活跃]" if self.look_up_timer <= 100 else "[极限强驱]"
+                      print(f"{tag} Frame {real_f} | Delta={self.delta_p:+.2f}° | Applying Pressure.")
             else:
                 # ONLY RESET if we are back in the safe zone (Hysteresis)
                 if self.delta_p >= -0.5:
@@ -296,10 +318,7 @@ class Audio2Motion:
                           print(f"[Postural] Recovery Finished (Delta={self.delta_p:+.2f}°). Timer reset.")
                      self.look_up_timer = 0
 
-            # [v1.9.400] Strong Gravity during Silence
-            # We must pull the AI's conditioning history strongly towards the reference
-            # to prevent the model from "hallucinating" a droop or drift over time.
-            gravity_vec = np.ones_like(last_pose) * 0.20 # Increased from 0.05
+            gravity_vec = np.ones_like(last_pose) * 0.05
             if self.is_recovering:
                 # [v1.9.158] Decoupled Gravity
                 # Pitch (Vertical) gets high gravity to prevent looking up
@@ -376,12 +395,7 @@ class Audio2Motion:
             
             self.silence_frames = 0
             self.is_talking_state = True
-            
-            # [v1.9.400] INSTANT PRESSURE RELEASE (Visual Fix)
-            # MUST be done here, BEFORE the pressure loop runs, 
-            # so the first frame of speech is NOT pulled to the anchor.
-            self.persistent_pressure = 0.0 
-            
+            # self.persistent_pressure = 0.0 # Release positional pull instantly -> CHANGED: Let it decay naturally (v1.9.400 Fix)
             print(f"[Ditto] Speech Onset Engagement (v1.9.224). Seed Offset={self.reset_seed_offset} | Pressure Retained: {self.persistent_pressure:.2f}")
         else:
             self.silence_frames += step_len
@@ -402,8 +416,7 @@ class Audio2Motion:
         # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
         # We pull Position and Pose (0:201) to the anchor in IDLE.
         # Index 201 (Jaw) is EXCLUDED so the AI always has full control of expressions.
-        # [v1.9.402] Reduced Pressure 0.8 -> 0.4 to prevent "Hard Lock" to Reference.
-        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.40
+        target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.80
         anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
@@ -423,6 +436,10 @@ class Audio2Motion:
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
         if reset or res_kp_seq is None:
+             # [v1.9.400] INSTANT PRESSURE RELEASE
+             # Kill residual IDLE anchor pull-force immediately to prevent 'Hard Reset' feeling.
+             # self.persistent_pressure = 0.0 -> CHANGED: Let it decay (Fix Teleport)
+
              # actual_last is the physical tail of our history
              actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
              
@@ -435,7 +452,7 @@ class Audio2Motion:
              # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.402 - DECAY RESTORED). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.400). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose + Translation Full: 0:202)
         if self.warp_decay > 0.001:
@@ -448,22 +465,12 @@ class Audio2Motion:
                   # Only decay during IDLE (silence) to return character to anchor
                   self.warp_decay *= 0.95 
              else:
-                  # [v1.9.402] Restored Decay for Speech
-                  # We MUST decay the warp to release the head from the "Reference Lock".
-                  # A slow decay (0.96) prevents the "Violent Slide" while ensuring the AI
-                  # eventually gains full control of the head pose.
-                  self.warp_decay *= 0.96
-        
-        # [AIIA Diagnostic v1.9.401] Trajectory Logger
-        if self.clip_idx % 10 == 0 or reset:
-             t_state = "RESET" if reset else ("TALK" if getattr(self, "is_talking_state", False) else "IDLE")
-             drift_mag = np.abs(self.brownian_pos).mean() * 1000
-             press = self.persistent_pressure
-             print(f"[Traj] {t_state} Frame {self.clip_idx} | DriftMag={drift_mag:.2f} | Press={press:.2f} | WarpDecay={self.warp_decay:.2f}") 
-
-        if self.warp_decay < 0.001:
-             self.warp_decay = 0.0
-             self.warp_offset = np.zeros_like(self.warp_offset)
+                  # During SPEECH, keep alignment 100% static to prevent 'sliding'
+                  pass # warp_decay stays at 1.0 (or current value)
+             
+             if self.warp_decay < 0.001:
+                  self.warp_decay = 0.0
+                  self.warp_offset = np.zeros_like(self.warp_offset)
 
         if res_kp_seq is None:
             res_kp_seq = pred_kp_seq[:, :step_len]
@@ -475,10 +482,15 @@ class Audio2Motion:
         # Store for next batch
         self.last_kp_frame = res_kp_seq[:, -1:]
         
-        # [v1.9.153] ZOMBIE CODE DELETED. 
-        # This was causing the "Head Drooping" / "Runaway Drift" by overriding the Mean-Reverting Physics.
-        # It was accumulating drift from the previous frame into brownian_pos.
-        pass
+        # [v1.9.153] Anchor Suppression Logic:
+        if self.is_recovering:
+            self.brownian_pos = (self.brownian_pos * 0.7).astype(np.float32)
+            if self.clip_idx % 5 == 0:
+                 print(f"[Postural] Anchor Resetting... (Dist={np.abs(self.brownian_pos[0, 1:67]).mean():.4f})")
+        else:
+            # Normal speech persistence: anchor follows AI slowly to prevent rubber-banding
+            target_drift = (self.last_kp_frame - self.s_kp_cond).squeeze()
+            self.brownian_pos = (self.brownian_pos * 0.9 + target_drift * 0.1).astype(np.float32)
 
         self.clip_idx += 1
 
