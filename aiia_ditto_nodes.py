@@ -755,12 +755,44 @@ class AIIA_DittoSampler:
             # Micro-Motion: Inject subtle head sway during silence to prevent "dead static" look.
             # Only applied when alpha < 1.0.
             
-            idle_amp = 4.5 
+            idle_amp = 7.0 
             DECAY_FRAMES = 25 # ~1.0s
             
+            # [v1.9.605] Active Trajectory Planner (Global Envelope)
+            # To prevent "Snap to Reference" when speech starts, we must fade out the 
+            # procedural motion well BEFORE the speech onset (Lookahead Anticipation).
+            
+            # 1. Base Idle Mask (inverted alpha)
+            idle_mask = 1.0 - dataset_alpha
+            idle_mask = np.clip(idle_mask, 0.0, 1.0)
+            
+            # 2. Anticipation Fade Out (Backward Pass)
+            # Ensures motion reaches 0.0 BEFORE speech starts.
+            FADE_FRAMES = 25.0
+            decay_step = 1.0 / FADE_FRAMES
+            
+            curr_val = 1.0
+            for i in range(num_frames - 1, -1, -1):
+                if dataset_alpha[i] > 0.01: # Speech active (or attacking)
+                    curr_val = 0.0
+                else:
+                    curr_val = min(idle_mask[i], curr_val + decay_step)
+                idle_mask[i] = curr_val
+
+            # 3. Recovery Fade In (Forward Pass)
+            # Ensures motion ramps up slowly AFTER speech ends.
+            curr_val = 0.0
+            for i in range(num_frames):
+                if dataset_alpha[i] > 0.01:
+                    curr_val = 0.0
+                else:
+                    curr_val = min(idle_mask[i], curr_val + decay_step)
+                idle_mask[i] = curr_val
+
+            # 4. Apply Procedural Motion
             for i in range(num_frames):
                 alpha = float(dataset_alpha[i])
-                alpha = max(0.0, min(1.0, alpha))
+                weight = float(idle_mask[i]) # The smooth envelope
                 
                 info_dict = {}
                 
@@ -768,69 +800,31 @@ class AIIA_DittoSampler:
                 if alpha < 0.999:
                      info_dict["vad_alpha"] = alpha
                 
-                # Idle Micro-Motion (Head Control)
-                # Blend in motion as alpha decreases (silence increases)
-                # We use (1.0 - alpha) as the weight for idle motion.
-                if alpha < 1.0:
-                    # [v1.9.193] Strict Silence Restriction: Taper off breathing faster to avoid interference
-                    idle_weight = max(0.0, 1.0 - alpha * 2.5)
-                    
-                    t = i / 25.0
-                    # [Update v1.9.107] Restricted Pitch Sway:
-                    # Slow (0.3Hz) and shallow (-2.0 to +0.5 range) to simulate breathing.
-                    d_pitch = (math.sin(t * 0.3) - 0.5) * 1.5 * idle_weight
-                    
-                    # Yaw: Slower Base (0.6) + Faster Overlay (2.2)
-                    d_yaw = (math.sin(t * 0.6) * 0.8 + math.sin(t * 2.2) * 0.2) * idle_amp * idle_weight
-                    # Roll: Tiny tilted breathing (0.4 frequency)
-                    d_roll = math.cos(t * 0.4) * 0.5 * idle_weight 
-                    
-                    # Store for continuity
-                    self.last_idle_pitch = d_pitch
-                    self.last_idle_yaw = d_yaw
-                    self.last_idle_roll = d_roll
-                    self.sway_decay_remaining = DECAY_FRAMES
-                    
-                    # [Feature v1.9.49] Mouth Micro-Motion (Breathing)
-                    # Refined: Positive-Only sine wave to prevent "Pursed Lips" (Negative Offset).
-                    # Slower freq (2.0) and lower amp (0.004 peak) for subtlety.
-                    # Formula: (sin + 1) * 0.5 ranges 0 to 1. 
-                    # Max opening = 0.005 * idle_weight.
-                    d_mouth = (math.sin(t * 2.0) + 1.0) * 0.5 * 0.005 * idle_weight
-                    
-                    # We need to ADD this to the global controls (hd_rot_p, etc.)
-                    
-                    # We need to ADD this to the global controls (hd_rot_p, etc.)
-                    # But ctrl_info overrides per frame.
-                    # Since we want to ADD to the global setting, we must include the global base + offset.
-                    # Wait, MotionStitch typically MERGES: default_kwargs filled first, then run_kwargs override.
-                    # So if we put 'delta_pitch' here, it OVERRIDES the global one.
-                    # So we must add global + offset here.
-                    
-                    info_dict["delta_pitch"] = hd_rot_p + d_pitch
-                    info_dict["delta_yaw"] = hd_rot_y + d_yaw
-                    info_dict["delta_roll"] = hd_rot_r + d_roll
-                    info_dict["delta_mouth"] = d_mouth # Additive offset for mouth
-                else:
-                    # [v1.9.107/109] Sway Continuity: Decay last idle offset during speech onset
-                    if self.sway_decay_remaining > 0:
-                        decay_alpha = self.sway_decay_remaining / float(DECAY_FRAMES)
-                        info_dict["delta_pitch"] = hd_rot_p + self.last_idle_pitch * decay_alpha
-                        info_dict["delta_yaw"] = hd_rot_y + self.last_idle_yaw * decay_alpha
-                        info_dict["delta_roll"] = hd_rot_r + self.last_idle_roll * decay_alpha
-                        self.sway_decay_remaining -= 1
-                    else:
-                        # Standard Speech (No idle influence)
-                        info_dict["delta_pitch"] = hd_rot_p
-                        info_dict["delta_yaw"] = hd_rot_y
-                        info_dict["delta_roll"] = hd_rot_r
-                        # Reset memory once decayed
-                        self.last_idle_pitch = 0.0
-                        self.last_idle_yaw = 0.0
-                        self.last_idle_roll = 0.0
-                    
+                # Active Micro-Motion
+                # Only apply if we have weight (Silence or transition)
+                # Note: During Speech, weight=0.0, so d_pitch=0.0 -> Result = global hd_rot_p.
+                
+                t = i / 25.0
+                
+                # [v1.9.700] Tuned Vitality (Faster/Stronger)
+                d_pitch = (math.sin(t * 0.45) - 0.5) * 1.5 * weight
+                d_yaw = (math.sin(t * 0.75) * 0.8 + math.sin(t * 2.5) * 0.2) * idle_amp * weight
+                d_roll = math.cos(t * 0.5) * 0.5 * weight
+                
+                # Mouth Breathing (uses same weight or separate?)
+                # Breathing should probably use the same weight to fade out during speech.
+                d_mouth = (math.sin(t * 2.5) + 1.0) * 0.5 * 0.005 * weight
+
+                # Apply to dict
+                info_dict["delta_pitch"] = hd_rot_p + d_pitch
+                info_dict["delta_yaw"] = hd_rot_y + d_yaw
+                info_dict["delta_roll"] = hd_rot_r + d_roll
+                info_dict["delta_mouth"] = d_mouth
+                
                 if info_dict:
                      ctrl_info[i] = info_dict
+                    
+
         
         # Blink Settings
         delta_eye_open_n = 0 if chk_eye_blink else -1
