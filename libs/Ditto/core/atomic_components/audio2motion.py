@@ -138,6 +138,8 @@ class Audio2Motion:
         self.persistent_pressure = 0.60 # [v1.9.199] Persistent state for smooth transition
         self.reset_seed_offset = 0  # [v1.9.220] Initialize for seed variety
         self.clean_kp_cond = self.s_kp_cond.copy() # [v1.9.223] The "Unwarped" latent state
+        
+        print("[Ditto] PHYSICS ENGINE: MEAN-REVERTING (OU Process) LOADED. Runaway Drift Impossible.")
 
     def _fuse(self, res_kp_seq, pred_kp_seq, override_alpha=None, step_len=None):
         # [v1.9.208] Robust Streaming Fusion Fix
