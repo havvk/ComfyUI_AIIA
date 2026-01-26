@@ -420,11 +420,47 @@ class Audio2Motion:
 
         pred_kp_seq = self.lmdm(self.kp_cond, aud_cond, self.sampling_timesteps)
         
+        # [v1.9.504] DIRECT OUTPUT OVERWRITE (The "Nuclear Option")
+        # Problem: Even with gravity 0.50, the AI model (LMDM) still hallucinates drift during silence.
+        # Solution: We Bypass the AI entirely during Procedural Idle.
+        # We FORCE the output to be the interpolated path to Reference.
+        if do_procedural_idle:
+              # Calculate Interpolated Pose for this entire batch (step_len frames)
+              # Start: self.last_kp_frame (from previous batch)
+              # End: target_idle_pose (Reference + Breath)
+              
+              # Generate frames
+              f_start = self.last_kp_frame
+              steps = pred_kp_seq.shape[1]
+              overwritten_seq = []
+              
+              current_pos = f_start
+              
+              # Use faster return speed (0.10) to ensure we hit reference quickly
+              return_speed = 0.10
+              
+              for i in range(steps):
+                   # Interpolate
+                   current_pos = current_pos * (1.0 - return_speed) + target_idle_pose * return_speed
+                   overwritten_seq.append(current_pos)
+              
+              # Stack and replace pred_kp_seq
+              # Shape: [1, steps, dim]
+              pred_kp_seq = np.concatenate(overwritten_seq, axis=1)
+              
+              # Since we are forcing the pose to be Reference-Relative, the Anchor is irrelevant.
+              # We disable the "Pressure" logic for this batch to avoid double-counting.
+              pass
+
         # [v1.9.219] JAW-ISOLATED PRESSURE (0:201)
         # We pull Position and Pose (0:201) to the anchor in IDLE.
         # Index 201 (Jaw) is EXCLUDED so the AI always has full control of expressions.
         # [v1.9.502] Reduced Pressure 0.8 -> 0.4
+        # [v1.9.504] Disable pressure during Procedural Idle (since we already forced the pose)
         target_pressure = 0.0 if getattr(self, "is_talking_state", False) else 0.40
+        if do_procedural_idle:
+             target_pressure = 0.0
+
         anchor_p = (self.s_kp_cond + self.brownian_pos)[0, 0:201]
         
         for f in range(pred_kp_seq.shape[1]):
@@ -460,7 +496,7 @@ class Audio2Motion:
              # Since it's calculated in coordinate space, it effectively heals the snap.
              self.warp_offset = actual_last - target_entry
              self.warp_decay = 1.0 # Engage full power
-             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.503 - RAMPED IDLE). Offset={np.abs(self.warp_offset).mean():.4f}")
+             print(f"[Ditto Warp] Speech Onset Aligned (v1.9.504 - DIRECT OVERWRITE). Offset={np.abs(self.warp_offset).mean():.4f}")
 
         # Apply Warp (Pose + Translation Full: 0:202)
         if self.warp_decay > 0.001:
