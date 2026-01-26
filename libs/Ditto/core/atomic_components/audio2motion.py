@@ -364,7 +364,12 @@ class Audio2Motion:
             
             self.silence_frames = 0
             self.is_talking_state = True
-            # self.persistent_pressure = 0.0 # Release positional pull instantly -> CHANGED: Let it decay naturally (v1.9.400 Fix)
+            
+            # [v1.9.400] INSTANT PRESSURE RELEASE (Visual Fix)
+            # MUST be done here, BEFORE the pressure loop runs, 
+            # so the first frame of speech is NOT pulled to the anchor.
+            self.persistent_pressure = 0.0 
+            
             print(f"[Ditto] Speech Onset Engagement (v1.9.224). Seed Offset={self.reset_seed_offset} | Pressure Retained: {self.persistent_pressure:.2f}")
         else:
             self.silence_frames += step_len
@@ -405,11 +410,6 @@ class Audio2Motion:
         fuse_r2_s = pred_kp_seq.shape[1] - step_len - self.fuse_length
 
         if reset or res_kp_seq is None:
-             # [v1.9.400] INSTANT PRESSURE RELEASE
-             # Kill residual IDLE anchor pull-force immediately to prevent 'Hard Reset' feeling.
-             # We rely 100% on Warp Offset to bridge the gap continuity.
-             self.persistent_pressure = 0.0
-
              # actual_last is the physical tail of our history
              actual_last = res_kp_seq[:, -1:] if res_kp_seq is not None else self.s_kp_cond.reshape(1, 1, -1)
              
