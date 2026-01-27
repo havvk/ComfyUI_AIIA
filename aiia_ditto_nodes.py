@@ -499,6 +499,7 @@ class AIIA_DittoSampler:
                 "hd_rot_p": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "hd_rot_y": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
                 "hd_rot_r": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
+                "speech_pitch": ("FLOAT", {"default": 0.0, "min": -20.0, "max": 20.0, "step": 1.0, "tooltip": "Pitch offset applied ONLY during speech. Positive = Look Down, Negative = Look Up."}),
                 "mouth_amp": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
                 "blink_amp": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
                 "relax_on_silence": ("BOOLEAN", {"default": True, "label_on": "Relax Face on Silence", "label_off": "Disabled"}),
@@ -522,7 +523,7 @@ class AIIA_DittoSampler:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Ditto"
 
-    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, mouth_amp, blink_amp, relax_on_silence, ref_threshold, blink_mode, speech_only_blink, silence_release, mouth_smoothing, save_to_disk, seed, prompt=None, unique_id=None):
+    def generate(self, pipe, ref_image, audio, sampling_steps, fps, crop_scale, emo, drive_eye, chk_eye_blink, smo_k_d, hd_rot_p, hd_rot_y, hd_rot_r, speech_pitch, mouth_amp, blink_amp, relax_on_silence, ref_threshold, blink_mode, speech_only_blink, silence_release, mouth_smoothing, save_to_disk, seed, prompt=None, unique_id=None):
         # pipe is the dict we returned in Loader
         master_sdk = pipe["sdk"]
         cfg_pkl = pipe["cfg_pkl"]
@@ -760,7 +761,8 @@ class AIIA_DittoSampler:
             # [v1.9.710] Continuous Vitality Planner (Distance-to-Boundary Envelope)
             # Instead of a simple inverse of speech, we calculate an envelope based on 
             # the distance to the nearest speech boundary (onset/offset).
-            # This allows vitality to return during long speech segments while protecting the "Snap" at edges.
+            # This allows vitality to safely fade out near boundaries (preventing snap/drift)
+            # while keeping the character alive during both Silence AND Speech.
             
             # 1. Identify Boundaries
             # Using target_alpha (raw 0/1 VAD) to find start/end of speech blocks.
@@ -773,18 +775,21 @@ class AIIA_DittoSampler:
             for i in range(num_frames):
                 # Distance to the nearest boundary
                 d = min(abs(i - b) for b in boundaries)
-                
-                # Ramp Settings
-                # Silence Recovery: 25 frames (1.0s)
-                # Speech Recovery: 100 frames (4.0s) - User preferred 4s for long speech
                 is_speech = target_alpha[i] > 0.5
-                ramp_scale = 100.0 if is_speech else 25.0
+                
+                if is_speech:
+                    # Speech Recovery: How fast vitality returns after starting to speak.
+                    # Was 100.0 (4s) -> Too static during short sentences.
+                    # Changed to 25.0 (1.0s) -> Vitality returns quickly but smoothly.
+                    ramp_scale = 25.0
+                    target_peak = 0.8 # [Tweaked] Increase speech vitality (was 0.6)
+                else:
+                    # Silence Recovery:
+                    ramp_scale = 25.0 # 1.0s
+                    target_peak = 1.0 # Full idle motion
                 
                 # Calculate local weight (0.0 at boundary, ramping to target)
                 weight = min(1.0, d / ramp_scale)
-                
-                # Peak Vitality: Silence=1.0, Speech=0.6 (Keep speech motion slightly lower)
-                target_peak = 0.6 if is_speech else 1.0
                 envelope[i] = weight * target_peak
             
             # 3. Apply Procedural Motion
@@ -799,22 +804,36 @@ class AIIA_DittoSampler:
                      info_dict["vad_alpha"] = alpha
                 
                 # Active Micro-Motion
-                # Only apply if we have weight (Silence or transition)
-                # Note: During Speech, weight=0.0, so d_pitch=0.0 -> Result = global hd_rot_p.
+                # weight is 0.0 at boundaries (Ensures return to Reference Pose)
+                # weight ramps up to target_peak (0.8/1.0) in middle of segments.
                 
                 t = i / 25.0
                 
-                # [v1.9.700] Tuned Vitality (Faster/Stronger)
-                d_pitch = (math.sin(t * 0.45) - 0.5) * 1.5 * weight
-                d_yaw = (math.sin(t * 0.75) * 0.8 + math.sin(t * 2.5) * 0.2) * idle_amp * weight
-                d_roll = math.cos(t * 0.5) * 0.5 * weight
+                # [v1.9.99] Tuned Vitality Formula
+                # Removed -0.5 bias from pitch (was looking down).
+                # Added faster roll component.
+                # Increased high-freq yaw component for speech.
                 
-                # Mouth Breathing (uses same weight or separate?)
-                # Breathing should probably use the same weight to fade out during speech.
+                d_pitch = (math.sin(t * 0.45)) * 1.5 * weight
+                
+                # Yaw: Mix slow sway (breathing) and faster micro-movements
+                # idle_amp default is 7.0 degrees.
+                d_yaw = (math.sin(t * 0.75) * 0.7 + math.sin(t * 2.5) * 0.3) * idle_amp * weight
+                
+                # Roll: Add slight complexity
+                d_roll = (math.cos(t * 0.5) * 0.5 + math.sin(t * 1.5) * 0.2) * weight
+                
+                # Mouth Breathing (uses same weight)
                 d_mouth = (math.sin(t * 2.5) + 1.0) * 0.5 * 0.005 * weight
+                
+                # [v1.9.99] Speech Pitch Bias (User Control)
+                # Allows correcting "head too high/low" during speech.
+                # Smoothly fades in/out based on VAD alpha (mouth opening).
+                # Positive = Look Down, Negative = Look Up
+                speech_pitch_offset = speech_pitch * alpha
 
                 # Apply to dict
-                info_dict["delta_pitch"] = hd_rot_p + d_pitch
+                info_dict["delta_pitch"] = hd_rot_p + d_pitch + speech_pitch_offset
                 info_dict["delta_yaw"] = hd_rot_y + d_yaw
                 info_dict["delta_roll"] = hd_rot_r + d_roll
                 info_dict["delta_mouth"] = d_mouth
