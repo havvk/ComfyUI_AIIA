@@ -172,11 +172,19 @@ class AIIA_GenerateSpeakerSegments:
         if isinstance(audio, list) and len(audio) > 0:
             audio = audio[0]
 
-        if not isinstance(audio, dict) or "waveform" not in audio or "sample_rate" not in audio:
-            return self._create_error_output(f"音频格式不匹配 (预期为 dict, 实际为 {type(audio)})")
+        # Try to treat as a dictionary or object with waveform/sample_rate
+        try:
+            waveform = audio["waveform"]
+            sample_rate = audio["sample_rate"]
+        except (KeyError, TypeError):
+             try:
+                 waveform = getattr(audio, "waveform", None)
+                 sample_rate = getattr(audio, "sample_rate", None)
+             except:
+                 waveform, sample_rate = None, None
 
-        waveform = audio["waveform"]
-        sample_rate = audio["sample_rate"]
+        if waveform is None or sample_rate is None:
+            return self._create_error_output(f"音频数据格式错误: 无法获取 waveform 或 sample_rate (输入类型: {type(audio)})")
 
         # Ensure waveform is a tensor and sample_rate is a number
         if not isinstance(waveform, torch.Tensor) or not isinstance(sample_rate, (int, float)):
