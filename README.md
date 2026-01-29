@@ -1018,7 +1018,8 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 **[v1.7.0 New]** 无需 STT，直接从生成过程中提取精准时间轴。
 
 - **Input**:
-  - `segments_info`: 来自 `AIIA Dialogue TTS` 的输出。
+  - `segments_info`: 来自 `AIIA Dialogue TTS` 或 `AIIA Generate Segments` 的输出。
+  - `calibration_info` (可选): **[v1.10.2 新增]** 接入 `AIIA Generate Speaker Segments` 的输出。用于将估算的时间轴自动“吸附”到真实的 VAD 语音活动区间，解决 VibeVoice 等批处理引擎的时间轴偏移问题。
 - **Output**:
   - `SRT`: 通用字幕格式。
   - `ASS`: 高级排版字幕格式 (自动区分角色颜色)。
@@ -1026,7 +1027,18 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
   - **CosyVoice**: 使用生成时的精确时长。
   - **VibeVoice**: 使用**智能插值算法 (Smart Interpolation)**，根据字符长度自动计算长音频段内的单句时间轴。
 
-#### 4.4 AIIA Subtitle Preview (字幕预览)
+#### 4.4 AIIA Subtitle to Segments (字幕转分段)
+
+**[v1.10.3 New]** 将现有的 SRT/ASS 字幕文件转换为 `segments_info` 格式，以便进行时间轴重新校准。
+
+- **Input**:
+  - `subtitle_text`: SRT 或 ASS 格式的文本内容。
+  - `subtitle_path` (可选): 字幕文件的本地路径（如果提供，将优先读取文件）。
+- **Output**:
+  - `segments_info`: 标准化的 JSON 字符串，可直接输入到 `AIIA Subtitle Gen`。
+- **用途**: 结合 `Subtitle Gen` 的 `calibration_info` 输入，可以将**旧的、不准的字幕**自动对齐到**新的、精准的音轨**上。
+
+#### 4.5 AIIA Subtitle Preview (字幕预览)
 
 **[v1.7.1 New]** 实时校验音画同步效果。
 

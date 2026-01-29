@@ -748,7 +748,30 @@ class AIIA_DittoSampler:
                     current_alpha = max(target, current_alpha - release_step)
                 
                 dataset_alpha[i] = current_alpha
-                
+
+            # [v1.10.0] Independent Head Pitch Envelope
+            # We want the head to nod/tilt SLOWLY when speech starts (0.8s),
+            # while the mouth opens INSTANTLY (0.08s).
+            # So we calculate a second alpha specifically for the head pitch offset.
+            
+            head_pitch_alpha = np.zeros(num_frames, dtype=np.float32)
+            current_head_alpha = target_alpha[0]
+            # [v1.10.0 Tuned] Faster attack to catch initial head lift.
+            # 0.05 (0.8s) was too slow -> Head lifted before correction.
+            # 0.20 (0.2s) is balanced -> Fast enough to clamp lift, smooth enough to avoid snap.
+            head_attack_step = 0.20 
+            # Use same release step as mouth to return to neutral naturally
+            
+            for i in range(num_frames):
+                target = target_alpha[i]
+                if target > current_head_alpha:
+                     # Slow Attack
+                     current_head_alpha = min(target, current_head_alpha + head_attack_step)
+                else:
+                     # Same Release
+                     current_head_alpha = max(target, current_head_alpha - release_step)
+                head_pitch_alpha[i] = current_head_alpha
+
             # Log VAD stats for debugging
             non_silence_count = np.count_nonzero(target_alpha)
             logging.info(f"[Ditto] VAD Stats: {non_silence_count}/{num_frames} frames active. RMS Mean: {np.mean(rms):.4f}, Min: {np.min(rms):.4f}, Max: {np.max(rms):.4f}")
@@ -830,7 +853,8 @@ class AIIA_DittoSampler:
                 # Allows correcting "head too high/low" during speech.
                 # Smoothly fades in/out based on VAD alpha (mouth opening).
                 # Positive = Look Down, Negative = Look Up
-                speech_pitch_offset = speech_pitch * alpha
+                # [v1.10.0] Use smoothed alpha for head to avoid "snap" motion.
+                speech_pitch_offset = speech_pitch * head_pitch_alpha[i]
 
                 # Apply to dict
                 info_dict["delta_pitch"] = hd_rot_p + d_pitch + speech_pitch_offset

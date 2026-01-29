@@ -18,6 +18,7 @@ class AIIA_Subtitle_Gen:
                 "save_file": ("BOOLEAN", {"default": False, "label_on": "Save to Disk", "label_off": "Memory Only"}),
             },
             "optional": {
+                "calibration_info": ("WHISPER_CHUNKS",),
                 "ass_style": ("STRING", {"default": "Default", "multiline": False}),
                 "filename_prefix": ("STRING", {"default": "aiia_subtitle"}),
             }
@@ -29,12 +30,21 @@ class AIIA_Subtitle_Gen:
     CATEGORY = "AIIA/Subtitle"
     OUTPUT_NODE = True
 
-    def generate_subtitle(self, segments_info, format="SRT", save_file=False, ass_style="Default", filename_prefix="aiia_subtitle"):
+    def generate_subtitle(self, segments_info, format="SRT", save_file=False, ass_style="Default", filename_prefix="aiia_subtitle", calibration_info=None):
         try:
             segments = json.loads(segments_info)
         except Exception as e:
             print(f"[AIIA Subtitle] Error parsing segments JSON: {e}")
             return ("", "")
+
+        if not isinstance(segments, list):
+            print("[AIIA Subtitle] Segments info must be a list of dicts.")
+            return ("", "")
+
+        # --- Subtitle Calibration (v1.10.2) ---
+        if calibration_info and "chunks" in calibration_info:
+            print(f"[AIIA Subtitle] Calibrating {len(segments)} segments using {len(calibration_info['chunks'])} high-precision chunks.")
+            segments = self._calibrate_segments(segments, calibration_info["chunks"])
 
         if not isinstance(segments, list):
             print("[AIIA Subtitle] Segments info must be a list of dicts.")
@@ -169,6 +179,72 @@ class AIIA_Subtitle_Gen:
         
         return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
 
+    def _calibrate_segments(self, segments, chunks):
+        """
+        Calibrate estimated segments using high-precision VAD chunks.
+        Algorithm: Iterative sequence matching with overlap weight.
+        """
+        calibrated = []
+        chunk_idx = 0
+        num_chunks = len(chunks)
+        
+        for i, seg in enumerate(segments):
+            seg_start = seg["start"]
+            seg_end = seg["end"]
+            
+            best_match_start = -1
+            best_match_end = -1
+            
+            # Find chunks that overlap with this segment
+            # We look ahead starting from chunk_idx to maintain sequential order
+            matched_chunks = []
+            
+            # Tolerance window: How far we can look for a matching chunk if no direct overlap
+            # 1.0s is reasonable for VibeVoice drift
+            lookahead_limit = 5 
+            
+            find_idx = chunk_idx
+            while find_idx < num_chunks and len(matched_chunks) < lookahead_limit:
+                chunk = chunks[find_idx]
+                c_start, c_end = chunk["timestamp"]
+                
+                # Check Overlap
+                overlap = min(seg_end, c_end) - max(seg_start, c_start)
+                
+                # If significant overlap, or if it's the very first chunk and we are near start
+                if overlap > 0.05 or (i == 0 and find_idx == 0 and abs(c_start - seg_start) < 2.0):
+                    matched_chunks.append(find_idx)
+                
+                # Break if we've passed the segment significantly
+                if c_start > seg_end + 1.0: 
+                    break
+                find_idx += 1
+            
+            if matched_chunks:
+                # Use the range of all matched chunks
+                # This handles cases where one sentence is split into multiple VAD chunks due to pauses
+                min_s = chunks[matched_chunks[0]]["timestamp"][0]
+                max_e = chunks[matched_chunks[-1]]["timestamp"][1]
+                
+                # Update chunk_idx to favor the next chunk for subsequent segments
+                chunk_idx = matched_chunks[-1] + 1
+                
+                seg["start"] = round(min_s, 3)
+                seg["end"] = round(max_e, 3)
+            else:
+                # No match found within window, keep original estimated timing but 
+                # ensure it doesn't overlap backwards after calibration
+                if i > 0:
+                    prev_end = segments[i-1]["end"]
+                    if seg["start"] < prev_end:
+                         diff = prev_end - seg["start"]
+                         seg["start"] += diff
+                         seg["end"] += diff
+            
+            calibrated.append(seg)
+            
+        return calibrated
+
     def _format_ass_time(self, seconds):
         # H:MM:SS.cs (centiseconds)
         td = datetime.timedelta(seconds=seconds)
@@ -224,12 +300,128 @@ class AIIA_Subtitle_Preview:
 
         return {"ui": {"text": [subtitle_content], "audio": [audio_info] if audio_info else []}}
 
+class AIIA_Subtitle_To_Segments:
+    """Convert SRT/ASS text or files into segments_info format."""
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "subtitle_text": ("STRING", {"multiline": True, "default": ""}),
+            },
+            "optional": {
+                "subtitle_path": ("STRING", {"default": ""}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("segments_info",)
+    FUNCTION = "convert"
+    CATEGORY = "AIIA/Subtitle"
+
+    def convert(self, subtitle_text, subtitle_path=""):
+        import re
+        content = subtitle_text.strip()
+        
+        # If path provided and exists, read it
+        if subtitle_path and os.path.exists(subtitle_path):
+            try:
+                with open(subtitle_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read().strip()
+            except Exception as e:
+                print(f"[AIIA Subtitle Convert] Error reading file: {e}")
+
+        if not content:
+            return (json.dumps([]),)
+
+        segments = []
+        
+        # Detect Format
+        if "Dialogue:" in content:
+            segments = self._parse_ass(content)
+        elif " --> " in content:
+            segments = self._parse_srt(content)
+        else:
+            print("[AIIA Subtitle Convert] Unknown format or empty content.")
+
+        return (json.dumps(segments, ensure_ascii=False, indent=2),)
+
+    def _parse_srt(self, text):
+        import re
+        segments = []
+        # Pattern: Index, Time, Text
+        # Handles \n and \r\n
+        blocks = re.split(r'\n\s*\n', text.strip())
+        for block in blocks:
+            lines = [l.strip() for l in block.split('\n') if l.strip()]
+            if len(lines) < 2: continue
+            
+            # Find time line
+            time_match = re.search(r'(\d+:\d+:\d+,\d+) --> (\d+:\d+:\d+,\d+)', lines[0] if "-->" in lines[0] else lines[1])
+            if not time_match: continue
+            
+            start_s = self._time_to_seconds(time_match.group(1), "srt")
+            end_s = self._time_to_seconds(time_match.group(2), "srt")
+            
+            # Content is everything after the time line
+            idx = 1 if "-->" in lines[0] else 2
+            content = " ".join(lines[idx:])
+            
+            segments.append({
+                "start": round(start_s, 3),
+                "end": round(end_s, 3),
+                "text": content,
+                "speaker": "Unknown"
+            })
+        return segments
+
+    def _parse_ass(self, text):
+        import re
+        segments = []
+        # Look for Dialogue: lines
+        for line in text.split('\n'):
+            if line.startswith("Dialogue:"):
+                # Dialogue: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+                parts = line.split(',', 9)
+                if len(parts) < 10: continue
+                
+                start_s = self._time_to_seconds(parts[1].strip(), "ass")
+                end_s = self._time_to_seconds(parts[2].strip(), "ass")
+                speaker = parts[4].strip() or "Unknown"
+                content = parts[9].strip().replace('\\N', ' ').replace('\\n', ' ')
+                # Clean ASS tags like {\pos(x,y)}
+                content = re.sub(r'\{.*?\}', '', content)
+                
+                segments.append({
+                    "start": round(start_s, 3),
+                    "end": round(end_s, 3),
+                    "text": content,
+                    "speaker": speaker
+                })
+        return segments
+
+    def _time_to_seconds(self, t_str, fmt):
+        try:
+            if fmt == "srt":
+                # HH:MM:SS,mmm
+                h, m, s_ms = t_str.split(':')
+                s, ms = s_ms.split(',')
+                return int(h)*3600 + int(m)*60 + int(s) + int(ms)/1000.0
+            else:
+                # H:MM:SS.cc
+                h, m, s_cs = t_str.split(':')
+                s, cs = s_cs.split('.')
+                return int(h)*3600 + int(m)*60 + int(s) + int(cs)/100.0
+        except:
+            return 0.0
+
 NODE_CLASS_MAPPINGS = {
     "AIIA_Subtitle_Gen": AIIA_Subtitle_Gen,
-    "AIIA_Subtitle_Preview": AIIA_Subtitle_Preview
+    "AIIA_Subtitle_Preview": AIIA_Subtitle_Preview,
+    "AIIA_Subtitle_To_Segments": AIIA_Subtitle_To_Segments
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AIIA_Subtitle_Gen": "📝 AIIA Subtitle Generation",
-    "AIIA_Subtitle_Preview": "🎬 AIIA Subtitle Preview"
+    "AIIA_Subtitle_Preview": "🎬 AIIA Subtitle Preview",
+    "AIIA_Subtitle_To_Segments": "🔄 AIIA Subtitle to Segments"
 }
