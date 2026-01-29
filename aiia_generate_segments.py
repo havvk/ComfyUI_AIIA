@@ -165,11 +165,25 @@ class AIIA_GenerateSpeakerSegments:
         if not model_path: 
             return self._create_error_output(f"模型 '{e2e_backend_model}' 文件路径无效")
         
-        if audio is None or not isinstance(audio, dict) or \
-           "waveform" not in audio or not isinstance(audio["waveform"], torch.Tensor) or \
-           "sample_rate" not in audio or not isinstance(audio["sample_rate"], int) or \
-           audio["waveform"].ndim < 1:
-            return self._create_error_output("音频数据缺失或无效")
+        if audio is None:
+             return self._create_error_output("音频数据为 None")
+             
+        # Handle cases where audio might be passed as a single-item list
+        if isinstance(audio, list) and len(audio) > 0:
+            audio = audio[0]
+
+        if not isinstance(audio, dict) or "waveform" not in audio or "sample_rate" not in audio:
+            return self._create_error_output(f"音频格式不匹配 (预期为 dict, 实际为 {type(audio)})")
+
+        waveform = audio["waveform"]
+        sample_rate = audio["sample_rate"]
+
+        # Ensure waveform is a tensor and sample_rate is a number
+        if not isinstance(waveform, torch.Tensor) or not isinstance(sample_rate, (int, float)):
+            return self._create_error_output(f"音频数据类型错误: waveform={type(waveform)}, sample_rate={type(sample_rate)}")
+
+        if waveform.ndim < 1:
+            return self._create_error_output("音频波形维度不足")
 
         # 检查音频长度
         if audio["waveform"].shape[-1] == 0:
