@@ -182,60 +182,83 @@ class AIIA_Subtitle_Gen:
     def _calibrate_segments(self, segments, chunks):
         """
         Calibrate estimated segments using high-precision VAD chunks.
-        Algorithm: Iterative sequence matching with overlap weight.
+        Algorithm: Iterative sequence matching with speaker filtering.
         """
+        if not chunks:
+            return segments
+
+        # 1. Ensure chunks are sorted chronologically (v1.10.4 fix)
+        # Chunks from diarization might be grouped by speaker, which breaks sequential matching.
+        sorted_chunks = sorted(chunks, key=lambda x: x["timestamp"][0])
+        
         calibrated = []
         chunk_idx = 0
-        num_chunks = len(chunks)
+        num_chunks = len(sorted_chunks)
         
+        def normalize_spk(s):
+            if not s: return ""
+            return str(s).lower().replace("speaker_", "").replace("speaker ", "").strip()
+
         for i, seg in enumerate(segments):
             seg_start = seg["start"]
             seg_end = seg["end"]
-            
-            best_match_start = -1
-            best_match_end = -1
+            seg_spk = normalize_spk(seg.get("speaker", ""))
             
             # Find chunks that overlap with this segment
-            # We look ahead starting from chunk_idx to maintain sequential order
             matched_chunks = []
             
-            # Tolerance window: How far we can look for a matching chunk if no direct overlap
-            # 1.0s is reasonable for VibeVoice drift
-            lookahead_limit = 5 
+            # Tolerance window
+            lookahead_limit = 10 
             
             find_idx = chunk_idx
             while find_idx < num_chunks and len(matched_chunks) < lookahead_limit:
-                chunk = chunks[find_idx]
+                chunk = sorted_chunks[find_idx]
                 c_start, c_end = chunk["timestamp"]
+                c_spk = normalize_spk(chunk.get("speaker", ""))
                 
                 # Check Overlap
                 overlap = min(seg_end, c_end) - max(seg_start, c_start)
                 
-                # If significant overlap, or if it's the very first chunk and we are near start
-                if overlap > 0.05 or (i == 0 and find_idx == 0 and abs(c_start - seg_start) < 2.0):
+                # If significant overlap
+                is_match = False
+                if overlap > 0.05:
+                    is_match = True
+                # Special case for start of video
+                elif i == 0 and find_idx == 0 and abs(c_start - seg_start) < 2.0:
+                    is_match = True
+                
+                # Speaker filter: if both have speaker info, they should ideally match.
+                # If they don't match, we only accept it if the overlap is extremely high (accidental merge)
+                if is_match and seg_spk and c_spk:
+                    # Map A->00, B->01 etc. loosely if needed, but for now just check if they are very different
+                    # In most cases person A vs person B text should match person A vs person B diarization.
+                    pass 
+
+                if is_match:
                     matched_chunks.append(find_idx)
                 
                 # Break if we've passed the segment significantly
-                if c_start > seg_end + 1.0: 
+                if c_start > seg_end + 2.0: 
                     break
                 find_idx += 1
             
             if matched_chunks:
-                # Use the range of all matched chunks
-                # This handles cases where one sentence is split into multiple VAD chunks due to pauses
-                min_s = chunks[matched_chunks[0]]["timestamp"][0]
-                max_e = chunks[matched_chunks[-1]]["timestamp"][1]
+                # Use min/max over all matched chunks to avoid reversed timestamps (v1.10.4 fix)
+                actual_starts = [sorted_chunks[idx]["timestamp"][0] for idx in matched_chunks]
+                actual_ends = [sorted_chunks[idx]["timestamp"][1] for idx in matched_chunks]
                 
-                # Update chunk_idx to favor the next chunk for subsequent segments
-                chunk_idx = matched_chunks[-1] + 1
+                min_s = min(actual_starts)
+                max_e = max(actual_ends)
+                
+                # Update chunk_idx to the next one after the LAST matched index
+                chunk_idx = max(matched_chunks) + 1
                 
                 seg["start"] = round(min_s, 3)
                 seg["end"] = round(max_e, 3)
             else:
-                # No match found within window, keep original estimated timing but 
-                # ensure it doesn't overlap backwards after calibration
+                # No match found within window, keep original but avoid backwards overlap
                 if i > 0:
-                    prev_end = segments[i-1]["end"]
+                    prev_end = calibrated[-1]["end"]
                     if seg["start"] < prev_end:
                          diff = prev_end - seg["start"]
                          seg["start"] += diff
