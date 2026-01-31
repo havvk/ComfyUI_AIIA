@@ -237,8 +237,10 @@ class AIIA_Subtitle_Gen:
                 overlap = min(seg_end, c_end) - max(seg_start, c_start)
                 is_overlap = overlap > 0.05
                 # Special case: tiny gap exactly at boundaries or start of video
-                if not is_overlap and i == 0 and find_idx == 0 and abs(c_start - seg_start) < 2.0:
-                    is_overlap = True
+                # [v1.10.6 Fix] Added c_end check to ensure we don't snap to a chunk that ends before the segment starts
+                if not is_overlap and i == 0 and find_idx == 0:
+                    if abs(c_start - seg_start) < 0.5 and c_end > seg_start - 0.1:
+                        is_overlap = True
                 
                 if is_overlap:
                     # Enforce Speaker Identity: only match if it's the winner
