@@ -246,6 +246,53 @@ class AIIA_VibeVoice_TTS:
             print(f"[AIIA Error] Failed to load fallback audio: {e}")
             return None
 
+    def _normalize_roles(self, text):
+        """
+        Detects custom roles (e.g. 'Host A:', 'User:') and normalizes them to 'Speaker N:'.
+        Returns: (normalized_text, role_mapping)
+        """
+        import re
+        lines = text.split('\n')
+        # Matches "Role Name:" at start of line. 
+        # Excludes "Speaker N:" which is already valid.
+        # Limit role name to 30 chars to avoid matching long sentences.
+        role_pattern = re.compile(r'^([^\n:]{1,30}):\s+')
+        speaker_pattern = re.compile(r'^Speaker\s*\d+', re.IGNORECASE)
+        
+        roles_map = {} 
+        next_id = 1
+        normalized_lines = []
+        
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                normalized_lines.append(line)
+                continue
+                
+            match = role_pattern.match(stripped)
+            if match:
+                role_name = match.group(1).strip()
+                
+                # If already standard format, keep it
+                if speaker_pattern.match(role_name):
+                    normalized_lines.append(line)
+                    continue
+                    
+                # Map custom role
+                if role_name not in roles_map:
+                    roles_map[role_name] = next_id
+                    next_id += 1
+                
+                spk_id = roles_map[role_name]
+                # Replace prefix with Speaker N
+                # We reconstruct the line to ensure standard formatting
+                content = stripped[match.end():]
+                normalized_lines.append(f"Speaker {spk_id}: {content}")
+            else:
+                normalized_lines.append(line)
+                
+        return "\n".join(normalized_lines), roles_map
+
     def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, normalize_text, 
                  do_sample, temperature, top_k, top_p, reference_audio=None):
         model = vibevoice_model["model"]
@@ -273,7 +320,15 @@ class AIIA_VibeVoice_TTS:
             text = re.sub(r'(\d+年)\s*[-—–]\s*(\d+年)', r'\1至\2', text)
             text = text.replace('"', '').replace("'", '')
         
-        # Default Speaker Tag
+        # [AIIA v1.10.8] Auto-Normalize Roles (e.g. "Host A:" -> "Speaker 1:")
+        text, role_map = self._normalize_roles(text)
+        if role_map:
+            print(f"[AIIA] Auto-mapped roles: {role_map}")
+            # Warn if user needs more reference audios
+            required_voices = len(role_map)
+            # We don't have ref audio count here yet easily (it's loaded later), but likely user provided list
+        
+        # Default Speaker Tag (if still no speakers detected)
         if not re.search(r'^Speaker\s+\d+\s*:', text, re.IGNORECASE | re.MULTILINE):
             lines = text.split('\n')
             text = "\n".join([f"Speaker 1: {line.strip()}" for line in lines if line.strip()])
