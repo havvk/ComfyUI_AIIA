@@ -201,6 +201,7 @@ class AIIA_Subtitle_Gen:
         for i, seg in enumerate(segments):
             seg_start = seg["start"]
             seg_end = seg["end"]
+            seg_dur = seg_end - seg_start
             
             # --- Speaker-Centric Magic (v1.10.5) ---
             # 1. Find the "Winner Speaker" for this segment based on maximum overlap duration
@@ -242,10 +243,8 @@ class AIIA_Subtitle_Gen:
                     if abs(c_start - seg_start) < 0.5 and c_end > seg_start - 0.1:
                         is_overlap = True
                 
-                if is_overlap:
-                    # Enforce Speaker Identity: only match if it's the winner
-                    if winner_spk is None or c_spk == winner_spk:
-                        matched_chunks.append(find_idx)
+                if is_overlap and (winner_spk is None or c_spk == winner_spk):
+                     matched_chunks.append(find_idx)
                 
                 if c_start > seg_end + 1.5: break
                 find_idx += 1
@@ -259,11 +258,42 @@ class AIIA_Subtitle_Gen:
                 min_s = min(actual_starts)
                 max_e = max(actual_ends)
                 
-                # Update chunk_idx for next segment to the next chunk after our LAST matched one
-                chunk_idx = max(matched_chunks) + 1
+                # [v1.10.7 Fix] Handle Multi-Segment Chunks (Shared Chunk Logic)
+                # If we are reusing a chunk from previous segment, we must start AFTER previous segment
+                new_start = min_s
+                if i > 0:
+                    prev_end = calibrated[-1]["end"]
+                    if prev_end > new_start and prev_end < max_e:
+                        new_start = prev_end
+
+                # Determine if we should consume the chunk or share it
+                # Check if next segment also wants this chunk (overlaps with the tail of this chunk)
+                is_shared = False
+                last_matched_idx = max(matched_chunks)
+                chunk_end_time = sorted_chunks[last_matched_idx]["timestamp"][1]
                 
-                seg["start"] = round(min_s, 3)
-                seg["end"] = round(max_e, 3)
+                # Predicted end for this segment
+                predicted_end = new_start + seg_dur
+                
+                # Only check for sharing if there is significant leftover time in the chunk
+                if chunk_end_time - predicted_end > 0.5 and i + 1 < len(segments):
+                    next_seg = segments[i+1]
+                    # If next segment effectively overlaps the remainder of this chunk
+                    if next_seg["start"] < chunk_end_time:
+                         is_shared = True
+                
+                if is_shared:
+                    # If shared, we limit our end to our duration (trust TTS relative duration)
+                    new_end = predicted_end
+                    # And we DO NOT advance past this chunk, so next segment can pick it up
+                    chunk_idx = last_matched_idx 
+                else:
+                    # If not shared, we consume the full VAD chunk (snap to VAD end)
+                    new_end = max_e
+                    chunk_idx = last_matched_idx + 1
+                
+                seg["start"] = round(new_start, 3)
+                seg["end"] = round(new_end, 3)
             else:
                 # No match found, use fallback logic
                 if i > 0:
