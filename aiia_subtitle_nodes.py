@@ -2,6 +2,7 @@ import json
 import datetime
 import os
 import random
+import re
 import torchaudio
 import folder_paths
 
@@ -158,6 +159,8 @@ class AIIA_Subtitle_Gen:
             start = self._format_ass_time(seg["start"])
             end = self._format_ass_time(seg["end"])
             text = seg["text"].replace("\n", "\\N")
+            # [v1.10.8] Support Markdown Bold (**text**) -> ASS Bold ({\b1}text{\b0})
+            text = re.sub(r'\*\*(.*?)\*\*', r'{\\b1}\1{\\b0}', text)
             speaker = seg.get("speaker", "Unknown")
             # Use the mapped style name
             style_for_event = speaker_map.get(speaker, "Default")
