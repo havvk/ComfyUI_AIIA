@@ -225,12 +225,22 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def _load_fallback_audio(self):
+    def _load_fallback_audio(self, target_name="Female_HQ"):
         import torchaudio
         # 定位 assets 目录 (Shared with Podcast nodes)
         nodes_path = os.path.dirname(os.path.abspath(__file__))
         assets_dir = os.path.join(nodes_path, "assets")
-        path = os.path.join(assets_dir, "seed_female_hq.wav") # Default to female HQ
+        
+        # Consistent mapping with Podcast node
+        filename_map = {
+            "Female_HQ": "seed_female_hq.wav",
+            "Male_HQ": "seed_male_hq.wav",
+            "Female": "seed_female.wav",
+            "Male": "seed_male.wav"
+        }
+        
+        filename = filename_map.get(target_name, "seed_female_hq.wav")
+        path = os.path.join(assets_dir, filename)
         
         if not os.path.exists(path):
             print(f"[AIIA Warning] Fallback seed not found at {path}")
@@ -322,25 +332,36 @@ class AIIA_VibeVoice_TTS:
         
         # [AIIA v1.10.8] Auto-Normalize Roles (e.g. "Host A:" -> "Speaker 1:")
         text, role_map = self._normalize_roles(text)
-        if role_map:
-            print(f"[AIIA] Auto-mapped roles: {role_map}")
-            # Warn if user needs more reference audios
-            required_voices = len(role_map)
-            # We don't have ref audio count here yet easily (it's loaded later), but likely user provided list
+        num_roles = len(role_map) if role_map else 0
         
-        # Default Speaker Tag (if still no speakers detected)
-        if not re.search(r'^Speaker\s+\d+\s*:', text, re.IGNORECASE | re.MULTILINE):
-            lines = text.split('\n')
-            text = "\n".join([f"Speaker 1: {line.strip()}" for line in lines if line.strip()])
+        # Determine unique speakers count from text if no role map (e.g. manual Speaker 1, Speaker 2)
+        if not role_map:
+             # Basic regex count of unique "Speaker N"
+             spk_ids = set(re.findall(r'^Speaker\s+(\d+):', text, re.MULTILINE))
+             num_roles = len(spk_ids) if spk_ids else 1
 
         # Process Reference Audio
         if reference_audio is None:
-            print("[AIIA INFO] No reference audio provided. Loading default fallback audio...")
-            fallback = self._load_fallback_audio()
-            if fallback:
-                reference_audio = fallback
-            else:
-                 raise ValueError("No reference audio provided and fallback audio could not be loaded!")
+            print(f"[AIIA INFO] No reference audio provided. Auto-loading fallbacks for {num_roles} speakers...")
+            reference_audio = []
+            
+            # Simple alternating strategy
+            # Speaker 1 (or Host A) -> Female HQ
+            # Speaker 2 (or Host B) -> Male HQ
+            # Speaker 3 -> Female
+            # Speaker 4 -> Male
+            patterns = ["Female_HQ", "Male_HQ", "Female", "Male"]
+            
+            for i in range(max(num_roles, 1)):
+                target = patterns[i % len(patterns)]
+                fb = self._load_fallback_audio(target)
+                if fb: reference_audio.append(fb)
+                else: 
+                     # Should not happen if assets exist, but fallback to anything
+                     if reference_audio: reference_audio.append(reference_audio[0])
+
+            if not reference_audio:
+                 raise ValueError("Could not load any fallback audio!")
 
         voice_samples = []
         
@@ -349,6 +370,19 @@ class AIIA_VibeVoice_TTS:
             raw_refs = reference_audio
         else:
             raw_refs = [reference_audio]
+        
+        # [AIIA v1.10.9] Smart Pad: If we have more roles than refs, recycle or pad?
+        # If user provided 1 ref but text has 2 speakers, previous behavior: Speaker 2 gets nothing?
+        # VibeVoice processor slices refs[:num_speakers].
+        # If we pad, we can give Speaker 2 the SAME voice, or a fallback?
+        # Usually if user gives 1 ref, they might want cloning for Speaker 1, but what for Speaker 2?
+        # Safest is to Repeat, or maybe Fallback?
+        # Let's Repeat the last ref to avoid errors, assuming 'Cloning' context.
+        # But for distinct roles, users SHOULD provide distinct audios.
+        if len(raw_refs) < num_roles:
+            print(f"[AIIA Warning] Text has {num_roles} roles but only {len(raw_refs)} reference audios. Recycling last audio for remaining speakers.")
+            while len(raw_refs) < num_roles:
+                raw_refs.append(raw_refs[-1])
             
         for ref_item in raw_refs:
             if ref_item is None:
