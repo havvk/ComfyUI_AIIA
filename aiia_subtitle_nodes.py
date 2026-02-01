@@ -122,7 +122,7 @@ class AIIA_Subtitle_Gen:
         # Base Style String Template
         # Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, ...
         # Changes: Bold=1, Outline=2, Shadow=1 for professional look
-        base_style = "Arial,40,{primary_color},&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,2,1,2,10,10,10,1"
+        base_style = "Arial,40,{primary_color},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,10,1"
         
         sorted_speakers = sorted(list(speakers))
         for i, spk in enumerate(sorted_speakers):
