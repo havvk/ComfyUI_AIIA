@@ -201,10 +201,14 @@ class AIIA_Subtitle_Gen:
             if not s: return ""
             return str(s).lower().replace("speaker_", "").replace("speaker ", "").strip()
 
+        # [v1.10.17] Speaker Mapping: Script Identity -> VAD Identity
+        speaker_map = {} # e.g. {"speaker_a": "speaker_00", "speaker_b": "speaker_01"}
+
         for i, seg in enumerate(segments):
             seg_start = seg["start"]
             seg_end = seg["end"]
             seg_dur = seg_end - seg_start
+            seg_spk = normalize_spk(seg.get("speaker"))
             
             # --- Speaker-Centric Magic (v1.10.5) ---
             # 1. Find the "Winner Speaker" for this segment based on maximum overlap duration
@@ -225,9 +229,23 @@ class AIIA_Subtitle_Gen:
                 scan_idx += 1
             
             winner_spk = None
-            if speaker_overlaps:
+            
+            # [v1.10.17] Consistency Logic
+            # If we already know who this Script Speaker maps to, try to find THAT VAD Speaker first.
+            if seg_spk in speaker_map:
+                mapped_vad_spk = speaker_map[seg_spk]
+                # Check if mapped speaker has ANY significant overlap
+                if speaker_overlaps.get(mapped_vad_spk, 0) > 0.1:
+                    winner_spk = mapped_vad_spk
+            
+            # Fallback (First time seeing this speaker OR mapped speaker missing): Max Overlap
+            if winner_spk is None and speaker_overlaps:
                 # Get speaker with most accumulated overlap duration
                 winner_spk = max(speaker_overlaps, key=speaker_overlaps.get)
+            
+            # Update Map
+            if winner_spk and seg_spk:
+                speaker_map[seg_spk] = winner_spk
             
             # 2. Find chunks belonging to the winner spk to use for snapping
             # [v1.10.16] Greedy Speaker Turn Collection: collect all consecutive chunks for winner_spk
