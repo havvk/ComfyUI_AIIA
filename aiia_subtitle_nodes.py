@@ -230,28 +230,50 @@ class AIIA_Subtitle_Gen:
                 winner_spk = max(speaker_overlaps, key=speaker_overlaps.get)
             
             # 2. Find chunks belonging to the winner spk to use for snapping
+            # [v1.10.16] Greedy Speaker Turn Collection: collect all consecutive chunks for winner_spk
             matched_chunks = []
             find_idx = chunk_idx
-            lookahead_count = 0
-            while find_idx < num_chunks and lookahead_count < 15:
+            found_start = False
+            
+            while find_idx < num_chunks:
                 chunk = sorted_chunks[find_idx]
                 c_start, c_end = chunk["timestamp"]
                 c_spk = normalize_spk(chunk.get("speaker", "unknown"))
                 
                 overlap = min(seg_end, c_end) - max(seg_start, c_start)
                 is_overlap = overlap > 0.05
-                # Special case: tiny gap exactly at boundaries or start of video
-                # [v1.10.6 Fix] Added c_end check to ensure we don't snap to a chunk that ends before the segment starts
+                
+                # Case: First segment special snapping
                 if not is_overlap and i == 0 and find_idx == 0:
                     if abs(c_start - seg_start) < 0.5 and c_end > seg_start - 0.1:
                         is_overlap = True
+
+                if not found_start:
+                    # Looking for the first chunk that belongs to our speaker
+                    if is_overlap and (winner_spk is None or c_spk == winner_spk):
+                        matched_chunks.append(find_idx)
+                        found_start = True
+                        if winner_spk is None: winner_spk = c_spk
+                    elif c_start > seg_end + 2.0:
+                        # Way past the estimated end, give up
+                        break
+                else:
+                    # Already started collecting, keep going if it's the same speaker
+                    if c_spk == winner_spk:
+                        # Ensure no massive gap (e.g. 3s) between sentences of a single turn
+                        last_matched_end = sorted_chunks[matched_chunks[-1]]["timestamp"][1]
+                        if c_start - last_matched_end < 3.0:
+                            matched_chunks.append(find_idx)
+                        else:
+                            break
+                    else:
+                        # Encountered a DIFFERENT speaker. Turn ends immediately.
+                        break
                 
-                if is_overlap and (winner_spk is None or c_spk == winner_spk):
-                     matched_chunks.append(find_idx)
-                
-                if c_start > seg_end + 1.5: break
                 find_idx += 1
-                lookahead_count += 1
+                # Limit lookahead for safety
+                if found_start and (find_idx - matched_chunks[0] > 10): break
+                if not found_start and (find_idx - chunk_idx > 20): break
             
             if matched_chunks:
                 # Use min/max over all matched chunks
