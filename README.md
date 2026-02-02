@@ -124,7 +124,7 @@ hf download nvidia/nemo-models diar_sortformer_4spk-v1.nemo --local-dir nemo_mod
 hf download nvidia/nemo-models diar_streaming_sortformer_4spk-v2.1.nemo --local-dir nemo_models
 ```
 
-### 3. 安装本节点套件
+### 4. 安装本节点套件
 
 进入 ComfyUI 的自定义节点目录，然后克隆本仓库：
 
@@ -1147,6 +1147,19 @@ B: 太神奇了！那我们快去生成试试吧！
 
 ---
 
+### 6. 调试与实用工具 (Debug & Utilities)
+
+#### 6.1 文本调试拼接 (Text Debug Splicer)
+
+- **用途**: 方便地将多段文本拼接为一个字符串，支持自定义标题和分隔符，常用于构建和调试复杂的 Prompt 或记录中间结果。
+- **功能**:
+  - **多路输入**: 支持最多 3 路文本输入 (`text_1`~`3`) 和自定义标题 (`title`)。
+  - **灵活分隔**: 内置多种常用分隔符 (换行、分割线等)。
+  - **自动归档**: 支持将拼接结果自动保存为 `.txt` 文件，文件名支持**自定义前缀** (save_prefix)，方便回溯。
+- **输出**: `STRING` (拼接后的文本)。
+
+---
+
 ## ❓ 故障排查
 
 - **错误: "FFmpeg not found" / "NeMo model not found"**
@@ -1161,6 +1174,11 @@ B: 太神奇了！那我们快去生成试试吧！
 ---
 
 ## Changelog
+
+### [1.10.12] - 2026-02-02
+
+- **Debug & Utilities**: 新增 **Text Debug Splicer** 节点。
+  - 支持多路文本拼接、自定义分隔符和自动文件归档。
 
 ### [1.9.0] - 2026-01-20
 
