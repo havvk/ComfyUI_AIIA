@@ -1175,6 +1175,10 @@ B: 太神奇了！那我们快去生成试试吧！
 
 ## Changelog
 
+### [1.10.14] - 2026-02-02
+
+- **Ditto Sampler**: 修复了由于 `comfy.model_management` 接口版本差异导致的 `AttributeError`。
+
 ### [1.10.13] - 2026-02-02
 
 - **Ditto Sampler**: 修复了采样过程中无法正常响应 ComfyUI 中断/取消信号的问题。

@@ -977,11 +977,14 @@ class AIIA_DittoSampler:
              # Replace blocking master_sdk.close() with polling
              import time
              while any(t.is_alive() for t in master_sdk.thread_list):
-                 if comfy.model_management.should_stop():
+                 # [v1.10.14] Safer interruption check (processing_interrupted is the standard ComfyUI API)
+                 should_interrupt = False
+                 if hasattr(comfy.model_management, "processing_interrupted"):
+                     should_interrupt = comfy.model_management.processing_interrupted()
+                 
+                 if should_interrupt:
                      logger.info("[Ditto] Interruption detected. Stopping workers...")
                      master_sdk.stop_event.set()
-                     # Flush queues to unblock workers waiting on put
-                     # (Though we already added timeout in SDK, this is faster)
                      break
                  time.sleep(0.1)
              
