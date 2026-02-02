@@ -279,11 +279,16 @@ class AIIA_Subtitle_Gen:
                 predicted_end = new_start + seg_dur
                 
                 # Only check for sharing if there is significant leftover time in the chunk
+                # AND if the next segment belongs to the same speaker (critical fix v1.10.15)
                 if chunk_end_time - predicted_end > 0.5 and i + 1 < len(segments):
                     next_seg = segments[i+1]
                     # If next segment effectively overlaps the remainder of this chunk
                     if next_seg["start"] < chunk_end_time:
-                         is_shared = True
+                         # [v1.10.15] Ensure speaker match before sharing
+                         current_spk = normalize_spk(seg.get("speaker"))
+                         next_spk = normalize_spk(next_seg.get("speaker"))
+                         if current_spk == next_spk:
+                             is_shared = True
                 
                 if is_shared:
                     # If shared, we limit our end to our duration (trust TTS relative duration)
