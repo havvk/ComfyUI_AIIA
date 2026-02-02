@@ -5,6 +5,7 @@ import numpy as np
 from PIL import Image
 import folder_paths
 import logging
+import comfy.model_management # Added for interruption check
 
 
 # Add Ditto library to path
@@ -972,8 +973,18 @@ class AIIA_DittoSampler:
              aud_feat = master_sdk.wav2feat.wav2feat(audio_np)
              master_sdk.audio2motion_queue.put(aud_feat)
              
-             # 5. Wait for completion
-             # master_sdk.close() joins threads.
+             # 5. Wait for completion with Interruption Check
+             # Replace blocking master_sdk.close() with polling
+             import time
+             while any(t.is_alive() for t in master_sdk.thread_list):
+                 if comfy.model_management.should_stop():
+                     logger.info("[Ditto] Interruption detected. Stopping workers...")
+                     master_sdk.stop_event.set()
+                     # Flush queues to unblock workers waiting on put
+                     # (Though we already added timeout in SDK, this is faster)
+                     break
+                 time.sleep(0.1)
+             
              master_sdk.close() 
         except Exception as e:
              logging.error(f"Error during Ditto inference: {e}")
