@@ -85,7 +85,10 @@ class AIIA_Subtitle_Gen:
 
     def _generate_srt(self, segments):
         output = []
-        for i, seg in enumerate(segments):
+        # Filter out zero-duration (silenced) segments
+        valid_segments = [s for s in segments if s["end"] - s["start"] >= 0.01]
+        
+        for i, seg in enumerate(valid_segments):
             start = self._format_srt_time(seg["start"])
             end = self._format_srt_time(seg["end"])
             text = seg["text"]
@@ -97,9 +100,12 @@ class AIIA_Subtitle_Gen:
         return "\n".join(output)
 
     def _generate_ass(self, segments, style_name="Default"):
+        # Filter out zero-duration (silenced) segments
+        valid_segments = [s for s in segments if s["end"] - s["start"] >= 0.01]
+        
         # 1. Collect unique speakers
         speakers = set()
-        for seg in segments:
+        for seg in valid_segments:
             speakers.add(seg.get("speaker", "Unknown"))
         
         # 2. Assign colors to speakers
@@ -155,7 +161,7 @@ class AIIA_Subtitle_Gen:
         ]
         
         events = []
-        for seg in segments:
+        for seg in valid_segments:
             start = self._format_ass_time(seg["start"])
             end = self._format_ass_time(seg["end"])
             text = seg["text"].replace("\n", "\\N")
@@ -218,8 +224,8 @@ class AIIA_Subtitle_Gen:
             while scan_idx < num_chunks:
                 c = sorted_chunks[scan_idx]
                 c_start, c_end = c["timestamp"]
-                # Hard break if the chunk is way past our segment
-                if c_start > seg_end + 3.0: break
+                # Hard break if the chunk is way past our segment (relaxed to 60s for sequential matching)
+                if c_start > seg_end + 60.0: break
                 
                 # Calculate overlap duration
                 overlap = min(seg_end, c_end) - max(seg_start, c_start)
@@ -234,9 +240,8 @@ class AIIA_Subtitle_Gen:
             # If we already know who this Script Speaker maps to, try to find THAT VAD Speaker first.
             if seg_spk in speaker_map:
                 mapped_vad_spk = speaker_map[seg_spk]
-                # Check if mapped speaker has ANY significant overlap
-                if speaker_overlaps.get(mapped_vad_spk, 0) > 0.1:
-                    winner_spk = mapped_vad_spk
+                # Trust the map (Sequence Priority). Even if no overlap, we search for this speaker.
+                winner_spk = mapped_vad_spk
             
             # Fallback (First time seeing this speaker OR mapped speaker missing): Max Overlap
             if winner_spk is None and speaker_overlaps:
@@ -268,29 +273,79 @@ class AIIA_Subtitle_Gen:
 
                 if not found_start:
                     # Looking for the first chunk that belongs to our speaker
-                    if is_overlap and (winner_spk is None or c_spk == winner_spk):
+                    # Trust Sequence: If we have a winner_spk, find their next chunk regardless of overlap
+                    match_condition = is_overlap
+                    if winner_spk is not None:
+                        match_condition = is_overlap or (c_spk == winner_spk)
+                    
+                    if match_condition and (winner_spk is None or c_spk == winner_spk):
                         matched_chunks.append(find_idx)
                         found_start = True
                         if winner_spk is None: winner_spk = c_spk
-                    elif c_start > seg_end + 2.0:
+                    elif c_start > seg_end + 60.0:
                         # Way past the estimated end, give up
                         break
                 else:
-                    # Already started collecting, keep going if it's the same speaker
+                    # Already started collecting. 
                     if c_spk == winner_spk:
-                        # Ensure no massive gap (e.g. 3s) between sentences of a single turn
+                        # Ensure no massive gap (e.g. 8s) within a single turn, unless it's within expected segment time
                         last_matched_end = sorted_chunks[matched_chunks[-1]]["timestamp"][1]
-                        if c_start - last_matched_end < 3.0:
+                        if (c_start - last_matched_end < 8.0) or (c_start < seg_end + 1.0):
                             matched_chunks.append(find_idx)
                         else:
                             break
                     else:
-                        # Encountered a DIFFERENT speaker. Turn ends immediately.
-                        break
+                        # [v1.10.18 Fix] Encountered unrelated speaker. 
+                        # Check if this is just a brief interruption (noise/other speaker) 
+                        # and if our speaker resumes shortly.
+                        
+                        # Lookahead mechanism
+                        resume_idx = -1
+                        lookahead_limit = 5 # Check next 5 chunks
+                        
+                        for k in range(1, lookahead_limit + 1):
+                            next_idx = find_idx + k
+                            if next_idx >= num_chunks: break
+                            
+                            nc = sorted_chunks[next_idx]
+                            nc_spk = normalize_spk(nc.get("speaker", "unknown"))
+                            nc_start = nc["timestamp"][0]
+                            
+                            
+                            # If we find our speaker again
+                            if nc_spk == winner_spk:
+                                # Check if the gap is acceptable:
+                                # 1. Short interruption (< 0.8s)
+                                # 2. OR the resume chunk starts reasonably close to the EXPECTED end of the segment.
+                                #    (This handles cases where VAD has a large gap but Script says it should be one segment)
+                                last_matched_end = sorted_chunks[matched_chunks[-1]]["timestamp"][1]
+                                if (nc_start - last_matched_end < 0.8) or (nc_start < seg_end + 1.0):
+                                    resume_idx = next_idx
+                                break
+                            
+                            # If we hit a very long chunk of another speaker, stop looking
+                            if nc["timestamp"][1] - nc["timestamp"][0] > 2.0:
+                                break
+                                
+                        if resume_idx != -1:
+                            # Resume found! Skip intermediate chunks.
+                            # We do NOT add the intermediate chunks to matched_chunks (they belong to noise/others)
+                            # But we continue the loop from the resume point.
+                            
+                            # Note: The intermediate chunks are effectively "skipped" by this segment.
+                            # If they were important for another segment, that segment logic needs to handle them.
+                            # But typically, if they are "interruptions" inside a sentence, they are noise.
+                            
+                            # Advance find_idx to just before resume_idx (loop will increment)
+                            find_idx = resume_idx - 1 
+                            # We will pick up the resumed chunk in next iteration
+                        else:
+                            # comprehensive stop
+                            break
                 
                 find_idx += 1
-                # Limit lookahead for safety
-                if found_start and (find_idx - matched_chunks[0] > 10): break
+                # Limit lookahead for safety (total span)
+                if found_start and (find_idx - matched_chunks[0] > 50): break
                 if not found_start and (find_idx - chunk_idx > 20): break
             
             if matched_chunks:
@@ -343,13 +398,39 @@ class AIIA_Subtitle_Gen:
                 seg["start"] = round(new_start, 3)
                 seg["end"] = round(new_end, 3)
             else:
-                # No match found, use fallback logic
-                if i > 0:
-                    prev_end = calibrated[-1]["end"]
-                    if seg["start"] < prev_end:
-                         diff = prev_end - seg["start"]
-                         seg["start"] += diff
-                         seg["end"] += diff
+                # No match found for the specific speaker.
+                # [v1.10.19] Silence-Aware Fallback:
+                # Check if there is ANY speech (any speaker) in the estimated range.
+                has_speech = False
+                fallback_scan_idx = chunk_idx
+                while fallback_scan_idx < num_chunks:
+                    fc = sorted_chunks[fallback_scan_idx]
+                    fc_start, fc_end = fc["timestamp"]
+                    if fc_start > seg["end"]: break # Past our range
+                    
+                    # Check overlap
+                    overlap = min(seg["end"], fc_end) - max(seg["start"], fc_start)
+                    if overlap > 0.1: # Threshold for "speech exists"
+                        has_speech = True
+                        break
+                    
+                    fallback_scan_idx += 1
+                
+                start_point = calibrated[-1]["end"] if i > 0 else 0.0
+                
+                if has_speech:
+                     # Someone is speaking, so we keep the text but shift it to avoid overlap
+                     duration = seg["end"] - seg["start"]
+                     if seg["start"] < start_point:
+                         seg["start"] = start_point
+                         seg["end"] = start_point + duration
+                else:
+                    # [Silence Detected]
+                    # User feedback: segments_info is the "Plan". Even if silent, the dialogue must be shown to preserve order.
+                    # We place the subtitle in the gap (after previous segment) with its estimated duration.
+                    duration = seg["end"] - seg["start"]
+                    seg["start"] = start_point
+                    seg["end"] = start_point + duration
             
             calibrated.append(seg)
             
