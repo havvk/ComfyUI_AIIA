@@ -298,6 +298,12 @@ class AIIA_Subtitle_Gen:
                         # [v1.10.18 Fix] Encountered unrelated speaker. 
                         # Check if this is just a brief interruption (noise/other speaker) 
                         # and if our speaker resumes shortly.
+                        # Mismatch! 
+                        # [v1.10.19] Check if this is a real turn of another speaker.
+                        # If a different speaker talks for more than 0.5s, we must yield the turn.
+                        interruption_dur = c["timestamp"][1] - c["timestamp"][0]
+                        if interruption_dur > 0.5:
+                            break
                         
                         # Lookahead mechanism
                         resume_idx = -1
@@ -323,8 +329,8 @@ class AIIA_Subtitle_Gen:
                                     resume_idx = next_idx
                                 break
                             
-                            # If we hit a very long chunk of another speaker, stop looking
-                            if nc["timestamp"][1] - nc["timestamp"][0] > 2.0:
+                            # If we hit a substantial chunk of another speaker, stop looking
+                            if nc["timestamp"][1] - nc["timestamp"][0] > 0.5:
                                 break
                                 
                         if resume_idx != -1:
