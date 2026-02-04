@@ -283,6 +283,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "zero_shot_mode": ("BOOLEAN", {"default": False}),
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 5000}),
             },
             "optional": {
                 "qwen_base_model": ("QWEN_MODEL",),
@@ -359,7 +360,7 @@ class AIIA_Qwen_Dialogue_TTS:
             print(f"[AIIA Error] Failed to load fallback audio: {e}")
             return None
 
-    def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed=42, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, zero_shot_mode=False, **kwargs):
+    def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed=42, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, zero_shot_mode=False, max_batch_char=1000, **kwargs):
         import json
         import torch
         import torchaudio
@@ -397,103 +398,215 @@ class AIIA_Qwen_Dialogue_TTS:
         segments_info = []
         time_ptr = 0.0
 
-        for i, item in enumerate(dialogue):
-            if "speaker" in item:
-                spk_name = item["speaker"]
-                spk_key = get_speaker_key(spk_name)
-                text = item["text"]
-                emotion = item.get("emotion", "")
-                
-                # --- Mode-Based Parameter Assembly ---
-                mode = kwargs.get(f"speaker_{spk_key}_mode", "Clone")
-                spk_id = kwargs.get(f"speaker_{spk_key}_id", "Vivian")
-                spk_emotion_preset = kwargs.get(f"speaker_{spk_key}_emotion", "None")
-                design = kwargs.get(f"speaker_{spk_key}_design", "")
-                
-                # Use fallback if mode is Clone but ref is missing
-                ref_audio = get_ref_audio_with_fallback(spk_key) if mode == "Clone" else None
-                ref_text = kwargs.get(f"speaker_{spk_key}_ref_text", "")
-                
-                qwen_model = None
-                
-                # Assemble Instruct from script emotion + preset emotion
-                merged_emotion = emotion if emotion and emotion != "None" else ""
-                if spk_emotion_preset and spk_emotion_preset != "None":
-                    emo_name = spk_emotion_preset.split(" (")[0] if " (" in spk_emotion_preset else spk_emotion_preset
-                    if merged_emotion:
-                        merged_emotion = f"{merged_emotion}，{emo_name}"
-                    else:
-                        merged_emotion = emo_name
-                
-                target_instruct = f"{merged_emotion}。" if merged_emotion else ""
-                target_id = spk_id
-                
-                if mode == "Clone":
-                    qwen_model = kwargs.get("qwen_base_model")
-                    if qwen_model is None: qwen_model = kwargs.get("qwen_custom_model") # Fallback
-                elif mode == "Preset":
-                    qwen_model = kwargs.get("qwen_custom_model")
-                    target_instruct = f"{emotion}." if emotion and emotion != "None" else ""
-                elif mode == "Design":
-                    qwen_model = kwargs.get("qwen_design_model")
-                    target_instruct = design if design else f"{emotion}."
-                
-                if qwen_model is None:
-                    # Final fallback to any provided model
-                    qwen_model = kwargs.get("qwen_base_model") or kwargs.get("qwen_custom_model") or kwargs.get("qwen_design_model")
+        print(f"[AIIA Qwen Podcast] Starting Batch Processing (Limit: {max_batch_char} chars).")
 
-                if qwen_model is None:
-                    print(f"  [Warning] No Qwen model connected for {spk_name}. Skipping.")
-                    continue
+        # --- Batching Logic ---
+        # A batch is a list of speech segments that share the same:
+        # 1. Qwen Model
+        # 2. Generation Mode (Clone, Preset, Design)
+        # 3. Parameters (ref_audio + ref_text for Clone, design text for Design)
 
-                print(f"  [Qwen Specialist] Segment {i}: {spk_name} ({mode}) -> {text[:20]}...")
+        def get_segment_params(item):
+            if "type" in item and item["type"] == "pause":
+                return None
+            
+            spk_name = item.get("speaker", "Unknown")
+            spk_key = get_speaker_key(spk_name)
+            text = item.get("text", "")
+            emotion = item.get("emotion", "")
+            
+            mode = kwargs.get(f"speaker_{spk_key}_mode", "Clone")
+            spk_id = kwargs.get(f"speaker_{spk_key}_id", "Vivian")
+            spk_emotion_preset = kwargs.get(f"speaker_{spk_key}_emotion", "None")
+            design = kwargs.get(f"speaker_{spk_key}_design", "")
+            ref_audio = get_ref_audio_with_fallback(spk_key) if mode == "Clone" else None
+            ref_text = kwargs.get(f"speaker_{spk_key}_ref_text", "")
+            
+            qwen_model = None
+            if mode == "Clone":
+                qwen_model = kwargs.get("qwen_base_model") or kwargs.get("qwen_custom_model")
+            elif mode == "Preset":
+                qwen_model = kwargs.get("qwen_custom_model")
+            elif mode == "Design":
+                qwen_model = kwargs.get("qwen_design_model")
+            
+            if qwen_model is None:
+                qwen_model = kwargs.get("qwen_base_model") or kwargs.get("qwen_custom_model") or kwargs.get("qwen_design_model")
+
+            # Unique key for "homogeneity"
+            # For Preset, we can merge DIFFERENT speakers by using [Speaker] tags
+            # So they only need to share the same qwen_model and mode="Preset"
+            if mode == "Preset":
+                param_hash = (f"Preset_{id(qwen_model)}",)
+            elif mode == "Clone":
+                # Must share same ref_audio and ref_text
+                param_hash = (f"Clone_{id(qwen_model)}", id(ref_audio), ref_text)
+            else: # Design
+                # Must share the same design text
+                param_hash = (f"Design_{id(qwen_model)}", design)
+            
+            return {
+                "spk_name": spk_name,
+                "spk_id": spk_id,
+                "spk_key": spk_key,
+                "text": text,
+                "emotion": emotion,
+                "spk_emotion_preset": spk_emotion_preset,
+                "mode": mode,
+                "qwen_model": qwen_model,
+                "ref_audio": ref_audio,
+                "ref_text": ref_text,
+                "design": design,
+                "param_hash": param_hash
+            }
+
+        # Greedy grouping
+        batches = []
+        current_batch = []
+        current_batch_char = 0
+        current_hash = None
+
+        for item in dialogue:
+            params = get_segment_params(item)
+            
+            if params is None: # Pause item
+                if current_batch:
+                    batches.append({"type": "speech", "items": current_batch})
+                    current_batch = []
+                    current_batch_char = 0
+                batches.append({"type": "pause", "duration": item.get("duration", pause_duration)})
+                current_hash = None
+                continue
+
+            # Check compatibility
+            can_merge = (current_hash is not None and params["param_hash"] == current_hash and (current_batch_char + len(params["text"]) < max_batch_char))
+            
+            if not can_merge:
+                if current_batch:
+                    batches.append({"type": "speech", "items": current_batch})
+                current_batch = [params]
+                current_batch_char = len(params["text"])
+                current_hash = params["param_hash"]
+            else:
+                current_batch.append(params)
+                current_batch_char += len(params["text"])
+
+        if current_batch:
+            batches.append({"type": "speech", "items": current_batch})
+
+        for b_idx, batch in enumerate(batches):
+            if batch["type"] == "pause":
+                duration = batch["duration"]
+                if duration > 0:
+                    silence = torch.zeros((1, int(sample_rate * duration)))
+                    full_waveform.append(silence)
+                    time_ptr += duration
+                continue
+            
+            # Process Speech Batch
+            items = batch["items"]
+            first = items[0]
+            mode = first["mode"]
+            qwen_model = first["qwen_model"]
+            
+            if qwen_model is None: continue
+
+            # Construct batched text and merged instruct
+            batched_text = ""
+            total_char_count = 0
+            item_char_counts = []
+
+            for it in items:
+                line_text = it["text"]
+                if mode == "Preset":
+                    # Use [Speaker] tags for CustomVoice multi-speaker batching
+                    # Qwen format: [Speaker] Text [Speaker2] Text2
+                    batched_text += f"[{it['spk_id']}] {line_text} "
+                else:
+                    batched_text += f"{line_text} "
                 
-                try:
-                    res = qwen_gen.generate(
-                        qwen_model=qwen_model,
-                        text=text,
-                        language="Auto",
-                        speaker=target_id,
-                        instruct=target_instruct,
-                        reference_audio=ref_audio,
-                        reference_text=ref_text,
-                        seed=seed if seed >= 0 else -1,
-                        speed=speed_global,
-                        cfg_scale=cfg_scale,
-                        temperature=temperature,
-                        top_k=top_k,
-                        top_p=top_p,
-                        zero_shot_mode=zero_shot_mode
-                    )
+                # Length for timestamping
+                c_len = len(line_text.strip()) if line_text.strip() else 1
+                total_char_count += c_len
+                item_char_counts.append(c_len)
+
+            # Instruct logic: merge all emotions in the batch
+            emotions = []
+            for it in items:
+                emo = it["emotion"] if it["emotion"] and it["emotion"] != "None" else ""
+                pres = it["spk_emotion_preset"] if it["spk_emotion_preset"] and it["spk_emotion_preset"] != "None" else ""
+                if emo: emotions.append(emo)
+                if pres: emotions.append(pres.split(" (")[0] if " (" in pres else pres)
+            
+            unique_emos = []
+            for e in emotions:
+                if e not in unique_emos: unique_emos.append(e)
+            
+            target_instruct = "，".join(unique_emos) + "。" if unique_emos else ""
+            if mode == "Design":
+                target_instruct = first["design"] if first["design"] else target_instruct
+
+            print(f"  [Qwen Batch] Processing Batch {b_idx}: {len(items)} segments, {total_char_count} chars. Mode: {mode}")
+
+            try:
+                res = qwen_gen.generate(
+                    qwen_model=qwen_model,
+                    text=batched_text.strip(),
+                    language="Auto",
+                    speaker=first["spk_id"],
+                    instruct=target_instruct,
+                    reference_audio=first["ref_audio"],
+                    reference_text=first["ref_text"],
+                    seed=seed if seed >= 0 else -1,
+                    speed=speed_global,
+                    cfg_scale=cfg_scale,
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                    zero_shot_mode=zero_shot_mode
+                )
+                
+                if res and res[0]:
+                    wav = res[0]["waveform"]
+                    sr = res[0]["sample_rate"]
                     
-                    if res and res[0]:
-                        wav = res[0]["waveform"]
-                        sr = res[0]["sample_rate"]
+                    if sample_rate != sr:
+                        wav = torchaudio.transforms.Resample(sr, sample_rate)(wav)
+                    
+                    wav_data = wav.squeeze(0) # [C, T]
+                    full_waveform.append(wav_data)
+                    
+                    # Timestamp Interpolation
+                    batch_duration = wav_data.shape[1] / sample_rate
+                    batch_start_time = time_ptr
+                    accum_time = 0.0
+                    
+                    for i_idx, it in enumerate(items):
+                        fraction = item_char_counts[i_idx] / max(total_char_count, 1)
+                        seg_dur = fraction * batch_duration
                         
-                        if sample_rate != sr:
-                            wav = torchaudio.transforms.Resample(sr, sample_rate)(wav)
-                        
-                        # Remove batch dim if present properly for concatenation
-                        wav_data = wav.squeeze(0) # [C, T]
-                        full_waveform.append(wav_data)
-                        
-                        duration = wav_data.shape[1] / sample_rate
                         segments_info.append({
-                            "start": time_ptr,
-                            "end": time_ptr + duration,
-                            "text": text,
-                            "speaker": spk_name
+                            "start": round(batch_start_time + accum_time, 3),
+                            "end": round(batch_start_time + accum_time + seg_dur, 3),
+                            "text": it["text"],
+                            "speaker": it["spk_name"]
                         })
-                        time_ptr += duration
-                        
-                        # Add Pause
-                        if pause_duration > 0:
-                            silence = torch.zeros((wav_data.shape[0], int(sample_rate * pause_duration)))
-                            full_waveform.append(silence)
+                        accum_time += seg_dur
+                    
+                    time_ptr += batch_duration
+                    
+                    # Add intra-batch padding if configured (usually Pause items handling it)
+                    if pause_duration > 0 and b_idx < len(batches)-1:
+                        # Only add if next isn't already a pause
+                        if batches[b_idx+1]["type"] != "pause":
+                            sil = torch.zeros((wav_data.shape[0], int(sample_rate * pause_duration)))
+                            full_waveform.append(sil)
                             time_ptr += pause_duration
-                            
-                except Exception as e:
-                    print(f"  [Error] Qwen processing failed for {spk_name}: {e}")
+                                
+            except Exception as e:
+                print(f"  [Error] Batch {b_idx} failed: {e}")
+                import traceback
+                traceback.print_exc()
 
         if not full_waveform:
             return ({"waveform": torch.zeros((1, 1, 1024)), "sample_rate": sample_rate}, "[]")
