@@ -986,6 +986,7 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 - **节点**:
   - `🤖 Qwen3-TTS Loader`: 加载模型。支持 `Base (Clone)`、`CustomVoice (Presets)` 和 `VoiceDesign` 模型。
   - `🗣️ Qwen3-TTS Synthesis`: 执行合成。根据加载的模型类型自动切换功能。
+  - `🎙️ Qwen3-TTS Dialogue (Specialist)`: **[旗舰级]** 专为 Qwen3 设计的对话节点。支持为每个角色独立设置克隆、预设或设计模式，真正发挥全系列模型优势。
 - **模型列表**:
   - `Qwen/Qwen3-TTS-12Hz-1.7B-Base` (或 0.6B-Base)
   - `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` (或 0.6B-CustomVoice)
@@ -1069,7 +1070,22 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
   - `Strict (Per-Speaker)`: 严格模式。每句话都会强制断开重置。彻底杜绝音色泄漏，但对话流畅度略低。
   - `Whole (Single Batch)`: 全量模式。无视所有暂停，一次性生成整本剧本。连贯性最强，但无法控制停顿时间。
 
-#### 4.3 AIIA Subtitle Gen (字幕生成器)
+#### 4.6 AIIA Qwen Dialogue TTS (Qwen 旗舰对话节点)
+
+**[v1.11.0 New]** 深度集成 Qwen3-TTS 的多模式特性，支持复杂的混合角色场景。
+
+- **Input Model Pins**:
+  - `qwen_base_model`: 连接 Clone 模型，用于高保真克隆。
+  - `qwen_custom_model`: 连接 Custom 模型，用于官方内置精品音色。
+  - `qwen_design_model`: 连接 Design 模型，用于自然语言捏人。
+- **Speaker A/B/C Configuration**:
+  - **Mode**: 选择 `Clone` (音色克隆)、`Preset` (官方预设) 或 `Design` (文字设计)。
+  - **ID**: 当模式为 Preset 时，输入预设音色名 (如 `Vivian`, `Zack`, `Bella`, `Clara`, `Darius`, `Enid`, `Gaby`, `George`, `Howard`)。
+  - **Design Description**: 当模式为 Design 时，输入对音色的详细自然语言描述。
+  - **Ref Audio**: 当模式为 Clone 时，连接参考音频。
+- **特点**: 相对于通用对话节点，此节点能根据每个人的模式自动路由到最合适的 Qwen 引擎，且支持在 UI 直接输入设计描述。
+
+#### 4.7 AIIA Subtitle Gen (字幕生成器)
 
 **[v1.7.0 New]** 无需 STT，直接从生成过程中提取精准时间轴。
 

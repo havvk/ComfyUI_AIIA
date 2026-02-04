@@ -178,12 +178,162 @@ class AIIA_Qwen_TTS:
             traceback.print_exc()
             raise e
 
+class AIIA_Qwen_Dialogue_TTS:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "dialogue_json": ("STRING", {"multiline": True}),
+                "pause_duration": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.1}),
+                "speed_global": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
+                "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
+            },
+            "optional": {
+                "qwen_base_model": ("QWEN_MODEL",),
+                "qwen_custom_model": ("QWEN_MODEL",),
+                "qwen_design_model": ("QWEN_MODEL",),
+                
+                # Speaker A
+                "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
+                "speaker_A_id": ("STRING", {"default": "Vivian"}),
+                "speaker_A_design": ("STRING", {"multiline": True, "default": ""}),
+                "speaker_A_ref": ("AUDIO",),
+                
+                # Speaker B
+                "speaker_B_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
+                "speaker_B_id": ("STRING", {"default": "Vivian"}),
+                "speaker_B_design": ("STRING", {"multiline": True, "default": ""}),
+                "speaker_B_ref": ("AUDIO",),
+                
+                # Speaker C
+                "speaker_C_mode": (["Clone", "Preset", "Design"], {"default": "Design"}),
+                "speaker_C_id": ("STRING", {"default": "Vivian"}),
+                "speaker_C_design": ("STRING", {"multiline": True, "default": ""}),
+                "speaker_C_ref": ("AUDIO",),
+            }
+        }
+
+    RETURN_TYPES = ("AUDIO", "STRING")
+    RETURN_NAMES = ("full_audio", "segments_info")
+    FUNCTION = "process_dialogue"
+    CATEGORY = "AIIA/Podcast"
+
+    def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed=42, **kwargs):
+        import json
+        import torch
+        import torchaudio
+        import re
+        
+        dialogue = json.loads(dialogue_json)
+        full_waveform = []
+        sample_rate = 24000 
+        
+        qwen_gen = AIIA_Qwen_TTS()
+
+        print(f"[AIIA Qwen Podcast] Processing {len(dialogue)} segments.")
+
+        def get_speaker_key(speaker_name):
+            spk_key = speaker_name.strip()
+            if spk_key.upper() in ["A", "B", "C"]: return spk_key.upper()
+            clean = re.sub(r'speaker[ _-]*', '', spk_key, flags=re.IGNORECASE).strip()
+            if clean and clean[0].upper() in ["A", "B", "C"]: return clean[0].upper()
+            return spk_key[0].upper()
+
+        segments_info = []
+        time_ptr = 0.0
+
+        for i, item in enumerate(dialogue):
+            if "speaker" in item:
+                spk_name = item["speaker"]
+                spk_key = get_speaker_key(spk_name)
+                text = item["text"]
+                emotion = item.get("emotion", "")
+                
+                # --- Mode-Based Parameter Assembly ---
+                mode = kwargs.get(f"speaker_{spk_key}_mode", "Clone")
+                spk_id = kwargs.get(f"speaker_{spk_key}_id", "Vivian")
+                design = kwargs.get(f"speaker_{spk_key}_design", "")
+                ref_audio = kwargs.get(f"speaker_{spk_key}_ref")
+                
+                qwen_model = None
+                target_instruct = ""
+                target_id = spk_id
+                
+                if mode == "Clone":
+                    qwen_model = kwargs.get("qwen_base_model")
+                    if qwen_model is None: qwen_model = kwargs.get("qwen_custom_model") # Fallback
+                elif mode == "Preset":
+                    qwen_model = kwargs.get("qwen_custom_model")
+                    target_instruct = f"{emotion}." if emotion and emotion != "None" else ""
+                elif mode == "Design":
+                    qwen_model = kwargs.get("qwen_design_model")
+                    target_instruct = design if design else f"{emotion}."
+                
+                if qwen_model is None:
+                    # Final fallback to any provided model
+                    qwen_model = kwargs.get("qwen_base_model") or kwargs.get("qwen_custom_model") or kwargs.get("qwen_design_model")
+
+                if qwen_model is None:
+                    print(f"  [Warning] No Qwen model connected for {spk_name}. Skipping.")
+                    continue
+
+                print(f"  [Qwen Specialist] Segment {i}: {spk_name} ({mode}) -> {text[:20]}...")
+                
+                try:
+                    res = qwen_gen.generate(
+                        qwen_model=qwen_model,
+                        text=text,
+                        language="Auto",
+                        speaker=target_id,
+                        instruct=target_instruct,
+                        reference_audio=ref_audio,
+                        seed=seed if seed >= 0 else -1,
+                        speed=speed_global
+                    )
+                    
+                    if res and res[0]:
+                        wav = res[0]["waveform"]
+                        sr = res[0]["sample_rate"]
+                        
+                        if sample_rate != sr:
+                            wav = torchaudio.transforms.Resample(sr, sample_rate)(wav)
+                        
+                        # Remove batch dim if present properly for concatenation
+                        wav_data = wav.squeeze(0) # [C, T]
+                        full_waveform.append(wav_data)
+                        
+                        duration = wav_data.shape[1] / sample_rate
+                        segments_info.append({
+                            "start": time_ptr,
+                            "end": time_ptr + duration,
+                            "text": text,
+                            "speaker": spk_name
+                        })
+                        time_ptr += duration
+                        
+                        # Add Pause
+                        if pause_duration > 0:
+                            silence = torch.zeros((wav_data.shape[0], int(sample_rate * pause_duration)))
+                            full_waveform.append(silence)
+                            time_ptr += pause_duration
+                            
+                except Exception as e:
+                    print(f"  [Error] Qwen processing failed for {spk_name}: {e}")
+
+        if not full_waveform:
+            return ({"waveform": torch.zeros((1, 1, 1024)), "sample_rate": sample_rate}, "[]")
+
+        final_wav = torch.cat(full_waveform, dim=1)
+        return ({"waveform": final_wav.unsqueeze(0), "sample_rate": sample_rate}, json.dumps(segments_info, ensure_ascii=False))
+
 NODE_CLASS_MAPPINGS = {
     "AIIA_Qwen_Loader": AIIA_Qwen_Loader,
-    "AIIA_Qwen_TTS": AIIA_Qwen_TTS
+    "AIIA_Qwen_TTS": AIIA_Qwen_TTS,
+    "AIIA_Qwen_Dialogue_TTS": AIIA_Qwen_Dialogue_TTS
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AIIA_Qwen_Loader": "🤖 Qwen3-TTS Loader",
-    "AIIA_Qwen_TTS": "🗣️ Qwen3-TTS Synthesis"
+    "AIIA_Qwen_TTS": "🗣️ Qwen3-TTS Synthesis",
+    "AIIA_Qwen_Dialogue_TTS": "🎙️ Qwen3-TTS Dialogue (Specialist)"
 }
