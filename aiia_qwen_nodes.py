@@ -275,18 +275,21 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_A_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_A_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_A_ref": ("AUDIO",),
+                "speaker_A_ref_text": ("STRING", {"multiline": True, "default": ""}),
                 
                 # Speaker B
                 "speaker_B_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_B_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_B_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_B_ref": ("AUDIO",),
+                "speaker_B_ref_text": ("STRING", {"multiline": True, "default": ""}),
                 
                 # Speaker C
                 "speaker_C_mode": (["Clone", "Preset", "Design"], {"default": "Design"}),
                 "speaker_C_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_C_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_C_ref": ("AUDIO",),
+                "speaker_C_ref_text": ("STRING", {"multiline": True, "default": ""}),
             }
         }
 
@@ -384,6 +387,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 
                 # Use fallback if mode is Clone but ref is missing
                 ref_audio = get_ref_audio_with_fallback(spk_key) if mode == "Clone" else None
+                ref_text = kwargs.get(f"speaker_{spk_key}_ref_text", "")
                 
                 qwen_model = None
                 target_instruct = ""
@@ -417,6 +421,7 @@ class AIIA_Qwen_Dialogue_TTS:
                         speaker=target_id,
                         instruct=target_instruct,
                         reference_audio=ref_audio,
+                        reference_text=ref_text,
                         seed=seed if seed >= 0 else -1,
                         speed=speed_global,
                         cfg_scale=cfg_scale,
