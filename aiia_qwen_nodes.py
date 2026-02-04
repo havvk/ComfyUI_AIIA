@@ -186,9 +186,23 @@ class AIIA_Qwen_TTS:
     CATEGORY = "AIIA/Synthesis"
 
     def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", zero_shot_mode=False, emotion="None", dialect="None", seed=42, speed=1.0, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95):
-        model = qwen_model["model"]
-        m_type = qwen_model["type"]
-        model_path = qwen_model.get("path", "").lower()
+        # 0. Handle Bundle Routing
+        active_qwen = qwen_model
+        if qwen_model.get("is_bundle"):
+            # Auto-route based on generation intent
+            if reference_audio is not None or zero_shot_mode:
+                active_qwen = qwen_model.get("base") or qwen_model.get("default")
+            elif instruct.strip() or dialect != "None" or emotion != "None":
+                active_qwen = qwen_model.get("design") or qwen_model.get("custom") or qwen_model.get("default")
+            else:
+                active_qwen = qwen_model.get("custom") or qwen_model.get("default")
+        
+        if not active_qwen:
+            raise ValueError("[AIIA Qwen] No active model found in bundle or input!")
+
+        model = active_qwen["model"]
+        m_type = active_qwen["type"]
+        model_path = active_qwen.get("path", "").lower()
         
         # Warning for Base model with instruct
         if "base" in model_path and (instruct.strip() or dialect != "None" or emotion != "None"):
@@ -319,19 +333,12 @@ class AIIA_Qwen_Dialogue_TTS:
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
-                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
-                "zero_shot_mode": ("BOOLEAN", {"default": False}),
-                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
                 "dialect_note": ("STRING", {"default": "💡 提示：方言建议配合 Design 模式使用。", "is_label": True}),
                 "base_note": ("STRING", {"default": "⚠️ 注意：Clone 模式下的 Base 模型不支持文字指令控制。", "is_label": True}),
             },
             "optional": {
-                "qwen_base_model": ("QWEN_MODEL",),
-                "qwen_custom_model": ("QWEN_MODEL",),
-                "qwen_design_model": ("QWEN_MODEL",),
-                
+                "qwen_model": ("QWEN_MODEL",),
                 "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
-                
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_A_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
@@ -341,7 +348,6 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_A_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_A_ref": ("AUDIO",),
                 "speaker_A_ref_text": ("STRING", {"multiline": True, "default": ""}),
-                
                 # Speaker B
                 "speaker_B_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_B_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
@@ -351,7 +357,6 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_B_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_B_ref": ("AUDIO",),
                 "speaker_B_ref_text": ("STRING", {"multiline": True, "default": ""}),
-                
                 # Speaker C
                 "speaker_C_mode": (["Clone", "Preset", "Design"], {"default": "Design"}),
                 "speaker_C_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
@@ -469,31 +474,50 @@ class AIIA_Qwen_Dialogue_TTS:
             spk_expression_preset = kwargs.get(f"speaker_{spk_key}_expression", "None")
             spk_dialect_preset = kwargs.get(f"speaker_{spk_key}_dialect", "None")
             design = kwargs.get(f"speaker_{spk_key}_design", "")
+            qwen_model = kwargs.get("qwen_model")
+            if qwen_model is None:
+                raise ValueError("AIIA_Qwen_Dialogue_TTS: qwen_model is required. Connect a single Qwen model or a Qwen3 Model Router (Bundle)!")
+
+            # 0. Specialized Qwen Routing from Bundle
+            def get_model_from_bundle(mode, ref=None):
+                if not qwen_model.get("is_bundle"): return qwen_model
+                if mode == "Clone" or ref is not None:
+                    return qwen_model.get("base") or qwen_model.get("default")
+                elif mode == "Design":
+                    return qwen_model.get("design") or qwen_model.get("default")
+                else: # Preset
+                    return qwen_model.get("custom") or qwen_model.get("default")
+
+            # Extract Speaker Params
+            def get_speaker_params(prefix):
+                mode = kwargs.get(f"{prefix}_mode", "Preset")
+                ref = kwargs.get(f"{prefix}_ref")
+                tm = get_model_from_bundle(mode, ref)
+                return {
+                    "tm": tm,
+                    "id": kwargs.get(f"{prefix}_id", "Vivian"),
+                    "ref": ref,
+                    "exp": kwargs.get(f"{prefix}_expression", ""),
+                    "dialect": kwargs.get(f"{prefix}_dialect", "None")
+                }
+            
             ref_audio = get_ref_audio_with_fallback(spk_key) if mode == "Clone" else None
             ref_text = kwargs.get(f"speaker_{spk_key}_ref_text", "")
             
-            qwen_model = None
-            if mode == "Clone":
-                qwen_model = kwargs.get("qwen_base_model") or kwargs.get("qwen_custom_model")
-            elif mode == "Preset":
-                qwen_model = kwargs.get("qwen_custom_model")
-            elif mode == "Design":
-                qwen_model = kwargs.get("qwen_design_model")
-            
-            if qwen_model is None:
-                qwen_model = kwargs.get("qwen_base_model") or kwargs.get("qwen_custom_model") or kwargs.get("qwen_design_model")
+            # Determine the actual Qwen model to use for this segment
+            segment_qwen_model = get_model_from_bundle(mode, ref_audio)
 
             # Unique key for "homogeneity"
             # For Preset, we can merge DIFFERENT speakers by using [Speaker] tags
             # So they only need to share the same qwen_model and mode="Preset"
             if mode == "Preset":
-                param_hash = (f"Preset_{id(qwen_model)}", spk_dialect_preset)
+                param_hash = (f"Preset_{id(segment_qwen_model)}", spk_dialect_preset)
             elif mode == "Clone":
                 # Must share same ref_audio and ref_text and dialect
-                param_hash = (f"Clone_{id(qwen_model)}", id(ref_audio), ref_text, spk_dialect_preset)
+                param_hash = (f"Clone_{id(segment_qwen_model)}", id(ref_audio), ref_text, spk_dialect_preset)
             else: # Design
                 # Must share the same design text and dialect
-                param_hash = (f"Design_{id(qwen_model)}", design, spk_dialect_preset)
+                param_hash = (f"Design_{id(segment_qwen_model)}", design, spk_dialect_preset)
             
             return {
                 "spk_name": spk_name,
@@ -505,7 +529,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "spk_expression_preset": spk_expression_preset,
                 "spk_dialect_preset": spk_dialect_preset,
                 "mode": mode,
-                "qwen_model": qwen_model,
+                "qwen_model": segment_qwen_model, # Use the resolved model
                 "ref_audio": ref_audio,
                 "ref_text": ref_text,
                 "design": design,
@@ -681,14 +705,55 @@ class AIIA_Qwen_Dialogue_TTS:
         final_wav = torch.cat(full_waveform, dim=1)
         return ({"waveform": final_wav.unsqueeze(0), "sample_rate": sample_rate}, json.dumps(segments_info, ensure_ascii=False))
 
+class AIIA_Qwen_Model_Router:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {},
+            "optional": {
+                "qwen_default": ("QWEN_MODEL",),
+                "qwen_base": ("QWEN_MODEL",),
+                "qwen_custom": ("QWEN_MODEL",),
+                "qwen_design": ("QWEN_MODEL",),
+            }
+        }
+
+    RETURN_TYPES = ("QWEN_MODEL",)
+    RETURN_NAMES = ("qwen_bundle",)
+    FUNCTION = "bundle"
+    CATEGORY = "AIIA/Loaders"
+
+    def bundle(self, **kwargs):
+        qwen_default = kwargs.get("qwen_default")
+        qwen_base = kwargs.get("qwen_base")
+        qwen_custom = kwargs.get("qwen_custom")
+        qwen_design = kwargs.get("qwen_design")
+        
+        if all(m is None for m in [qwen_default, qwen_base, qwen_custom, qwen_design]):
+            raise ValueError("[AIIA Qwen Router] At least one Qwen model must be connected!")
+            
+        bundle = {
+            "is_bundle": True,
+            "default": qwen_default or qwen_base or qwen_custom or qwen_design,
+            "base": qwen_base,
+            "custom": qwen_custom,
+            "design": qwen_design,
+            "path": (qwen_default or qwen_base or qwen_custom or qwen_design).get("path", "")
+        }
+        return (bundle,)
+
+
 NODE_CLASS_MAPPINGS = {
     "AIIA_Qwen_Loader": AIIA_Qwen_Loader,
     "AIIA_Qwen_TTS": AIIA_Qwen_TTS,
-    "AIIA_Qwen_Dialogue_TTS": AIIA_Qwen_Dialogue_TTS
+    "AIIA_Qwen_Dialogue_TTS": AIIA_Qwen_Dialogue_TTS,
+    "AIIA_Qwen_Model_Router": AIIA_Qwen_Model_Router
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AIIA_Qwen_Loader": "🤖 Qwen3-TTS Loader",
     "AIIA_Qwen_TTS": "🗣️ Qwen3-TTS Synthesis",
-    "AIIA_Qwen_Dialogue_TTS": "🎙️ Qwen3-TTS Dialogue (Specialist)"
+    "AIIA_Qwen_Dialogue_TTS": "🎙️ Qwen3-TTS Dialogue (Specialist)",
+    "AIIA_Qwen_Model_Router": "🔌 Qwen3-Model Router (Bundle)"
+
 }

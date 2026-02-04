@@ -195,21 +195,16 @@ class AIIA_Dialogue_TTS:
                 "pause_duration": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.1}),
                 "speed_global": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
                 "batch_mode": (["Natural (Hybrid)", "Strict (Per-Speaker)", "Whole (Single Batch)"], {"default": "Natural (Hybrid)"}),
-                "qwen_model": ("QWEN_MODEL",), # Primary Qwen model
-                
-                # VibeVoice Specific Params
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
-                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
             },
             "optional": {
                 "cosyvoice_model": ("COSYVOICE_MODEL",),
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
-                "qwen_base_model": ("QWEN_MODEL",),      # Optional specialized Base
-                "qwen_custom_model": ("QWEN_MODEL",),    # Optional specialized CustomVoice
-                "qwen_design_model": ("QWEN_MODEL",),    # Optional specialized VoiceDesign
+                "qwen_model": ("QWEN_MODEL",),         # Primary Qwen model (can be a Bundle)
                 
                 # Speaker A
                 "speaker_A_ref": ("AUDIO",),
@@ -348,9 +343,8 @@ class AIIA_Dialogue_TTS:
 
 
     def process_dialogue(self, dialogue_json, tts_engine, pause_duration, speed_global, batch_mode,
-                         qwen_model=None, cosyvoice_model=None, vibevoice_model=None, 
-                         qwen_base_model=None, qwen_custom_model=None, qwen_design_model=None,
-                         cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, max_batch_char=1000, **kwargs):
+                         max_batch_char=1000, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95,
+                         qwen_model=None, cosyvoice_model=None, vibevoice_model=None, **kwargs):
         # Robustness: ensure max_batch_char is correctly picked up even if shifted or provided as kwarg
         max_batch_char = kwargs.get("max_batch_char", max_batch_char)
         import json
@@ -533,10 +527,12 @@ class AIIA_Dialogue_TTS:
                         me = f"{me}，{el}" if me else el
                     ins = f"{me}。" if me else ""
                     
+                    # Routing: Use bundle if available, else use the single connected model
                     tm = qwen_model
-                    if ref is not None and qwen_base_model is not None: tm = qwen_base_model
-                    elif ins and qwen_design_model is not None and ref is None: tm = qwen_design_model
-                    elif qwen_custom_model is not None: tm = qwen_custom_model
+                    if qwen_model.get("is_bundle"):
+                        if ref is not None: tm = qwen_model.get("base") or qwen_model.get("default")
+                        elif ins: tm = qwen_model.get("design") or qwen_model.get("default")
+                        else: tm = qwen_model.get("custom") or qwen_model.get("default")
                     
                     # Dialect is part of compatibility
                     return {
