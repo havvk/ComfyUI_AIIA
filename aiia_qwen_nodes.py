@@ -568,6 +568,9 @@ class AIIA_Qwen_Dialogue_TTS:
                 target_instruct = first["design"] if first["design"] else target_instruct
 
             print(f"  [Qwen Batch] Processing Batch {b_idx}: {len(items)} segments, {total_char_count} chars. Mode: {mode}")
+            print(f"  [Qwen Batch] Final Text: {batched_text.strip()}")
+            if target_instruct:
+                print(f"  [Qwen Batch] Final Instruct: {target_instruct}")
 
             try:
                 res = qwen_gen.generate(

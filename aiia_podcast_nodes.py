@@ -275,7 +275,9 @@ class AIIA_Dialogue_TTS:
             spk_name = item_params["original_speaker"] # Added this to item_params in get_qwen_params
             original_item = item_params["original_item"] # Added this to item_params in get_qwen_params
 
-            print(f"  [Qwen Routing] {spk_name}: {text[:15]}... -> Using {target_model['type']} model ({target_model['name']})")
+            print(f"  [Qwen Batch] {spk_name}: {text[:30]}... ({target_model['type']})")
+            if instruct:
+                print(f"  [Qwen Instruct] {instruct}")
             
             try:
                 # Call Qwen TTS with routed model
@@ -614,7 +616,9 @@ class AIIA_Dialogue_TTS:
 
                     instruct = f"{merged_emo_for_instruct}." if merged_emo_for_instruct else ""
                     
-                    print(f"  [Processing] {spk_name}: {text[:15]}...")
+                    print(f"  [CosyVoice Text] {spk_name}: {text}")
+                    if instruct:
+                        print(f"  [CosyVoice Instruct] {instruct}")
                     try:
                         res = cosy_gen.generate(
                             model=cosyvoice_model,
