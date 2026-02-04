@@ -180,6 +180,7 @@ class AIIA_Dialogue_TTS:
                 "pause_duration": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.1}),
                 "speed_global": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
                 "batch_mode": (["Natural (Hybrid)", "Strict (Per-Speaker)", "Whole (Single Batch)"], {"default": "Natural (Hybrid)"}),
+                "qwen_model": ("QWEN_MODEL",), # Primary Qwen model
                 
                 # VibeVoice Specific Params
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
@@ -190,7 +191,9 @@ class AIIA_Dialogue_TTS:
             "optional": {
                 "cosyvoice_model": ("COSYVOICE_MODEL",),
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
-                "qwen_model": ("QWEN_MODEL",),
+                "qwen_base_model": ("QWEN_MODEL",),      # Optional specialized Base
+                "qwen_custom_model": ("QWEN_MODEL",),    # Optional specialized CustomVoice
+                "qwen_design_model": ("QWEN_MODEL",),    # Optional specialized VoiceDesign
                 
                 # Speaker A
                 "speaker_A_ref": ("AUDIO",),
@@ -249,7 +252,8 @@ class AIIA_Dialogue_TTS:
             return None
 
     def process_dialogue(self, dialogue_json, tts_engine, pause_duration, speed_global, 
-                         cosyvoice_model=None, vibevoice_model=None, qwen_model=None,
+                         qwen_model, cosyvoice_model=None, vibevoice_model=None, 
+                         qwen_base_model=None, qwen_custom_model=None, qwen_design_model=None,
                          cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, **kwargs):
         import json
         import torch
@@ -422,11 +426,27 @@ class AIIA_Dialogue_TTS:
                     ref_audio = get_ref_audio(spk_key)
                     instruct = f"{emotion}." if emotion and emotion != "None" else ""
                     
-                    print(f"  [Qwen Processing] {spk_name} (ID: {spk_id}): {text[:15]}...")
+                    # --- Qwen Smart Routing ---
+                    # Logic: 
+                    # 1. If ref_audio exists -> Prefer qwen_base_model
+                    # 2. If instruct exists but no ref_audio -> Might be design intent, prefer qwen_design_model
+                    # 3. If spk_id exists -> Prefer qwen_custom_model
+                    # 4. Fallback to primary qwen_model
+                    
+                    target_model = qwen_model
+                    if ref_audio is not None and qwen_base_model is not None:
+                        target_model = qwen_base_model
+                    elif instruct and qwen_design_model is not None and ref_audio is None:
+                        target_model = qwen_design_model
+                    elif qwen_custom_model is not None:
+                        target_model = qwen_custom_model
+                    
+                    print(f"  [Qwen Routing] {spk_name} -> Using {target_model['type']} model ({target_model['name']})")
+                    
                     try:
-                        # Call Qwen TTS
+                        # Call Qwen TTS with routed model
                         res = qwen_gen.generate(
-                            qwen_model=qwen_model,
+                            qwen_model=target_model,
                             text=text,
                             language="Auto",
                             speaker=spk_id,

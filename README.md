@@ -971,20 +971,20 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 | **克隆能力 (Cloning)**             | **SOTA** (Zero-Shot)`<br>`只需 3-10秒，对**音色质感**还原极高。                                                                                                  | **SOTA** (稳定性)`<br>`对**说话韵律/口音**的捕捉最准。         | **良好** `<br>`适合克隆特定语气，而非纯粹音色。         |
 | **多语言/方言**                    | **中/英** (双语优化)                                                                                                                                                     | **👑 霸主** (9种语言 + 18种方言)                                       | **中/英**                                                 |
 | **语音转换 (VC)** (Audio-to-Audio) | ❌**不支持** `<br>`仅支持 TTS (Text-to-Speech)。无法改变已有音频的音色。                                                                                               | ✅**支持** `<br>`可以将任意音频转换为任意音色 (保留语调/停顿)。      | ❌**不支持** `<br>`纯 TTS 模型。仅支持 Text-to-Speech。 |
-| **Qwen3-TTS** (1.7B/0.6B)           | ✅**支持** `<br>`支持 CustomVoice (内置) 和 VoiceDesign (描述)。                                                                                                         | ✅**支持** `<br>`支持 3秒极速 Zero-shot 克隆。                               | ✅**支持** `<br>`支持 10 种语言。                         |
+| **Qwen3-TTS** (1.7B/0.6B)           | ✅**支持** `<br>`支持 Presets (内置音色) 和 VoiceDesign (描述)。                                                                                                         | ✅**支持** `<br>`支持 3秒极速 Clone (克隆) 模型。                               | ✅**支持** `<br>`支持 10 种语言。                         |
 
 #### 3.13 Qwen3-TTS (New! 🔥)
 
 - **用途**: 阿里巴巴 Qwen 团队推出的最新旗舰级 TTS 模型，支持 10 种主要语言及多种方言，具备极高的稳定性和表现力。
 - **核心能力**:
-  - **CustomVoice**: 使用内置的高品质音色进行语音合成。提供 1.7B 和 0.6B 两种规格。
+  - **Base (Clone)**: 核心能力为 **3秒极速音色克隆**。支持 X-Vector 模式提升稳定性。
+  - **CustomVoice (Presets)**: 阿里巴巴官方提供的 **9 种高品质内置音色** (如 Vivian, Zack 等)，支持极强的情感和方言控制。
   - **VoiceDesign**: 通过自然语言描述（如“活泼的少女音，带点羞涩”）从零设计音色。
-  - **VoiceClone**: 顶级的 3秒快速音色克隆，支持 X-Vector 模式提升稳定性。
 - **环境要求**:
   - **qwen-tts**: `pip install qwen-tts` (插件会自动尝试安装)。
   - **Flash Attention 2**: 强烈推荐以获得最佳推理性能。
 - **节点**:
-  - `🤖 Qwen3-TTS Loader`: 加载模型。支持 `Base` (克隆)、`CustomVoice` (内置音色) 和 `VoiceDesign` (音色设计) 模型。
+  - `🤖 Qwen3-TTS Loader`: 加载模型。支持 `Base (Clone)`、`CustomVoice (Presets)` 和 `VoiceDesign` 模型。
   - `🗣️ Qwen3-TTS Synthesis`: 执行合成。根据加载的模型类型自动切换功能。
 - **模型列表**:
   - `Qwen/Qwen3-TTS-12Hz-1.7B-Base` (或 0.6B-Base)
@@ -1056,9 +1056,12 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 
 - **TTS Engine**: 后端引擎选择。
   - **CosyVoice**: 精准控制型。
-  - **VibeVoice**: 自然演绎型。
-  - **Qwen3-TTS**: 万能旗舰型。支持音色设计与内置高质量音色。
-- **Speaker A/B/C**:
+  - **Qwen3-TTS**: 万能旗舰型。支持混合模式：通过连接多个 Qwen 模型，可实现在一个对话中同时使用克隆和内置音色。
+- **Qwen Model Pins (Multi-Routing)**:
+  - `qwen_model`: 默认主模型。
+  - `qwen_base_model` (可选): 连接 `Base` 模型，专门处理有参考音频 (Clone) 的角色。
+  - `qwen_custom_model` (可选): 连接 `Custom` 模型，专门处理使用内置 ID (Presets) 的角色。
+  - `qwen_design_model` (可选): 连接 `VoiceDesign` 模型，专门处理复杂描述的角色。
   - **Ref Audio**: 参考音频 (用于 Zero-Shot 克隆)。
   - **ID**: 内置音色 ID (如 CosyVoice 的 `Chinese Female`)。
 - **Batch Mode**: 生成模式控制。
