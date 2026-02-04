@@ -1020,6 +1020,31 @@ hf download Qwen/Qwen3-TTS-12Hz-0.6B-Base --local-dir models/qwen_tts/Qwen/Qwen3
 hf download Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
 ```
 
+#### 🎭 掌握指令控制 (Instruct Control)
+
+Qwen3-TTS 最强大的特性之一是其**自然语言指令驱动**的能力。与传统的“固定标签”不同，你可以直接在 `instruct` 输入框中用一段描述来控制声音的表现。
+
+**1. 情感与语气控制 (Emotion & Tone)**
+虽然官方没有强制的固定标签列表，但以下描述词被证明效果极佳（支持中文或英文）：
+- **基础情感**: "开心" (Happy), "悲伤" (Sad), "生气" (Angry), "兴奋" (Excited), "温柔" (Gentle), "严肃" (Serious)。
+- **微表情控制**: "带点羞涩的" (With a hint of shyness), "语气充满诱惑力" (Seductive tone), "语气带着哭腔" (Crying tone)。
+- **提示**: 这些指令可以组合，例如 `生气且激动的。` 或 `Very happy and excited.`
+
+**2. 语速与节奏 (Prosody)**
+虽然节点有专门的 `speed` 滑块，但通过 `instruct` 可以实现更自然的节奏控制：
+- "语速极快" (Very fast speaking rate), "缓慢且深情地" (Slow and soulful), "中间有明显的停顿" (Dramatic pauses)。
+
+**3. 音色设计 (Voice Design)**
+在加载 **VoiceDesign** 模型时，指令框即为你的“捏人”引擎：
+- **特征描述**: "沙哑的男低音" (Raspy deep male voice), "甜美的少女音" (Sweet young girl's voice), "充满磁性的中年女性" (Magnetic middle-aged female)。
+- **示例**: `A young woman with a clear, bright voice, speaking with great confidence.`
+
+**4. 使用技巧**:
+- **句尾符号**: 指令末尾建议加一个句号（如 `开心地。`），这有助于模型更稳定地理解指令边界。
+- **对话剧本**: 在 `🎙️ Qwen3-TTS Dialogue (Specialist)` 节点中，如果某位 Speaker 处于 `Preset` 或 `Design` 模式，系统会自动将剧本中的情感标签（如 `[开心]`）转换为对应的 `instruct` 指令。
+
+---
+
 ---
 
 #### 💡 用户实测与选型指南 (Model Comparison & Selection)
