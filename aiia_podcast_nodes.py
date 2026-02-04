@@ -5,7 +5,7 @@ import re
 AIIA_EMOTION_LIST = [
     "None", 
     "Happy (开心)", "Sad (悲伤)", "Angry (愤怒)", "Excited (兴奋)", 
-    "Fearful (恐惧)", "Surprised (惊讶)", "Disappointed (失望)", 
+    "Gentle (温柔)", "Fearful (恐惧)", "Surprised (惊讶)", "Disappointed (失望)", 
     "Proud (骄傲)", "Anxious (焦虑)", "Calm (冷静)", "Neutral (中性)",
     "Affectionate (深情)", "Awkward (尴尬)", "Determined (坚定)", "Hesitant (犹豫)",
     "With a hint of shyness (带点羞涩)", "Seductive tone (充满诱惑力)", 
