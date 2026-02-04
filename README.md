@@ -1050,6 +1050,13 @@ Qwen3-TTS 最强大的特性之一是其**自然语言指令驱动**的能力。
 - **特征描述**: "沙哑的男低音" (Raspy deep male voice), "甜美的少女音" (Sweet young girl's voice), "充满磁性的中年女性" (Magnetic middle-aged female)。
 - **示例**: `A young woman with a clear, bright voice, speaking with great confidence.`
 
+- **示例**: `A young woman with a clear, bright voice, speaking with great confidence.`
+- **方言与口音 (Dialect & Accent)**:
+    - 虽然官方称全系列支持，但实测发现不同模型遵循度不同：
+    - **VoiceDesign (1.7B/0.6B-Custom)**: **👑 效果最强**。因为没有固定身份限制，能完美呈现粤语、上海话等方言的韵律。
+    - **CustomVoice (Presets)**: 效果一般。由于 Vivian 等音色有固定的标准语设定，方言指令常会被弱化以维持音色一致性。
+    - **Base (Clone)**: 效果最弱。主要取决于你的参考音频本身是什么口音。
+
 **4. 使用技巧**:
 - **句尾符号**: 指令末尾建议加一个句号（如 `开心地。`），这有助于模型更稳定地理解指令边界。
 - **对话剧本**: 在 `🎙️ Qwen3-TTS Dialogue (Specialist)` 节点中，如果某位 Speaker 处于 `Preset` 或 `Design` 模式，系统会自动将剧本中的情感标签（如 `[开心]`）转换为对应的 `instruct` 指令。
