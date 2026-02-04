@@ -88,6 +88,7 @@ class AIIA_Qwen_TTS:
                 "language": (["Auto", "Chinese", "English", "Japanese", "Korean", "German", "French", "Russian", "Portuguese", "Spanish", "Italian"], {"default": "Chinese"}),
             },
             "optional": {
+                # Official Premium Speakers: Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee
                 "speaker": ("STRING", {"default": "Vivian"}),
                 "instruct": ("STRING", {"multiline": True, "default": ""}),
                 "reference_audio": ("AUDIO",),
