@@ -768,9 +768,8 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_Qwen_Loader": "🤖 Qwen3-TTS Loader",
-    "AIIA_Qwen_TTS": "🗣️ Qwen3-TTS Synthesis",
-    "AIIA_Qwen_Dialogue_TTS": "🎙️ Qwen3-TTS Dialogue (Specialist)",
-    "AIIA_Qwen_Model_Router": "🔌 Qwen3-Model Router (Bundle)"
-
+    "AIIA_Qwen_Loader": "Qwen3-TTS Loader",
+    "AIIA_Qwen_TTS": "Qwen3-TTS Synthesis",
+    "AIIA_Qwen_Dialogue_TTS": "Qwen3-TTS Dialogue (Specialist)",
+    "AIIA_Qwen_Model_Router": "Qwen3-Model Router (Bundle)"
 }

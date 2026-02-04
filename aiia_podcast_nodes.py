@@ -735,7 +735,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_Podcast_Script_Parser": "📜 AIIA Podcast Script Parser",
-    "AIIA_Dialogue_TTS": "🎧 AIIA Dialogue TTS (Multi-Role)",
-    "AIIA_Segment_Merge": "🔗 AIIA Segment Merge (Visual)"
+    "AIIA_Podcast_Script_Parser": "AIIA Podcast Script Parser",
+    "AIIA_Dialogue_TTS": "AIIA Dialogue TTS (Multi-Role)",
+    "AIIA_Segment_Merge": "AIIA Segment Merge (Visual)"
 }
