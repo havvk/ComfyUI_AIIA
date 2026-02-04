@@ -183,7 +183,7 @@ class AIIA_Qwen_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Synthesis"
 
-    def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", zero_shot_mode=False, emotion="None", dialect="None", seed=42, speed=1.0, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95):
+    def generate(self, qwen_model, text, language, **kwargs):
         # 0. Handle Bundle Routing
         active_qwen = qwen_model
         if qwen_model.get("is_bundle"):
@@ -331,12 +331,9 @@ class AIIA_Qwen_Dialogue_TTS:
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
-                "dialect_note": ("STRING", {"default": "💡 提示：方言建议配合 Design 模式使用。", "is_label": True}),
-                "base_note": ("STRING", {"default": "⚠️ 注意：Clone 模式下的 Base 模型不支持文字指令控制。", "is_label": True}),
                 "qwen_model": ("QWEN_MODEL",),
             },
             "optional": {
-                "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_A_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
@@ -364,7 +361,8 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_C_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_C_ref": ("AUDIO",),
                 "speaker_C_ref_text": ("STRING", {"multiline": True, "default": ""}),
-                # New Optional Slots (Appended to prevent shift)
+                
+                # Appended features
                 "qwen_base_model": ("QWEN_MODEL",),
                 "qwen_custom_model": ("QWEN_MODEL",),
                 "qwen_design_model": ("QWEN_MODEL",),
@@ -719,10 +717,10 @@ class AIIA_Qwen_Dialogue_TTS:
                 traceback.print_exc()
 
         if not full_waveform:
-            return ({"waveform": torch.zeros((1, 1, 1024)), "sample_rate": sample_rate}, "[]")
+            return ({"waveform": torch.zeros((1, 1, 1024)), "sample_rate": sample_rate},)
 
         final_wav = torch.cat(full_waveform, dim=1)
-        return ({"waveform": final_wav.unsqueeze(0), "sample_rate": sample_rate}, json.dumps(segments_info, ensure_ascii=False))
+        return ({"waveform": final_wav.unsqueeze(0), "sample_rate": sample_rate},)
 
 class AIIA_Qwen_Model_Router:
     @classmethod
