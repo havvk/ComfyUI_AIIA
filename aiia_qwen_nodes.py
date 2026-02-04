@@ -27,9 +27,15 @@ QWEN_EXPRESSION_LIST = [
     "语气显得非常疲惫 (Sounding very tired)",
     "语速稍快，显得有些急促 (Hurried tone)",
     "充满自信且响亮的 (Confident and loud)",
-    "稍微有点犹豫和不确定 (Hesitant and uncertain)",
+    "稍微有点犹豫 and 不确定 (Hesitant and uncertain)",
     "语气极其冷淡 (Extremely cold tone)",
     "温柔且轻声细语的 (Gentle and whispering)"
+]
+
+QWEN_DIALECT_LIST = [
+    "None", "普通话 (Mandarin)", "粤语 (Cantonese)", "上海话 (Shanghainese)", 
+    "四川话 (Sichuanese)", "东北话 (Northeastern)", "闽南话 (Hokkien)", 
+    "客家话 (Hakka)", "天津话 (Tianjinese)", "山东话 (Shandongnese)"
 ]
 
 def _install_qwen_tts_if_needed():
@@ -160,8 +166,9 @@ class AIIA_Qwen_TTS:
                 "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
                 "reference_audio": ("AUDIO",),
                 "reference_text": ("STRING", {"multiline": True, "default": ""}),
-                "emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
                 "zero_shot_mode": ("BOOLEAN", {"default": False}),
+                "emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
+                "dialect": (QWEN_DIALECT_LIST, {"default": "None"}),
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
@@ -176,7 +183,7 @@ class AIIA_Qwen_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Synthesis"
 
-    def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", zero_shot_mode=False, emotion="None", seed=42, speed=1.0, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95):
+    def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", zero_shot_mode=False, emotion="None", dialect="None", seed=42, speed=1.0, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95):
         model = qwen_model["model"]
         m_type = qwen_model["type"]
         
@@ -194,8 +201,15 @@ class AIIA_Qwen_TTS:
             "cfg_scale": cfg_scale
         }
 
-        # Merge global emotion into instruct
+        # Merge dialect and global emotion into instruct
         final_instruct = instruct
+        
+        # 1. Add Dialect
+        if dialect and dialect != "None":
+            dia_label = dialect.split(" (")[0] if " (" in dialect else dialect
+            final_instruct = f"用{dia_label}说。" + (f"{final_instruct}" if final_instruct else "")
+
+        # 2. Add Emotion
         if emotion and emotion != "None":
             # Extract basic emotion name from "Name (English)"
             emo_label = emotion.split(" (")[0] if " (" in emotion else emotion
@@ -204,7 +218,10 @@ class AIIA_Qwen_TTS:
             else:
                 # Append if not already present
                 if emo_label not in final_instruct:
-                    final_instruct = f"{emo_label}。{final_instruct}"
+                    if final_instruct.endswith("。"):
+                        final_instruct = f"{final_instruct}{emo_label}。"
+                    else:
+                        final_instruct = f"{final_instruct}。{emo_label}。"
 
         wavs = None
         sr = 24000 # Default if unknown
@@ -311,6 +328,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_A_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_A_emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
                 "speaker_A_expression": (QWEN_EXPRESSION_LIST, {"default": "None"}),
+                "speaker_A_dialect": (QWEN_DIALECT_LIST, {"default": "None"}),
                 "speaker_A_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_A_ref": ("AUDIO",),
                 "speaker_A_ref_text": ("STRING", {"multiline": True, "default": ""}),
@@ -320,6 +338,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_B_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_B_emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
                 "speaker_B_expression": (QWEN_EXPRESSION_LIST, {"default": "None"}),
+                "speaker_B_dialect": (QWEN_DIALECT_LIST, {"default": "None"}),
                 "speaker_B_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_B_ref": ("AUDIO",),
                 "speaker_B_ref_text": ("STRING", {"multiline": True, "default": ""}),
@@ -329,6 +348,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_C_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_C_emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
                 "speaker_C_expression": (QWEN_EXPRESSION_LIST, {"default": "None"}),
+                "speaker_C_dialect": (QWEN_DIALECT_LIST, {"default": "None"}),
                 "speaker_C_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_C_ref": ("AUDIO",),
                 "speaker_C_ref_text": ("STRING", {"multiline": True, "default": ""}),
@@ -438,6 +458,7 @@ class AIIA_Qwen_Dialogue_TTS:
             spk_id = kwargs.get(f"speaker_{spk_key}_id", "Vivian")
             spk_emotion_preset = kwargs.get(f"speaker_{spk_key}_emotion", "None")
             spk_expression_preset = kwargs.get(f"speaker_{spk_key}_expression", "None")
+            spk_dialect_preset = kwargs.get(f"speaker_{spk_key}_dialect", "None")
             design = kwargs.get(f"speaker_{spk_key}_design", "")
             ref_audio = get_ref_audio_with_fallback(spk_key) if mode == "Clone" else None
             ref_text = kwargs.get(f"speaker_{spk_key}_ref_text", "")
@@ -457,13 +478,13 @@ class AIIA_Qwen_Dialogue_TTS:
             # For Preset, we can merge DIFFERENT speakers by using [Speaker] tags
             # So they only need to share the same qwen_model and mode="Preset"
             if mode == "Preset":
-                param_hash = (f"Preset_{id(qwen_model)}",)
+                param_hash = (f"Preset_{id(qwen_model)}", spk_dialect_preset)
             elif mode == "Clone":
-                # Must share same ref_audio and ref_text
-                param_hash = (f"Clone_{id(qwen_model)}", id(ref_audio), ref_text)
+                # Must share same ref_audio and ref_text and dialect
+                param_hash = (f"Clone_{id(qwen_model)}", id(ref_audio), ref_text, spk_dialect_preset)
             else: # Design
-                # Must share the same design text
-                param_hash = (f"Design_{id(qwen_model)}", design)
+                # Must share the same design text and dialect
+                param_hash = (f"Design_{id(qwen_model)}", design, spk_dialect_preset)
             
             return {
                 "spk_name": spk_name,
@@ -473,6 +494,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "emotion": emotion,
                 "spk_emotion_preset": spk_emotion_preset,
                 "spk_expression_preset": spk_expression_preset,
+                "spk_dialect_preset": spk_dialect_preset,
                 "mode": mode,
                 "qwen_model": qwen_model,
                 "ref_audio": ref_audio,
@@ -551,9 +573,13 @@ class AIIA_Qwen_Dialogue_TTS:
                 total_char_count += c_len
                 item_char_counts.append(c_len)
 
-            # Instruct logic: merge all emotions and expressions in the batch
+            # Instruct logic: merge all dialects, emotions and expressions in the batch
             emotions = []
+            dialects = []
             for it in items:
+                dia = it["spk_dialect_preset"] if it["spk_dialect_preset"] and it["spk_dialect_preset"] != "None" else ""
+                if dia: dialects.append(dia.split(" (")[0] if " (" in dia else dia)
+                
                 emo = it["emotion"] if it["emotion"] and it["emotion"] != "None" else ""
                 pres = it["spk_emotion_preset"] if it["spk_emotion_preset"] and it["spk_emotion_preset"] != "None" else ""
                 expr = it["spk_expression_preset"] if it["spk_expression_preset"] and it["spk_expression_preset"] != "None" else ""
@@ -561,11 +587,17 @@ class AIIA_Qwen_Dialogue_TTS:
                 if pres: emotions.append(pres.split(" (")[0] if " (" in pres else pres)
                 if expr: emotions.append(expr.split(" (")[0] if " (" in expr else expr)
             
+            unique_dias = []
+            for d in dialects:
+                if d and d not in unique_dias: unique_dias.append(d)
+                
             unique_emos = []
             for e in emotions:
                 if e and e not in unique_emos: unique_emos.append(e)
             
-            target_instruct = "，".join(unique_emos) + "。" if unique_emos else ""
+            dia_instruct = "，".join([f"用{d}说" for d in unique_dias]) + "。" if unique_dias else ""
+            emo_instruct = "，".join(unique_emos) + "。" if unique_emos else ""
+            target_instruct = dia_instruct + emo_instruct
             if mode == "Design":
                 target_instruct = first["design"] if first["design"] else target_instruct
 

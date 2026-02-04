@@ -1106,13 +1106,16 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 - **Parameters**: 
   - `seed`: 随机种子。
   - `speed`: 语速调节。
-  - `cfg_scale`: 指令遵循强度 (Classifier-Free Guidance)。建议值 1.5-7.0。
+  - `cfg_scale`: 指令遵循强度 (Classifier-Free Guidance)。建议值 1.5 - 7.0。
+  - `emotion`: **[v1.11.1 New]** 选中预设情感（开心、悲伤、幽默、愤怒等系统预置微调）。
+  - `dialect`: **[v1.11.1 New]** 选中预设方言（粤语、上海话、东北话、四川话等）。
   - `temperature`: 采样温度。
   - `max_batch_char`: 单次批处理上限（最高 32,768）。
 - **Speaker A/B/C Configuration**:
   - **Mode**: 选择 `Clone` (音色克隆)、`Preset` (官方预设) 或 `Design` (文字设计)。
   - **ID**: 当模式为 Preset 时，输入预设音色名 (如 `Vivian`, `Serena`, `Uncle_Fu`, `Dylan`, `Eric`, `Ryan`, `Aiden`, `Ono_Anna`, `Sohee`)。
   - **Expression**: (New!) 为当前角色选择专属微表情描述。
+  - **Dialect**: **[v1.11.1 New]** 为当前角色选择方言/口音（支持粤语、上海话、四川话、东北话等）。
   - **Design Description**: 当模式为 Design 时，输入对音色的详细自然语言描述。
   - **Ref Audio**: 当模式为 Clone 时，连接参考音频。
 - **特点**: 相对于通用对话节点，此节点能根据每个人的模式自动路由到最合适的 Qwen 引擎，且支持在 UI 直接输入设计描述。

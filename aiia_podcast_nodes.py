@@ -10,6 +10,13 @@ AIIA_EMOTION_LIST = [
     "自豪 (Proud)", "疑惑 (Doubtful)", "焦虑 (Anxious)", "平静 (Calm)"
 ]
 
+AIIA_DIALECT_LIST = [
+    "None", "普通话 (Mandarin)", "粤语 (Cantonese)", "上海话 (Shanghainese)", 
+    "四川话 (Sichuanese)", "东北话 (Northeastern)", "闽南话 (Hokkien)", 
+    "客家话 (Hakka)", "天津话 (Tianjinese)", "山东话 (Shandongnese)",
+    "河南话 (Henan)", "陕西话 (Shaanxi)", "湖南话 (Hunan)"
+]
+
 class AIIA_Podcast_Script_Parser:
     def __init__(self):
         pass
@@ -208,16 +215,19 @@ class AIIA_Dialogue_TTS:
                 "speaker_A_ref": ("AUDIO",),
                 "speaker_A_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
                 "speaker_A_emotion": (AIIA_EMOTION_LIST, {"default": "None"}),
+                "speaker_A_dialect": (AIIA_DIALECT_LIST, {"default": "None"}),
                 
                 # Speaker B
                 "speaker_B_ref": ("AUDIO",),
                 "speaker_B_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
                 "speaker_B_emotion": (AIIA_EMOTION_LIST, {"default": "None"}),
+                "speaker_B_dialect": (AIIA_DIALECT_LIST, {"default": "None"}),
 
                 # Speaker C
                 "speaker_C_ref": ("AUDIO",),
                 "speaker_C_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
                 "speaker_C_emotion": (AIIA_EMOTION_LIST, {"default": "None"}),
+                "speaker_C_dialect": (AIIA_DIALECT_LIST, {"default": "None"}),
             }
         }
     
@@ -288,6 +298,7 @@ class AIIA_Dialogue_TTS:
                     speaker=spk_id,
                     instruct=instruct,
                     reference_audio=ref_audio,
+                    dialect=item_params.get("dialect", "None"),
                     seed=42+i, # Use a seed for reproducibility within the batch
                     speed=speed_global,
                     cfg_scale=cfg_scale,
@@ -514,6 +525,7 @@ class AIIA_Dialogue_TTS:
                     if not sid.strip(): sid = "Vivian"
                     ref = get_ref_audio(sk)
                     pemf = kwargs.get(f"speaker_{sk}_emotion", "None")
+                    dia = kwargs.get(f"speaker_{sk}_dialect", "None")
                     
                     me = em if em and em != "None" else ""
                     if pemf and pemf != "None":
@@ -526,29 +538,11 @@ class AIIA_Dialogue_TTS:
                     elif ins and qwen_design_model is not None and ref is None: tm = qwen_design_model
                     elif qwen_custom_model is not None: tm = qwen_custom_model
                     
-                    # Create a hash based on the parameters that define a unique Qwen generation context
-                    # This is a simplified hash; a more robust one might involve content hashing of ref_audio
-                    # For now, id(tm) is sufficient to group by model.
-                    # We also need to ensure speaker_id and ref_audio are consistent within a batch.
-                    # Since the current batching is greedy and based on `id(tm)`, `speaker_id`, and `ref_audio`
-                    # we need to include these in the hash for proper batching.
-                    # For simplicity, let's assume `id(tm)` is the primary grouping key for now,
-                    # and the `_generate_qwen_batch` will handle the iterative calls.
-                    
-                    # The actual Qwen generation is still iterative, so the batching here is about
-                    # grouping *consecutive* compatible items to call `_generate_qwen_batch` on them.
-                    # The `_generate_qwen_batch` will then iterate and call `qwen_gen.generate` for each.
-                    
-                    # The "hash" here is more about determining if an item can be added to the *current logical batch*
-                    # before flushing.
-                    # A more precise hash would be a tuple of (id(tm), speaker_id, id(ref_audio_waveform_if_any))
-                    # For now, let's just use id(tm) as the primary grouping key, and rely on the fact that
-                    # the `_generate_qwen_batch` will process them individually.
-                    
-                    # Store all relevant parameters for later use in _generate_qwen_batch
+                    # Dialect is part of compatibility
                     return {
                         "tm": tm, "tx": tx, "sid": sid, "ref": ref, "ins": ins, "me": me, "sk": sk,
-                        "h": id(tm), # Primary grouping key
+                        "dialect": dia,
+                        "h": (id(tm), dia), # Gouping key
                         "original_speaker": it["speaker"],
                         "original_item": it # Keep original item for visual tag
                     }
@@ -624,7 +618,7 @@ class AIIA_Dialogue_TTS:
                             spk_id=spk_id,
                             speed=speed_global,
                             seed=42+i,
-                            dialect="None (Auto)",
+                            dialect=kwargs.get(f"speaker_{spk_key}_dialect", "None (Auto)"),
                             emotion="None (Neutral)",
                             reference_audio=ref_audio
                         )
