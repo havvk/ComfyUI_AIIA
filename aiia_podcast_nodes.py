@@ -3,18 +3,18 @@ import json
 import re
 
 AIIA_EMOTION_LIST = [
-    "None", "开心 (Happy)", "悲伤 (Sad)", "生气 (Angry)", "兴奋 (Excited)", 
-    "温柔 (Gentle)", "严肃 (Serious)", "恐惧 (Fearful)", "惊讶 (Surprised)", 
-    "低语 (Whispering)", "呐喊 (Shouting)", "羞涩 (Shy)", "诱惑 (Seductive)", 
-    "哭腔 (Crying)", "笑声 (Laughter)", "尴尬 (Embarrassed)", "失望 (Disappointed)", 
-    "自豪 (Proud)", "疑惑 (Doubtful)", "焦虑 (Anxious)", "平静 (Calm)"
+    "None", "Happy", "Sad", "Angry", "Excited", 
+    "Gentle", "Serious", "Fearful", "Surprised", 
+    "Whispering", "Shouting", "Shy", "Seductive", 
+    "Crying", "Laughter", "Embarrassed", "Disappointed", 
+    "Proud", "Doubtful", "Anxious", "Calm"
 ]
 
 AIIA_DIALECT_LIST = [
-    "None", "普通话 (Mandarin)", "粤语 (Cantonese)", "上海话 (Shanghainese)", 
-    "四川话 (Sichuanese)", "东北话 (Northeastern)", "闽南话 (Hokkien)", 
-    "客家话 (Hakka)", "天津话 (Tianjinese)", "山东话 (Shandongnese)",
-    "河南话 (Henan)", "陕西话 (Shaanxi)", "湖南话 (Hunan)"
+    "None", "Mandarin", "Cantonese", "Shanghainese", 
+    "Sichuanese", "Northeastern", "Hokkien", 
+    "Hakka", "Tianjinese", "Shandongnese",
+    "Henan", "Shaanxi", "Hunan"
 ]
 
 class AIIA_Podcast_Script_Parser:
@@ -346,10 +346,20 @@ class AIIA_Dialogue_TTS:
                 time_ptr[0] += 1.0
 
 
-    def process_dialogue(self, dialogue_json, tts_engine, pause_duration, speed_global, batch_mode,
-                         max_batch_char=1000, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95,
-                         qwen_model=None, cosyvoice_model=None, vibevoice_model=None, 
-                         qwen_base_model=None, qwen_custom_model=None, qwen_design_model=None, **kwargs):
+    def process_dialogue(self, dialogue_json, tts_engine, pause_duration, speed_global, batch_mode, **kwargs):
+        # Extract optional and model-specific params from kwargs
+        max_batch_char = kwargs.get("max_batch_char", 1000)
+        cfg_scale = kwargs.get("cfg_scale", 1.5)
+        temperature = kwargs.get("temperature", 0.8)
+        top_k = kwargs.get("top_k", 20)
+        top_p = kwargs.get("top_p", 0.95)
+        
+        cosyvoice_model = kwargs.get("cosyvoice_model")
+        vibevoice_model = kwargs.get("vibevoice_model")
+        qwen_model = kwargs.get("qwen_model")
+        qwen_base_model = kwargs.get("qwen_base_model")
+        qwen_custom_model = kwargs.get("qwen_custom_model")
+        qwen_design_model = kwargs.get("qwen_design_model")
         # Robustness: ensure max_batch_char is correctly picked up even if shifted or provided as kwarg
         max_batch_char = kwargs.get("max_batch_char", max_batch_char)
         import json

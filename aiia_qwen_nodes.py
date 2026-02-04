@@ -11,31 +11,22 @@ import subprocess
 QWEN_SPEAKER_LIST = ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee"]
 QWEN_PRESET_NOTE = "Presets (9 premium timbres): Vivian/Serena/Uncle_Fu (CN), Dylan/Eric/Ryan/Aiden (EN), Ono_Anna (JP), Sohee (KR)"
 QWEN_EMOTION_LIST = [
-    "None", "开心 (Happy)", "悲伤 (Sad)", "生气 (Angry)", "兴奋 (Excited)", 
-    "温柔 (Gentle)", "严肃 (Serious)", "恐惧 (Fearful)", "惊讶 (Surprised)", 
-    "低语 (Whispering)", "呐喊 (Shouting)", "羞涩 (Shy)", "诱惑 (Seductive)", 
-    "哭腔 (Crying)", "笑声 (Laughter)", "尴尬 (Embarrassed)", "失望 (Disappointed)", 
-    "自豪 (Proud)", "疑惑 (Doubtful)", "焦虑 (Anxious)", "平静 (Calm)"
+    "None", "Happy", "Sad", "Angry", "Excited", 
+    "Gentle", "Serious", "Fearful", "Surprised", 
+    "Whispering", "Shouting", "Shy", "Seductive", 
+    "Crying", "Laughter", "Embarrassed", "Disappointed", 
+    "Proud", "Doubtful", "Anxious", "Calm"
 ]
 
 QWEN_EXPRESSION_LIST = [
-    "None", 
-    "带点羞涩的 (With a hint of shyness)", 
-    "语气充满诱惑力 (Seductive tone)", 
-    "语气带着哭腔 (Crying tone)",
-    "稍微带一点点笑意 (With a slight smile)",
-    "语气显得非常疲惫 (Sounding very tired)",
-    "语速稍快，显得有些急促 (Hurried tone)",
-    "充满自信且响亮的 (Confident and loud)",
-    "稍微有点犹豫 and 不确定 (Hesitant and uncertain)",
-    "语气极其冷淡 (Extremely cold tone)",
-    "温柔且轻声细语的 (Gentle and whispering)"
+    "None", "Shyness", "Seductive", "Crying", "Smiling",
+    "Tired", "Hurried", "Confident", "Hesitant", "Cold", "Whispering"
 ]
 
 QWEN_DIALECT_LIST = [
-    "None", "普通话 (Mandarin)", "粤语 (Cantonese)", "上海话 (Shanghainese)", 
-    "四川话 (Sichuanese)", "东北话 (Northeastern)", "闽南话 (Hokkien)", 
-    "客家话 (Hakka)", "天津话 (Tianjinese)", "山东话 (Shandongnese)"
+    "None", "Mandarin", "Cantonese", "Shanghainese", 
+    "Sichuanese", "Northeastern", "Hokkien", 
+    "Hakka", "Tianjinese", "Shandongnese"
 ]
 
 def _install_qwen_tts_if_needed():
@@ -503,8 +494,8 @@ class AIIA_Qwen_Dialogue_TTS:
             design = kwargs.get(f"speaker_{spk_key}_design", "")
             # 0. Specialized Qwen Routing from Bundle or slots
             def get_model_from_bundle(mode, ref=None):
-                # 1. Check primary qwen_model (might be a bundle)
-                main_q = kwargs.get("qwen_model")
+                # 1. Check primary qwen_model (passed as positional argument)
+                main_q = qwen_model
                 if main_q and main_q.get("is_bundle"):
                     if mode == "Clone" or ref is not None:
                         return main_q.get("base") or main_q.get("default")
