@@ -575,7 +575,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_VibeVoice_Loader": "🎤 VibeVoice Loader",
-    "AIIA_VibeVoice_TTS": "🗣️ VibeVoice TTS (Standard)"
+    "AIIA_VibeVoice_Loader": "VibeVoice Loader",
+    "AIIA_VibeVoice_TTS": "VibeVoice TTS (Standard)"
 }
 

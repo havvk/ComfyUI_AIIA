@@ -177,7 +177,7 @@ def aiia_apply_video_format_config(format_ui_name: str, user_inputs: dict) -> di
     return processed
 
 class AIIA_VideoCombine:
-    NODE_NAME = "AIIA 视频合并 (图像或目录)"
+    NODE_NAME = "AIIA Video Combine (Images or Directory)"
     CATEGORY = "AIIA/视频"
     FUNCTION = "combine_video"
     RETURN_TYPES = ("STRING",)
@@ -398,7 +398,7 @@ class AIIA_VideoCombine:
 class AIIA_BodySway:
     """Simulate subtle body movement through crop-based pan and rotation."""
     
-    NODE_NAME = "AIIA 身体微动 (Body Sway)"
+    NODE_NAME = "AIIA Body Sway"
     CATEGORY = "AIIA/视频"
     FUNCTION = "apply_sway"
     RETURN_TYPES = ("IMAGE", "STRING")
@@ -700,6 +700,6 @@ NODE_CLASS_MAPPINGS = {
     "AIIA_BodySway": AIIA_BodySway,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_VideoCombine": "视频合并 (AIIA, 图像或目录)",
-    "AIIA_BodySway": "身体微动 (AIIA Body Sway)",
+    "AIIA_VideoCombine": "AIIA Video Combine (Images or Dir)",
+    "AIIA_BodySway": "AIIA Body Sway",
 }

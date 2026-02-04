@@ -199,19 +199,19 @@ class AIIA_Dialogue_TTS:
             "optional": {
                 # Speaker A
                 "speaker_A_ref": ("AUDIO",),
-                "speaker_A_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
+                "speaker_A_id": ("STRING", {"default": "", "placeholder": "CosyVoice Internal ID (Optional)"}),
                 "speaker_A_emotion": (AIIA_EMOTION_LIST, {"default": "None"}),
                 "speaker_A_dialect": (AIIA_DIALECT_LIST, {"default": "None"}),
                 
                 # Speaker B
                 "speaker_B_ref": ("AUDIO",),
-                "speaker_B_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
+                "speaker_B_id": ("STRING", {"default": "", "placeholder": "CosyVoice Internal ID (Optional)"}),
                 "speaker_B_emotion": (AIIA_EMOTION_LIST, {"default": "None"}),
                 "speaker_B_dialect": (AIIA_DIALECT_LIST, {"default": "None"}),
 
                 # Speaker C
                 "speaker_C_ref": ("AUDIO",),
-                "speaker_C_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
+                "speaker_C_id": ("STRING", {"default": "", "placeholder": "CosyVoice Internal ID (Optional)"}),
                 "speaker_C_emotion": (AIIA_EMOTION_LIST, {"default": "None"}),
                 "speaker_C_dialect": (AIIA_DIALECT_LIST, {"default": "None"}),
 

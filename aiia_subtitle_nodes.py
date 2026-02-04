@@ -618,7 +618,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_Subtitle_Gen": "📝 AIIA Subtitle Generation",
-    "AIIA_Subtitle_Preview": "🎬 AIIA Subtitle Preview",
-    "AIIA_Subtitle_To_Segments": "🔄 AIIA Subtitle to Segments"
+    "AIIA_Subtitle_Gen": "AIIA Subtitle Generation",
+    "AIIA_Subtitle_Preview": "AIIA Subtitle Preview",
+    "AIIA_Subtitle_To_Segments": "AIIA Subtitle to Segments"
 }

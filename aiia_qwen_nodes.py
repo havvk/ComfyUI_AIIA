@@ -340,9 +340,6 @@ class AIIA_Qwen_Dialogue_TTS:
                 "qwen_model": ("QWEN_MODEL",),
             },
             "optional": {
-                # Labels moved to optional to prevent shift
-                "dialect_note": ("STRING", {"default": "提示：方言建议配合 Design 模式使用。", "is_label": True}),
-                "base_note": ("STRING", {"default": "注意：Clone 模式下 Base 模型不支持指令控制。", "is_label": True}),
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_A_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
@@ -381,8 +378,8 @@ class AIIA_Qwen_Dialogue_TTS:
             }
         }
 
-    RETURN_TYPES = ("AUDIO",)
-    RETURN_NAMES = ("audio",)
+    RETURN_TYPES = ("AUDIO", "STRING")
+    RETURN_NAMES = ("audio", "segments_info")
     FUNCTION = "process_dialogue"
     CATEGORY = "AIIA/Qwen"
 
@@ -732,10 +729,11 @@ class AIIA_Qwen_Dialogue_TTS:
                 traceback.print_exc()
 
         if not full_waveform:
-            return ({"waveform": torch.zeros((1, 1, 1024)), "sample_rate": sample_rate},)
+            return ({"waveform": torch.zeros((1, 1, 1024)), "sample_rate": sample_rate}, "[]")
 
         final_wav = torch.cat(full_waveform, dim=1)
-        return ({"waveform": final_wav.unsqueeze(0), "sample_rate": sample_rate},)
+        segments_json = json.dumps(segments_info, ensure_ascii=False, indent=2)
+        return ({"waveform": final_wav.unsqueeze(0), "sample_rate": sample_rate}, segments_json)
 
 class AIIA_Qwen_Model_Router:
     @classmethod
