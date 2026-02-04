@@ -18,6 +18,20 @@ QWEN_EMOTION_LIST = [
     "自豪 (Proud)", "疑惑 (Doubtful)", "焦虑 (Anxious)", "平静 (Calm)"
 ]
 
+QWEN_EXPRESSION_LIST = [
+    "None", 
+    "带点羞涩的 (With a hint of shyness)", 
+    "语气充满诱惑力 (Seductive tone)", 
+    "语气带着哭腔 (Crying tone)",
+    "稍微带一点点笑意 (With a slight smile)",
+    "语气显得非常疲惫 (Sounding very tired)",
+    "语速稍快，显得有些急促 (Hurried tone)",
+    "充满自信且响亮的 (Confident and loud)",
+    "稍微有点犹豫和不确定 (Hesitant and uncertain)",
+    "语气极其冷淡 (Extremely cold tone)",
+    "温柔且轻声细语的 (Gentle and whispering)"
+]
+
 def _install_qwen_tts_if_needed():
     try:
         from qwen_tts import Qwen3TTSModel
@@ -296,6 +310,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_A_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_A_emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
+                "speaker_A_expression": (QWEN_EXPRESSION_LIST, {"default": "None"}),
                 "speaker_A_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_A_ref": ("AUDIO",),
                 "speaker_A_ref_text": ("STRING", {"multiline": True, "default": ""}),
@@ -304,6 +319,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_B_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_B_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_B_emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
+                "speaker_B_expression": (QWEN_EXPRESSION_LIST, {"default": "None"}),
                 "speaker_B_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_B_ref": ("AUDIO",),
                 "speaker_B_ref_text": ("STRING", {"multiline": True, "default": ""}),
@@ -312,6 +328,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_C_mode": (["Clone", "Preset", "Design"], {"default": "Design"}),
                 "speaker_C_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_C_emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
+                "speaker_C_expression": (QWEN_EXPRESSION_LIST, {"default": "None"}),
                 "speaker_C_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_C_ref": ("AUDIO",),
                 "speaker_C_ref_text": ("STRING", {"multiline": True, "default": ""}),
@@ -418,6 +435,7 @@ class AIIA_Qwen_Dialogue_TTS:
             mode = kwargs.get(f"speaker_{spk_key}_mode", "Clone")
             spk_id = kwargs.get(f"speaker_{spk_key}_id", "Vivian")
             spk_emotion_preset = kwargs.get(f"speaker_{spk_key}_emotion", "None")
+            spk_expression_preset = kwargs.get(f"speaker_{spk_key}_expression", "None")
             design = kwargs.get(f"speaker_{spk_key}_design", "")
             ref_audio = get_ref_audio_with_fallback(spk_key) if mode == "Clone" else None
             ref_text = kwargs.get(f"speaker_{spk_key}_ref_text", "")
@@ -452,6 +470,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "text": text,
                 "emotion": emotion,
                 "spk_emotion_preset": spk_emotion_preset,
+                "spk_expression_preset": spk_expression_preset,
                 "mode": mode,
                 "qwen_model": qwen_model,
                 "ref_audio": ref_audio,
@@ -530,17 +549,19 @@ class AIIA_Qwen_Dialogue_TTS:
                 total_char_count += c_len
                 item_char_counts.append(c_len)
 
-            # Instruct logic: merge all emotions in the batch
+            # Instruct logic: merge all emotions and expressions in the batch
             emotions = []
             for it in items:
                 emo = it["emotion"] if it["emotion"] and it["emotion"] != "None" else ""
                 pres = it["spk_emotion_preset"] if it["spk_emotion_preset"] and it["spk_emotion_preset"] != "None" else ""
+                expr = it["spk_expression_preset"] if it["spk_expression_preset"] and it["spk_expression_preset"] != "None" else ""
                 if emo: emotions.append(emo)
                 if pres: emotions.append(pres.split(" (")[0] if " (" in pres else pres)
+                if expr: emotions.append(expr.split(" (")[0] if " (" in expr else expr)
             
             unique_emos = []
             for e in emotions:
-                if e not in unique_emos: unique_emos.append(e)
+                if e and e not in unique_emos: unique_emos.append(e)
             
             target_instruct = "，".join(unique_emos) + "。" if unique_emos else ""
             if mode == "Design":
