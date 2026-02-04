@@ -219,9 +219,6 @@ class AIIA_Dialogue_TTS:
                 "cosyvoice_model": ("COSYVOICE_MODEL",),
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
                 "qwen_model": ("QWEN_MODEL",),
-                "qwen_base_model": ("QWEN_MODEL",),
-                "qwen_custom_model": ("QWEN_MODEL",),
-                "qwen_design_model": ("QWEN_MODEL",),
                 "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
@@ -357,9 +354,7 @@ class AIIA_Dialogue_TTS:
         cosyvoice_model = kwargs.get("cosyvoice_model")
         vibevoice_model = kwargs.get("vibevoice_model")
         qwen_model = kwargs.get("qwen_model")
-        qwen_base_model = kwargs.get("qwen_base_model")
-        qwen_custom_model = kwargs.get("qwen_custom_model")
-        qwen_design_model = kwargs.get("qwen_design_model")
+        
         # Robustness: ensure max_batch_char is correctly picked up even if shifted or provided as kwarg
         max_batch_char = kwargs.get("max_batch_char", max_batch_char)
         import json
@@ -373,8 +368,8 @@ class AIIA_Dialogue_TTS:
         if tts_engine == "VibeVoice" and vibevoice_model is None:
             raise ValueError("选择 VibeVoice 引擎时，必须连接 'vibevoice_model'！")
         if tts_engine == "Qwen3-TTS":
-            if all(m is None for m in [qwen_model, qwen_base_model, qwen_custom_model, qwen_design_model]):
-                raise ValueError("选择 Qwen3-TTS 引擎时，必须连接至少一个 Qwen 模型！")
+            if qwen_model is None:
+                raise ValueError("选择 Qwen3-TTS 引擎时，必须连接 'qwen_model'！(如果需要多个模型，请使用 Router 节点打包)")
 
         dialogue = json.loads(dialogue_json)
         full_waveform = []
