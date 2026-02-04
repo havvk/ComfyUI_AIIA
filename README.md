@@ -1080,7 +1080,7 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
   - `qwen_design_model`: 连接 Design 模型，用于自然语言捏人。
 - **Speaker A/B/C Configuration**:
   - **Mode**: 选择 `Clone` (音色克隆)、`Preset` (官方预设) 或 `Design` (文字设计)。
-  - **ID**: 当模式为 Preset 时，输入预设音色名 (如 `Vivian`, `Zack`, `Bella`, `Clara`, `Darius`, `Enid`, `Gaby`, `George`, `Howard`)。
+  - **ID**: 当模式为 Preset 时，输入预设音色名 (如 `Vivian`, `Serena`, `Uncle_Fu`, `Dylan`, `Eric`, `Ryan`, `Aiden`, `Ono_Anna`, `Sohee`)。
   - **Design Description**: 当模式为 Design 时，输入对音色的详细自然语言描述。
   - **Ref Audio**: 当模式为 Clone 时，连接参考音频。
 - **特点**: 相对于通用对话节点，此节点能根据每个人的模式自动路由到最合适的 Qwen 引擎，且支持在 UI 直接输入设计描述。
