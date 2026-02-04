@@ -1027,7 +1027,7 @@ Qwen3-TTS 最强大的特性之一是其**自然语言指令驱动**的能力。
 **1. 情感与语气控制 (Emotion & Tone)**
 虽然官方没有强制的固定标签列表，但以下描述词被证明效果极佳（支持中文或英文）：
 - **基础情感**: "开心" (Happy), "悲伤" (Sad), "生气" (Angry), "兴奋" (Excited), "温柔" (Gentle), "严肃" (Serious)。
-- **微表情控制**: "带点羞涩的" (With a hint of shyness), "语气充满诱惑力" (Seductive tone), "语气带着哭腔" (Crying tone)。
+- **微表情控制 (New!)**: 在 Specialist 节点中，你可以叠加更细腻的语气，如 "带点羞涩的" (With a hint of shyness), "语气充满诱惑力" (Seductive tone), "语气带着哭腔" (Crying tone), "语气充满笑意" (Cheerful tone) 等。
 - **提示**: 这些指令可以组合，例如 `生气且激动的。` 或 `Very happy and excited.`
 
 **2. 语速与节奏 (Prosody)**
@@ -1094,6 +1094,10 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
   - `Natural (Hybrid)`: 混合批处理。仅在 `(Pause)` 处断开。语流最自然，但可能发生音色泄漏。
   - `Strict (Per-Speaker)`: 严格模式。每句话都会强制断开重置。彻底杜绝音色泄漏，但对话流畅度略低。
   - `Whole (Single Batch)`: 全量模式。无视所有暂停，一次性生成整本剧本。连贯性最强，但无法控制停顿时间。
+- **Batching Parameters**:
+  - `max_batch_char` (Default 1500): 单次批处理的最大字符上限。增加此值可大幅提升 Qwen3 的对话连贯性和情感一致性。最高支持模型上限 **32,768**。
+- **Emotion Safeguard (New!)**:
+  - **智能检测**: 系统会自动嗅探加载模型的元数据。如果你使用 CosyVoice SFT/Base 或 VibeVoice 等不支持 `Instruct` 功能的模型，系统将自动跳过 `[Emotion]` 标签插入，防止模型读出方括号。
 
 #### 4.6 AIIA Qwen Dialogue TTS (Qwen 旗舰对话节点)
 
@@ -1103,11 +1107,12 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
   - `seed`: 随机种子。
   - `speed`: 语速调节。
   - `cfg_scale`: 指令遵循强度 (Classifier-Free Guidance)。建议值 1.5-7.0。
-  - `temperature`: 采样温度，控制随机性。
-  - `top_k`/`top_p`: 采样阈值。
+  - `temperature`: 采样温度。
+  - `max_batch_char`: 单次批处理上限（最高 32,768）。
 - **Speaker A/B/C Configuration**:
   - **Mode**: 选择 `Clone` (音色克隆)、`Preset` (官方预设) 或 `Design` (文字设计)。
   - **ID**: 当模式为 Preset 时，输入预设音色名 (如 `Vivian`, `Serena`, `Uncle_Fu`, `Dylan`, `Eric`, `Ryan`, `Aiden`, `Ono_Anna`, `Sohee`)。
+  - **Expression**: (New!) 为当前角色选择专属微表情描述。
   - **Design Description**: 当模式为 Design 时，输入对音色的详细自然语言描述。
   - **Ref Audio**: 当模式为 Clone 时，连接参考音频。
 - **特点**: 相对于通用对话节点，此节点能根据每个人的模式自动路由到最合适的 Qwen 引擎，且支持在 UI 直接输入设计描述。
