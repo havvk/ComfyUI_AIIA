@@ -756,6 +756,15 @@ class AIIA_Qwen_Dialogue_TTS:
                         wav = torchaudio.transforms.Resample(sr, sample_rate)(wav)
                     
                     wav_data = wav.squeeze(0) # [C, T]
+                    
+                    # AIIA Fix: Apply tiny fade-in/out to prevent clicks at boundaries
+                    fade_len = int(sample_rate * 0.05) # 50ms fade
+                    if wav_data.shape[-1] > fade_len * 2:
+                        fade_in = torch.linspace(0, 1, fade_len, device=wav_data.device)
+                        fade_out = torch.linspace(1, 0, fade_len, device=wav_data.device)
+                        wav_data[..., :fade_len] *= fade_in
+                        wav_data[..., -fade_len:] *= fade_out
+                    
                     full_waveform.append(wav_data)
                     
                     # Timestamp Interpolation

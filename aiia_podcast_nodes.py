@@ -344,6 +344,15 @@ class AIIA_Dialogue_TTS:
                 
                 if wav.ndim == 3: wav = wav.squeeze(0)
                 if wav.ndim == 1: wav = wav.unsqueeze(0)
+                
+                # AIIA Fix: Apply tiny fade-in/out to prevent clicks at boundaries
+                fade_len = int(sr * 0.05) # 50ms fade
+                if wav.shape[-1] > fade_len * 2:
+                    fade_in = torch.linspace(0, 1, fade_len, device=wav.device)
+                    fade_out = torch.linspace(1, 0, fade_len, device=wav.device)
+                    wav[..., :fade_len] *= fade_in
+                    wav[..., -fade_len:] *= fade_out
+                
                 current_full_wav.append(wav)
 
                 # --- Timestamp Tracking ---
