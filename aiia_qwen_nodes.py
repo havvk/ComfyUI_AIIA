@@ -241,8 +241,44 @@ class AIIA_Qwen_Dialogue_TTS:
 
     RETURN_TYPES = ("AUDIO", "STRING")
     RETURN_NAMES = ("full_audio", "segments_info")
-    FUNCTION = "process_dialogue"
     CATEGORY = "AIIA/Podcast"
+
+    def _load_fallback_audio(self, target="Male"):
+        import os
+        import torchaudio
+        
+        # 定位 assets 目录
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        assets_dir = os.path.join(current_dir, "assets")
+        
+        # 映射
+        filename_map = {
+            "Male_HQ": "seed_male_hq.wav",
+            "Female_HQ": "seed_female_hq.wav",
+            "Male": "seed_male.wav",
+            "Female": "seed_female.wav"
+        }
+        
+        filename = filename_map.get(target, "seed_female_hq.wav")
+        path = os.path.join(assets_dir, filename)
+            
+        if not os.path.exists(path):
+            print(f"[AIIA Warning] Fallback seed not found at {path}")
+            return None
+            
+        try:
+            waveform, sample_rate = torchaudio.load(path)
+            # 统一转 mono
+            if waveform.shape[0] > 1:
+                waveform = torch.mean(waveform, dim=0, keepdim=True)
+            
+            # AIIA Fix: Attenuate volume to prevent clipping
+            waveform = waveform * 0.8
+            
+            return {"waveform": waveform, "sample_rate": sample_rate}
+        except Exception as e:
+            print(f"[AIIA Error] Failed to load fallback audio: {e}")
+            return None
 
     def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed=42, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, **kwargs):
         import json
@@ -265,6 +301,20 @@ class AIIA_Qwen_Dialogue_TTS:
             if clean and clean[0].upper() in ["A", "B", "C"]: return clean[0].upper()
             return spk_key[0].upper()
 
+        def get_ref_audio_with_fallback(spk_key):
+            ref = kwargs.get(f"speaker_{spk_key}_ref")
+            if ref is not None: return ref
+            
+            # Fallback logic parity with general dialogue node
+            fallback_target = "Male"
+            if "A" in spk_key: fallback_target = "Male_HQ"
+            elif "B" in spk_key: fallback_target = "Female_HQ"
+            elif "C" in spk_key: fallback_target = "Male"
+            else: fallback_target = "Female"
+            
+            print(f"  [Qwen Auto-Fallback] Speaker {spk_key} using {fallback_target}")
+            return self._load_fallback_audio(fallback_target)
+
         segments_info = []
         time_ptr = 0.0
 
@@ -279,7 +329,9 @@ class AIIA_Qwen_Dialogue_TTS:
                 mode = kwargs.get(f"speaker_{spk_key}_mode", "Clone")
                 spk_id = kwargs.get(f"speaker_{spk_key}_id", "Vivian")
                 design = kwargs.get(f"speaker_{spk_key}_design", "")
-                ref_audio = kwargs.get(f"speaker_{spk_key}_ref")
+                
+                # Use fallback if mode is Clone but ref is missing
+                ref_audio = get_ref_audio_with_fallback(spk_key) if mode == "Clone" else None
                 
                 qwen_model = None
                 target_instruct = ""
