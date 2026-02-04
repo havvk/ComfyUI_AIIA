@@ -10,6 +10,13 @@ import subprocess
 # --- Official Speaker List ---
 QWEN_SPEAKER_LIST = ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee"]
 QWEN_PRESET_NOTE = "Presets (9 premium timbres): Vivian/Serena/Uncle_Fu (CN), Dylan/Eric/Ryan/Aiden (EN), Ono_Anna (JP), Sohee (KR)"
+QWEN_EMOTION_LIST = [
+    "None", "开心 (Happy)", "悲伤 (Sad)", "生气 (Angry)", "兴奋 (Excited)", 
+    "温柔 (Gentle)", "严肃 (Serious)", "恐惧 (Fearful)", "惊讶 (Surprised)", 
+    "低语 (Whispering)", "呐喊 (Shouting)", "羞涩 (Shy)", "诱惑 (Seductive)", 
+    "哭腔 (Crying)", "笑声 (Laughter)", "尴尬 (Embarrassed)", "失望 (Disappointed)", 
+    "自豪 (Proud)", "疑惑 (Doubtful)", "焦虑 (Anxious)", "平静 (Calm)"
+]
 
 def _install_qwen_tts_if_needed():
     try:
@@ -139,6 +146,7 @@ class AIIA_Qwen_TTS:
                 "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
                 "reference_audio": ("AUDIO",),
                 "reference_text": ("STRING", {"multiline": True, "default": ""}),
+                "emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
                 "zero_shot_mode": ("BOOLEAN", {"default": False}),
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
@@ -154,7 +162,7 @@ class AIIA_Qwen_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Synthesis"
 
-    def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", zero_shot_mode=False, seed=42, speed=1.0, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95):
+    def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", zero_shot_mode=False, emotion="None", seed=42, speed=1.0, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95):
         model = qwen_model["model"]
         m_type = qwen_model["type"]
         
@@ -169,28 +177,40 @@ class AIIA_Qwen_TTS:
             "temperature": temperature,
             "top_k": top_k,
             "top_p": top_p,
-            "cfg_scale": cfg_scale # Usually passed as cfg_scale or guidance_scale in Qwen3-TTS API
+            "cfg_scale": cfg_scale
         }
-        
+
+        # Merge global emotion into instruct
+        final_instruct = instruct
+        if emotion and emotion != "None":
+            # Extract basic emotion name from "Name (English)"
+            emo_label = emotion.split(" (")[0] if " (" in emotion else emotion
+            if not final_instruct:
+                final_instruct = f"{emo_label}。"
+            else:
+                # Append if not already present
+                if emo_label not in final_instruct:
+                    final_instruct = f"{emo_label}。{final_instruct}"
+
         wavs = None
         sr = 24000 # Default if unknown
         
         try:
             if m_type == "CustomVoice":
-                print(f"[AIIA] Qwen3-TTS CustomVoice: {speaker} | Instruct: {instruct}")
+                print(f"[AIIA] Qwen3-TTS CustomVoice: {speaker} | Instruct: {final_instruct}")
                 wavs, sr = model.generate_custom_voice(
                     text=text,
                     language=lang_param,
                     speaker=speaker,
-                    instruct=instruct if instruct else None,
+                    instruct=final_instruct if final_instruct else None,
                     **gen_kwargs
                 )
             elif m_type == "VoiceDesign":
-                print(f"[AIIA] Qwen3-TTS VoiceDesign: {instruct}")
+                print(f"[AIIA] Qwen3-TTS VoiceDesign: {final_instruct}")
                 wavs, sr = model.generate_voice_design(
                     text=text,
                     language=lang_param,
-                    instruct=instruct,
+                    instruct=final_instruct, # For Design, instruct IS the design
                     **gen_kwargs
                 )
             else: # Base / Clone
@@ -221,6 +241,7 @@ class AIIA_Qwen_TTS:
                         ref_audio=ref_audio_data,
                         ref_text=ref_text,
                         x_vector_only_mode=mode_param,
+                        instruct=final_instruct if final_instruct else None,
                         **gen_kwargs
                     )
                 else:
@@ -273,6 +294,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_A_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
+                "speaker_A_emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
                 "speaker_A_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_A_ref": ("AUDIO",),
                 "speaker_A_ref_text": ("STRING", {"multiline": True, "default": ""}),
@@ -280,6 +302,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 # Speaker B
                 "speaker_B_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_B_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
+                "speaker_B_emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
                 "speaker_B_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_B_ref": ("AUDIO",),
                 "speaker_B_ref_text": ("STRING", {"multiline": True, "default": ""}),
@@ -287,6 +310,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 # Speaker C
                 "speaker_C_mode": (["Clone", "Preset", "Design"], {"default": "Design"}),
                 "speaker_C_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
+                "speaker_C_emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
                 "speaker_C_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_C_ref": ("AUDIO",),
                 "speaker_C_ref_text": ("STRING", {"multiline": True, "default": ""}),
@@ -383,6 +407,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 # --- Mode-Based Parameter Assembly ---
                 mode = kwargs.get(f"speaker_{spk_key}_mode", "Clone")
                 spk_id = kwargs.get(f"speaker_{spk_key}_id", "Vivian")
+                spk_emotion_preset = kwargs.get(f"speaker_{spk_key}_emotion", "None")
                 design = kwargs.get(f"speaker_{spk_key}_design", "")
                 
                 # Use fallback if mode is Clone but ref is missing
@@ -390,7 +415,17 @@ class AIIA_Qwen_Dialogue_TTS:
                 ref_text = kwargs.get(f"speaker_{spk_key}_ref_text", "")
                 
                 qwen_model = None
-                target_instruct = ""
+                
+                # Assemble Instruct from script emotion + preset emotion
+                merged_emotion = emotion if emotion and emotion != "None" else ""
+                if spk_emotion_preset and spk_emotion_preset != "None":
+                    emo_name = spk_emotion_preset.split(" (")[0] if " (" in spk_emotion_preset else spk_emotion_preset
+                    if merged_emotion:
+                        merged_emotion = f"{merged_emotion}，{emo_name}"
+                    else:
+                        merged_emotion = emo_name
+                
+                target_instruct = f"{merged_emotion}。" if merged_emotion else ""
                 target_id = spk_id
                 
                 if mode == "Clone":
