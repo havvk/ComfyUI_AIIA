@@ -346,11 +346,12 @@ class AIIA_Qwen_Dialogue_TTS:
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
-                "dialect_note": ("STRING", {"default": "提示：方言建议配合 Design 模式使用。", "is_label": True}),
-                "base_note": ("STRING", {"default": "注意：Clone 模式下 Base 模型不支持指令控制。", "is_label": True}),
                 "qwen_model": ("QWEN_MODEL",),
             },
             "optional": {
+                # Labels moved to optional to prevent shift
+                "dialect_note": ("STRING", {"default": "提示：方言建议配合 Design 模式使用。", "is_label": True}),
+                "base_note": ("STRING", {"default": "注意：Clone 模式下 Base 模型不支持指令控制。", "is_label": True}),
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_A_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
@@ -432,7 +433,7 @@ class AIIA_Qwen_Dialogue_TTS:
             return None
 
     def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed, cfg_scale, temperature, top_k, qwen_model, **kwargs):
-        # Extract advanced features from kwargs
+        # Extract from optional kwargs
         top_p = kwargs.get("top_p", 0.95)
         zero_shot_mode = kwargs.get("zero_shot_mode", False)
         max_batch_char = kwargs.get("max_batch_char", 1000)

@@ -190,7 +190,7 @@ class AIIA_Dialogue_TTS:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "dialogue_json": ("STRING", {"forceInput": True}),
+                "dialogue_json": ("STRING", {"multiline": True}),
                 "tts_engine": (["CosyVoice", "VibeVoice", "Qwen3-TTS"], {"default": "CosyVoice"}),
                 "pause_duration": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.1}),
                 "speed_global": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
