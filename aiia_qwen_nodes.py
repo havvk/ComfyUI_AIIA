@@ -94,7 +94,7 @@ class AIIA_Qwen_TTS:
             "optional": {
                 "speaker": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "instruct": ("STRING", {"multiline": True, "default": ""}),
-                "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "label_on_node": True}),
+                "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
                 "reference_audio": ("AUDIO",),
                 "reference_text": ("STRING", {"multiline": True, "default": ""}),
                 "x_vector_only": ("BOOLEAN", {"default": False}),
@@ -217,7 +217,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "qwen_custom_model": ("QWEN_MODEL",),
                 "qwen_design_model": ("QWEN_MODEL",),
                 
-                "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "label_on_node": True}),
+                "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
                 
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),

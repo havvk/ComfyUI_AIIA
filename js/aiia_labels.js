@@ -5,16 +5,21 @@ import { app } from "../../../scripts/app.js";
 app.registerExtension({
     name: "AIIA.Labels",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        // Iterate through required inputs to find ones marked as is_label
+        // Iterate through required and optional inputs to find ones marked as is_label
         const requiredInputs = nodeData.input?.required || {};
+        const optionalInputs = nodeData.input?.optional || {};
 
         let labelWidgetNames = [];
-        for (const [name, inputDef] of Object.entries(requiredInputs)) {
-            // inputDef is [type, metadata_dict]
-            if (inputDef[1] && inputDef[1].is_label === true) {
-                labelWidgetNames.push(name);
+        const checkInputs = (inputs) => {
+            for (const [name, inputDef] of Object.entries(inputs)) {
+                if (inputDef[1] && inputDef[1].is_label === true) {
+                    labelWidgetNames.push(name);
+                }
             }
-        }
+        };
+
+        checkInputs(requiredInputs);
+        checkInputs(optionalInputs);
 
         if (labelWidgetNames.length > 0) {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
