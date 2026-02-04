@@ -7,6 +7,10 @@ import folder_paths
 import subprocess
 
 # --- Robust Package Installation ---
+# --- Official Speaker List ---
+QWEN_SPEAKER_LIST = ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee"]
+QWEN_PRESET_NOTE = "Presets (9 premium timbres): Vivian/Serena/Uncle_Fu (CN), Dylan/Eric/Ryan/Aiden (EN), Ono_Anna (JP), Sohee (KR)"
+
 def _install_qwen_tts_if_needed():
     try:
         from qwen_tts import Qwen3TTSModel
@@ -88,9 +92,9 @@ class AIIA_Qwen_TTS:
                 "language": (["Auto", "Chinese", "English", "Japanese", "Korean", "German", "French", "Russian", "Portuguese", "Spanish", "Italian"], {"default": "Chinese"}),
             },
             "optional": {
-                # Official Premium Speakers: Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee
-                "speaker": ("STRING", {"default": "Vivian"}),
+                "speaker": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "instruct": ("STRING", {"multiline": True, "default": ""}),
+                "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "label_on_node": True}),
                 "reference_audio": ("AUDIO",),
                 "reference_text": ("STRING", {"multiline": True, "default": ""}),
                 "x_vector_only": ("BOOLEAN", {"default": False}),
@@ -194,21 +198,23 @@ class AIIA_Qwen_Dialogue_TTS:
                 "qwen_custom_model": ("QWEN_MODEL",),
                 "qwen_design_model": ("QWEN_MODEL",),
                 
+                "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "label_on_node": True}),
+                
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
-                "speaker_A_id": ("STRING", {"default": "Vivian"}),
+                "speaker_A_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_A_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_A_ref": ("AUDIO",),
                 
                 # Speaker B
                 "speaker_B_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
-                "speaker_B_id": ("STRING", {"default": "Vivian"}),
+                "speaker_B_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_B_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_B_ref": ("AUDIO",),
                 
                 # Speaker C
                 "speaker_C_mode": (["Clone", "Preset", "Design"], {"default": "Design"}),
-                "speaker_C_id": ("STRING", {"default": "Vivian"}),
+                "speaker_C_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "speaker_C_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_C_ref": ("AUDIO",),
             }
