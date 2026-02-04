@@ -997,20 +997,26 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 
 ```text
 ComfyUI/models/qwen_tts/Qwen/
-├── Qwen3-TTS-12Hz-1.7B-Base/          <-- 对应 Base (Clone) 模型
-│   ├── model.safetensors
-│   ├── config.json
-│   └── ...
-├── Qwen3-TTS-12Hz-1.7B-CustomVoice/   <-- 对应 CustomVoice 模型
-└── Qwen3-TTS-12Hz-1.7B-VoiceDesign/    <-- 对应 VoiceDesign 模型
+├── Qwen3-TTS-12Hz-1.7B-Base/          <-- 对应 1.7B Base (Clone)
+├── Qwen3-TTS-12Hz-1.7B-CustomVoice/   <-- 对应 1.7B CustomVoice
+├── Qwen3-TTS-12Hz-1.7B-VoiceDesign/   <-- 对应 1.7B VoiceDesign
+├── Qwen3-TTS-12Hz-0.6B-Base/          <-- 对应 0.6B Base (Clone)
+└── Qwen3-TTS-12Hz-0.6B-CustomVoice/   <-- 对应 0.6B CustomVoice
 ```
 
 **下载命令 (HuggingFace CLI)**:
 
 ```bash
 mkdir -p models/qwen_tts/Qwen
-# 以 1.7B-Base 为例
+
+# 1.7B 系列
 hf download Qwen/Qwen3-TTS-12Hz-1.7B-Base --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-1.7B-Base
+hf download Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+hf download Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
+
+# 0.6B 系列
+hf download Qwen/Qwen3-TTS-12Hz-0.6B-Base --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-0.6B-Base
+hf download Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
 ```
 
 ---
