@@ -12,17 +12,38 @@ QWEN_SPEAKER_LIST = ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "A
 QWEN_PRESET_NOTE = "Presets (9 premium timbres): Vivian/Serena/Uncle_Fu (CN), Dylan/Eric/Ryan/Aiden (EN), Ono_Anna (JP), Sohee (KR)"
 QWEN_EMOTION_LIST = [
     "None", 
-    "Happy (开心)", "Sad (悲伤)", "Angry (生气)", "Excited (兴奋)", 
-    "Gentle (温柔)", "Serious (严肃)", "Fearful (恐惧)", "Surprised (惊讶)", 
-    "Whispering (耳语)", "Shouting (喊叫)", "Shy (害羞)", "Seductive (诱惑)", 
-    "Crying (哭泣)", "Laughter (笑声)", "Embarrassed (尴尬)", "Disappointed (失望)", 
-    "Proud (骄傲)", "Doubtful (疑惑)", "Anxious (焦虑)", "Calm (冷静)",
-    "Affectionate (深情)", "Awkward (尴尬)", "Determined (坚定)", "Hesitant (犹豫)"
+    "Happy (开心)", "Sad (悲伤)", "Angry (愤怒)", "Excited (兴奋)", 
+    "Fearful (恐惧)", "Surprised (惊讶)", "Disappointed (失望)", 
+    "Proud (骄傲)", "Anxious (焦虑)", "Calm (冷静)", "Neutral (中性)",
+    "Affectionate (深情)", "Awkward (尴尬)", "Determined (坚定)", "Nervous (紧张不安)",
+    "Enthusiastic (热情高涨)", "Innocent (语气天真)", "Mysterious (语气神秘)"
 ]
 
 QWEN_EXPRESSION_LIST = [
-    "None", "Shyness (害羞)", "Seductive (诱惑)", "Crying (哭泣)", "Smiling (微笑)",
-    "Tired (疲惫)", "Hurried (急促)", "Confident (自信)", "Hesitant (犹豫)", "Cold (冷漠)", "Whispering (耳语)"
+    "None", 
+    "With a hint of shyness (带点羞涩)", 
+    "Seductive tone (充满诱惑力)", 
+    "Crying tone (带着哭腔)", 
+    "Cheerful tone (充满笑意)", 
+    "Serious tone (语气严肃)", 
+    "Sarcastic tone (冷嘲热讽)", 
+    "Hesitant tone (犹豫不决)", 
+    "Arrogant tone (语气傲慢)", 
+    "Cold tone (语气冷淡)", 
+    "Affectionate tone (充满爱意)", 
+    "Whispering (轻声耳语)", 
+    "Shouting (大声叫喊)", 
+    "Rapid fire (语速较快)", 
+    "Slow and deliberate (语速较慢)", 
+    "Tired (疲惫不堪)", 
+    "Sleepy tone (睡意朦胧)", 
+    "Drunken tone (醉意微醺)", 
+    "Professional tone (专业播音)",
+    "Magnetic tone (磁性嗓音)", 
+    "Breathless (气喘吁吁)", 
+    "Terrified (惊恐万分)",
+    "Lazy tone (语气慵懒)",
+    "Gossip tone (八卦语气)"
 ]
 
 QWEN_DIALECT_LIST = [
