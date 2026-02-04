@@ -283,6 +283,7 @@ class AIIA_Qwen_Dialogue_TTS:
 
     RETURN_TYPES = ("AUDIO", "STRING")
     RETURN_NAMES = ("full_audio", "segments_info")
+    FUNCTION = "process_dialogue"
     CATEGORY = "AIIA/Podcast"
 
     def _load_fallback_audio(self, target="Male"):
