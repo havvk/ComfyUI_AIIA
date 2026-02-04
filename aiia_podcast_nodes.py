@@ -197,18 +197,6 @@ class AIIA_Dialogue_TTS:
                 "batch_mode": (["Natural (Hybrid)", "Strict (Per-Speaker)", "Whole (Single Batch)"], {"default": "Natural (Hybrid)"}),
             },
             "optional": {
-                "cosyvoice_model": ("COSYVOICE_MODEL",),
-                "vibevoice_model": ("VIBEVOICE_MODEL",),
-                "qwen_model": ("QWEN_MODEL",),
-                "qwen_base_model": ("QWEN_MODEL",),
-                "qwen_custom_model": ("QWEN_MODEL",),
-                "qwen_design_model": ("QWEN_MODEL",),
-                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
-                "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
-                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
-                "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
-                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
-                
                 # Speaker A
                 "speaker_A_ref": ("AUDIO",),
                 "speaker_A_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
@@ -226,6 +214,19 @@ class AIIA_Dialogue_TTS:
                 "speaker_C_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
                 "speaker_C_emotion": (AIIA_EMOTION_LIST, {"default": "None"}),
                 "speaker_C_dialect": (AIIA_DIALECT_LIST, {"default": "None"}),
+
+                # Model Slots and Params (Appended to prevent shift)
+                "cosyvoice_model": ("COSYVOICE_MODEL",),
+                "vibevoice_model": ("VIBEVOICE_MODEL",),
+                "qwen_model": ("QWEN_MODEL",),
+                "qwen_base_model": ("QWEN_MODEL",),
+                "qwen_custom_model": ("QWEN_MODEL",),
+                "qwen_design_model": ("QWEN_MODEL",),
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
+                "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
+                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
+                "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
             }
         }
     

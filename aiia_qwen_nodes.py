@@ -339,26 +339,18 @@ class AIIA_Qwen_Dialogue_TTS:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "dialogue_json": ("STRING", {"forceInput": True}),
+                "dialogue_json": ("STRING", {"multiline": True}),
                 "pause_duration": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.1}),
                 "speed_global": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
-                "qwen_model": ("QWEN_MODEL",),
-            },
-            "optional": {
-                # Generative Params
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
-                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
-                
-                # New Features
-                "zero_shot_mode": ("BOOLEAN", {"default": False}),
-                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
-                "qwen_base_model": ("QWEN_MODEL",),
-                "qwen_custom_model": ("QWEN_MODEL",),
-                "qwen_design_model": ("QWEN_MODEL",),
-
+                "dialect_note": ("STRING", {"default": "提示：方言建议配合 Design 模式使用。", "is_label": True}),
+                "base_note": ("STRING", {"default": "注意：Clone 模式下 Base 模型不支持指令控制。", "is_label": True}),
+                "qwen_model": ("QWEN_MODEL",),
+            },
+            "optional": {
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
                 "speaker_A_id": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
@@ -386,11 +378,19 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_C_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_C_ref": ("AUDIO",),
                 "speaker_C_ref_text": ("STRING", {"multiline": True, "default": ""}),
+                
+                # Appended model slots (Appended to prevent shift)
+                "qwen_base_model": ("QWEN_MODEL",),
+                "qwen_custom_model": ("QWEN_MODEL",),
+                "qwen_design_model": ("QWEN_MODEL",),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "zero_shot_mode": ("BOOLEAN", {"default": False}),
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
             }
         }
 
-    RETURN_TYPES = ("AUDIO", "STRING")
-    RETURN_NAMES = ("audio", "segments_info")
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
     FUNCTION = "process_dialogue"
     CATEGORY = "AIIA/Qwen"
 
@@ -431,15 +431,13 @@ class AIIA_Qwen_Dialogue_TTS:
             print(f"[AIIA Error] Failed to load fallback audio: {e}")
             return None
 
-    def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed, qwen_model, **kwargs):
-        # Extract from kwargs
-        cfg_scale = kwargs.get("cfg_scale", 1.5)
-        temperature = kwargs.get("temperature", 0.8)
-        top_k = kwargs.get("top_k", 20)
+    def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed, cfg_scale, temperature, top_k, qwen_model, **kwargs):
+        # Extract advanced features from kwargs
         top_p = kwargs.get("top_p", 0.95)
         zero_shot_mode = kwargs.get("zero_shot_mode", False)
         max_batch_char = kwargs.get("max_batch_char", 1000)
         
+        # Dialect and Base notes are labels, they come into kwargs
         # Robustness: ensure max_batch_char is correctly picked up
         max_batch_char = kwargs.get("max_batch_char", max_batch_char)
         import json
@@ -742,10 +740,10 @@ class AIIA_Qwen_Dialogue_TTS:
                 traceback.print_exc()
 
         if not full_waveform:
-            return ({"waveform": torch.zeros((1, 1, 1024)), "sample_rate": sample_rate}, "[]")
+            return ({"waveform": torch.zeros((1, 1, 1024)), "sample_rate": sample_rate},)
 
         final_wav = torch.cat(full_waveform, dim=1)
-        return ({"waveform": final_wav.unsqueeze(0), "sample_rate": sample_rate}, json.dumps(segments_info, ensure_ascii=False))
+        return ({"waveform": final_wav.unsqueeze(0), "sample_rate": sample_rate},)
 
 class AIIA_Qwen_Model_Router:
     @classmethod
