@@ -986,10 +986,32 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 - **节点**:
   - `🤖 Qwen3-TTS Loader`: 加载模型。支持 `Base` (克隆)、`CustomVoice` (内置音色) 和 `VoiceDesign` (音色设计) 模型。
   - `🗣️ Qwen3-TTS Synthesis`: 执行合成。根据加载的模型类型自动切换功能。
-- **模型下载**:
+- **模型列表**:
   - `Qwen/Qwen3-TTS-12Hz-1.7B-Base` (或 0.6B-Base)
   - `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` (或 0.6B-CustomVoice)
   - `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign`
+
+**🛠️ 手工下载指南 (Manual Download Guide)**:
+
+如果节点无法自动下载，或您需要在离线环境使用，请手动从 HuggingFace 或 ModelScope 下载模型文件夹，并放入以下目录（文件夹建议保留原名）：
+
+```text
+ComfyUI/models/qwen_tts/Qwen/
+├── Qwen3-TTS-12Hz-1.7B-Base/          <-- 对应 Base (Clone) 模型
+│   ├── model.safetensors
+│   ├── config.json
+│   └── ...
+├── Qwen3-TTS-12Hz-1.7B-CustomVoice/   <-- 对应 CustomVoice 模型
+└── Qwen3-TTS-12Hz-1.7B-VoiceDesign/    <-- 对应 VoiceDesign 模型
+```
+
+**下载命令 (HuggingFace CLI)**:
+
+```bash
+mkdir -p models/qwen_tts/Qwen
+# 以 1.7B-Base 为例
+hf download Qwen/Qwen3-TTS-12Hz-1.7B-Base --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-1.7B-Base
+```
 
 ---
 
