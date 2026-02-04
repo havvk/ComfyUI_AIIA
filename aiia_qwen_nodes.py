@@ -139,7 +139,7 @@ class AIIA_Qwen_TTS:
                 "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
                 "reference_audio": ("AUDIO",),
                 "reference_text": ("STRING", {"multiline": True, "default": ""}),
-                "x_vector_only": ("BOOLEAN", {"default": False}),
+                "zero_shot_mode": ("BOOLEAN", {"default": False}),
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
@@ -154,7 +154,7 @@ class AIIA_Qwen_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Synthesis"
 
-    def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", x_vector_only=False, seed=42, speed=1.0, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95):
+    def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", zero_shot_mode=False, seed=42, speed=1.0, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95):
         model = qwen_model["model"]
         m_type = qwen_model["type"]
         
@@ -207,11 +207,11 @@ class AIIA_Qwen_TTS:
                     ref_audio_data = (ref_wav.squeeze().cpu().numpy(), ref_sr)
                     
                     ref_text = reference_text if reference_text and reference_text.strip() != "" else None
-                    mode_param = x_vector_only
+                    mode_param = zero_shot_mode
                     
-                    # Robustness: Qwen requires ref_text for ICL mode (x_vector_only=False)
+                    # Robustness: Qwen requires ref_text for ICL mode (zero_shot_mode=False)
                     if not ref_text and not mode_param:
-                        print(f"[AIIA Warning] No 'reference_text' provided. Automatically switching to 'x_vector_only=True' (Zero-Shot) to prevent crash.")
+                        print(f"[AIIA Warning] No 'reference_text' provided. Automatically switching to 'zero_shot_mode=True' (Zero-Shot) to prevent crash.")
                         mode_param = True
                     
                     print(f"[AIIA] Qwen3-TTS VoiceClone: Using reference. Mode: {'Zero-Shot' if mode_param else 'ICL'}")
@@ -261,7 +261,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
-                "x_vector_only": ("BOOLEAN", {"default": False}),
+                "zero_shot_mode": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "qwen_base_model": ("QWEN_MODEL",),
@@ -335,7 +335,7 @@ class AIIA_Qwen_Dialogue_TTS:
             print(f"[AIIA Error] Failed to load fallback audio: {e}")
             return None
 
-    def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed=42, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, **kwargs):
+    def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed=42, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, zero_shot_mode=False, **kwargs):
         import json
         import torch
         import torchaudio
@@ -428,7 +428,7 @@ class AIIA_Qwen_Dialogue_TTS:
                         temperature=temperature,
                         top_k=top_k,
                         top_p=top_p,
-                        x_vector_only=kwargs.get("x_vector_only", False)
+                        zero_shot_mode=zero_shot_mode
                     )
                     
                     if res and res[0]:
