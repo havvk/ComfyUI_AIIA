@@ -992,6 +992,21 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
   - `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` (或 0.6B-CustomVoice)
   - `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign`
 
+#### 📊 模型功能映射表 (Model Capability Mapping)
+
+| 模型版本 | **音色克隆 (Clone)** | **预设音色 (Presets)** | **文字捏人 (Design)** | **方言支持 (Dialect)** |
+| :--- | :---: | :---: | :---: | :---: |
+| **Base** (1.7B/0.6B) | **👑 最强** | ❌ 不支持 | ❌ 不支持 | ⚠️ 仅限录音自带 |
+| **CustomVoice** (1.7B) | ⚠️ 效果极差 | **👑 最佳** | ⚠️ 指令干扰严重 | ⚠️ 效果一般 |
+| **VoiceDesign** (1.7B) | ❌ 不支持 | ⚠️ 部分支持 | **👑 专家** | **👑 完美支持** |
+| **CustomVoice** (0.6B) | ⚠️ 效果极差 | ✅ 支持 | ✅ 表现优异 | ✅ 表现优异 |
+
+> [!IMPORTANT]
+> **结论**：
+> 1. 做 **3秒音色克隆**：必须连 `Base` 模型。
+> 2. 说 **方言** 或 **文字定制音色**：优先连 `VoiceDesign`（1.7B）或 `CustomVoice`（0.6B）。
+> 3. 使用 **Vivian/Zack 内置音色**：连接 `CustomVoice` 模型。
+
 **🛠️ 手工下载指南 (Manual Download Guide)**:
 
 如果节点无法自动下载，或您需要在离线环境使用，请手动从 HuggingFace 或 ModelScope 下载模型文件夹，并放入以下目录（文件夹建议保留原名）：
