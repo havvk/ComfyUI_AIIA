@@ -168,15 +168,21 @@ class AIIA_Qwen_TTS:
                 "zero_shot_mode": ("BOOLEAN", {"default": False}),
                 "emotion": (QWEN_EMOTION_LIST, {"default": "None"}),
                 "dialect": (QWEN_DIALECT_LIST, {"default": "None"}),
-                "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
-                "dialect_note": ("STRING", {"default": "💡 提示：使用方言或精细情感时，推荐配合 VoiceDesign 模型。", "is_label": True}),
-                "base_note": ("STRING", {"default": "⚠️ 注意：Base 模型仅支持录音克隆，不支持文字指令(Instruct/Dialect)。", "is_label": True}),
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
+            },
+            "optional": {
+                "cosyvoice_model": ("COSYVOICE_MODEL",),
+                "vibevoice_model": ("VIBEVOICE_MODEL",),
+                "qwen_model": ("QWEN_MODEL",),
+                "qwen_base_model": ("QWEN_MODEL",),
+                "qwen_custom_model": ("QWEN_MODEL",),
+                "qwen_design_model": ("QWEN_MODEL",),
             }
         }
 
@@ -333,17 +339,17 @@ class AIIA_Qwen_Dialogue_TTS:
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
+                "dialect_note": ("STRING", {"default": "💡 提示：方言建议配合 Design 模式使用。", "is_label": True}),
+                "base_note": ("STRING", {"default": "⚠️ 注意：Clone 模式下的 Base 模型不支持文字指令控制。", "is_label": True}),
+                "qwen_model": ("QWEN_MODEL",),
+            },
+            "optional": {
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "zero_shot_mode": ("BOOLEAN", {"default": False}),
                 "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
-            },
-            "optional": {
-                "qwen_model": ("QWEN_MODEL",),
                 "qwen_base_model": ("QWEN_MODEL",),
                 "qwen_custom_model": ("QWEN_MODEL",),
                 "qwen_design_model": ("QWEN_MODEL",),
-                "dialect_note": ("STRING", {"default": "💡 提示：方言建议配合 Design 模式使用。", "is_label": True}),
-                "base_note": ("STRING", {"default": "⚠️ 注意：Clone 模式下的 Base 模型不支持文字指令控制。", "is_label": True}),
                 "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
