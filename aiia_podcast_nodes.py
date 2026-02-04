@@ -594,25 +594,30 @@ class AIIA_Dialogue_TTS:
                     text = item["text"]
                     emotion = item.get("emotion") # In CosyVoice, we put it in [] in text
                     
-                    # Merge preset emotion
-                    preset_emo_full = kwargs.get(f"speaker_{spk_key}_emotion", "None")
-                    if preset_emo_full and preset_emo_full != "None":
-                        emo_label = preset_emo_full.split(" (")[0] if " (" in preset_emo_full else preset_emo_full
-                        if emotion: text = f"[{emotion}, {emo_label}] {text}"
-                        else: text = f"[{emo_label}] {text}"
-                    elif emotion:
-                        text = f"[{emotion}] {text}"
+                    # Emotion compatibility check
+                    is_expressive = False
+                    if cosyvoice_model:
+                        is_expressive = cosyvoice_model.get("is_instruct") or cosyvoice_model.get("is_v2") or cosyvoice_model.get("is_v3")
+                    
+                    if is_expressive:
+                        # Merge preset emotion
+                        preset_emo_full = kwargs.get(f"speaker_{spk_key}_emotion", "None")
+                        if preset_emo_full and preset_emo_full != "None":
+                            emo_label = preset_emo_full.split(" (")[0] if " (" in preset_emo_full else preset_emo_full
+                            if emotion: text = f"[{emotion}, {emo_label}] {text}"
+                            else: text = f"[{emo_label}] {text}"
+                        elif emotion:
+                            text = f"[{emotion}] {text}"
 
                     ref_audio = get_ref_audio(spk_key)
                     
                     # CosyVoice uses instruct_text for emotion, so we use the merged emotion for it
-                    # If emotion is None (from script) and preset_emo_full is "None", then instruct will be empty.
-                    # Otherwise, it will use the merged emotion.
                     merged_emo_for_instruct = ""
-                    if preset_emo_full and preset_emo_full != "None":
-                        merged_emo_for_instruct = preset_emo_full.split(" (")[0] if " (" in preset_emo_full else preset_emo_full
-                    elif item.get("emotion") and item.get("emotion") != "None": # Use script emotion if no preset
-                        merged_emo_for_instruct = item.get("emotion")
+                    if is_expressive:
+                        if preset_emo_full and preset_emo_full != "None":
+                            merged_emo_for_instruct = preset_emo_full.split(" (")[0] if " (" in preset_emo_full else preset_emo_full
+                        elif item.get("emotion") and item.get("emotion") != "None": # Use script emotion if no preset
+                            merged_emo_for_instruct = item.get("emotion")
 
                     instruct = f"{merged_emo_for_instruct}." if merged_emo_for_instruct else ""
                     
