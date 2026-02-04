@@ -195,11 +195,6 @@ class AIIA_Dialogue_TTS:
                 "pause_duration": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.1}),
                 "speed_global": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
                 "batch_mode": (["Natural (Hybrid)", "Strict (Per-Speaker)", "Whole (Single Batch)"], {"default": "Natural (Hybrid)"}),
-                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
-                "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
-                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
-                "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
-                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
             },
             "optional": {
                 "cosyvoice_model": ("COSYVOICE_MODEL",),
@@ -208,6 +203,11 @@ class AIIA_Dialogue_TTS:
                 "qwen_base_model": ("QWEN_MODEL",),
                 "qwen_custom_model": ("QWEN_MODEL",),
                 "qwen_design_model": ("QWEN_MODEL",),
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
+                "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
+                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
+                "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
                 
                 # Speaker A
                 "speaker_A_ref": ("AUDIO",),
