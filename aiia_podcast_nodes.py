@@ -2,6 +2,14 @@
 import json
 import re
 
+AIIA_EMOTION_LIST = [
+    "None", "开心 (Happy)", "悲伤 (Sad)", "生气 (Angry)", "兴奋 (Excited)", 
+    "温柔 (Gentle)", "严肃 (Serious)", "恐惧 (Fearful)", "惊讶 (Surprised)", 
+    "低语 (Whispering)", "呐喊 (Shouting)", "羞涩 (Shy)", "诱惑 (Seductive)", 
+    "哭腔 (Crying)", "笑声 (Laughter)", "尴尬 (Embarrassed)", "失望 (Disappointed)", 
+    "自豪 (Proud)", "疑惑 (Doubtful)", "焦虑 (Anxious)", "平静 (Calm)"
+]
+
 class AIIA_Podcast_Script_Parser:
     def __init__(self):
         pass
@@ -198,14 +206,17 @@ class AIIA_Dialogue_TTS:
                 # Speaker A
                 "speaker_A_ref": ("AUDIO",),
                 "speaker_A_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
+                "speaker_A_emotion": (AIIA_EMOTION_LIST, {"default": "None"}),
                 
                 # Speaker B
                 "speaker_B_ref": ("AUDIO",),
                 "speaker_B_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
+                "speaker_B_emotion": (AIIA_EMOTION_LIST, {"default": "None"}),
 
                 # Speaker C
                 "speaker_C_ref": ("AUDIO",),
                 "speaker_C_id": ("STRING", {"default": "", "placeholder": "CosyVoice 内部音色ID (可选)"}),
+                "speaker_C_emotion": (AIIA_EMOTION_LIST, {"default": "None"}),
             }
         }
     
@@ -334,7 +345,17 @@ class AIIA_Dialogue_TTS:
                     
                     internal_id = unique_speakers[spk_key]
                     text = item["text"]
+                    emotion = item.get("emotion", "")
                     
+                    # Merge preset emotion if any
+                    preset_emo_full = kwargs.get(f"speaker_{spk_key}_emotion", "None")
+                    if preset_emo_full and preset_emo_full != "None":
+                        emo_label = preset_emo_full.split(" (")[0] if " (" in preset_emo_full else preset_emo_full
+                        if emotion: text = f"[{emotion}, {emo_label}] {text}"
+                        else: text = f"[{emo_label}] {text}"
+                    elif emotion:
+                        text = f"[{emotion}] {text}"
+
                     # Clean text for length calc (approx)
                     clean_text = re.sub(r'\[.*?\]', '', text).strip()
                     char_len = len(clean_text) if clean_text else 1
@@ -424,7 +445,16 @@ class AIIA_Dialogue_TTS:
                     if not spk_id.strip(): spk_id = "Vivian"
                     
                     ref_audio = get_ref_audio(spk_key)
-                    instruct = f"{emotion}." if emotion and emotion != "None" else ""
+                    
+                    # Merge preset emotion
+                    preset_emo_full = kwargs.get(f"speaker_{spk_key}_emotion", "None")
+                    merged_emo = emotion if emotion and emotion != "None" else ""
+                    if preset_emo_full and preset_emo_full != "None":
+                        emo_label = preset_emo_full.split(" (")[0] if " (" in preset_emo_full else preset_emo_full
+                        if merged_emo: merged_emo = f"{merged_emo}，{emo_label}"
+                        else: merged_emo = emo_label
+                    
+                    instruct = f"{merged_emo}。" if merged_emo else ""
                     
                     # --- Qwen Smart Routing ---
                     # Logic: 
@@ -505,12 +535,29 @@ class AIIA_Dialogue_TTS:
                     spk_name = item["speaker"]
                     spk_key = get_speaker_key(spk_name)
                     text = item["text"]
-                    emotion = item.get("emotion", "None")
+                    emotion = item.get("emotion") # In CosyVoice, we put it in [] in text
                     
-                    spk_id = kwargs.get(f"speaker_{spk_key}_id", "")
+                    # Merge preset emotion
+                    preset_emo_full = kwargs.get(f"speaker_{spk_key}_emotion", "None")
+                    if preset_emo_full and preset_emo_full != "None":
+                        emo_label = preset_emo_full.split(" (")[0] if " (" in preset_emo_full else preset_emo_full
+                        if emotion: text = f"[{emotion}, {emo_label}] {text}"
+                        else: text = f"[{emo_label}] {text}"
+                    elif emotion:
+                        text = f"[{emotion}] {text}"
+
                     ref_audio = get_ref_audio(spk_key)
                     
-                    instruct = f"{emotion}." if emotion and emotion != "None" else ""
+                    # CosyVoice uses instruct_text for emotion, so we use the merged emotion for it
+                    # If emotion is None (from script) and preset_emo_full is "None", then instruct will be empty.
+                    # Otherwise, it will use the merged emotion.
+                    merged_emo_for_instruct = ""
+                    if preset_emo_full and preset_emo_full != "None":
+                        merged_emo_for_instruct = preset_emo_full.split(" (")[0] if " (" in preset_emo_full else preset_emo_full
+                    elif item.get("emotion") and item.get("emotion") != "None": # Use script emotion if no preset
+                        merged_emo_for_instruct = item.get("emotion")
+
+                    instruct = f"{merged_emo_for_instruct}." if merged_emo_for_instruct else ""
                     
                     print(f"  [Processing] {spk_name}: {text[:15]}...")
                     try:
