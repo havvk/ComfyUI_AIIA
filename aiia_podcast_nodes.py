@@ -194,7 +194,8 @@ class AIIA_Dialogue_TTS:
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
-                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 5000}),
             },
             "optional": {
                 "cosyvoice_model": ("COSYVOICE_MODEL",),
@@ -262,10 +263,81 @@ class AIIA_Dialogue_TTS:
             print(f"[AIIA Error] Failed to load fallback audio: {e}")
             return None
 
+    def _generate_qwen_batch(self, batch_data, qwen_gen, current_full_wav, sr_ptr, segments_info, time_ptr, speed_global, cfg_scale, temperature, top_k, top_p):
+        # This helper processes a batch of Qwen items that are compatible (same routed model, etc.)
+        # Qwen's `generate` method takes a single text, so we iterate through the batch.
+        for i, item_params in enumerate(batch_data):
+            target_model = item_params["tm"]
+            text = item_params["tx"]
+            spk_id = item_params["sid"]
+            ref_audio = item_params["ref"]
+            instruct = item_params["ins"]
+            spk_name = item_params["original_speaker"] # Added this to item_params in get_qwen_params
+            original_item = item_params["original_item"] # Added this to item_params in get_qwen_params
+
+            print(f"  [Qwen Routing] {spk_name}: {text[:15]}... -> Using {target_model['type']} model ({target_model['name']})")
+            
+            try:
+                # Call Qwen TTS with routed model
+                res = qwen_gen.generate(
+                    qwen_model=target_model,
+                    text=text,
+                    language="Auto",
+                    speaker=spk_id,
+                    instruct=instruct,
+                    reference_audio=ref_audio,
+                    seed=42+i, # Use a seed for reproducibility within the batch
+                    speed=speed_global,
+                    cfg_scale=cfg_scale,
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p
+                )
+                
+                generated = res[0]
+                wav = generated["waveform"]
+                sr = generated["sample_rate"]
+                
+                if sr_ptr[0] != sr:
+                    if current_full_wav:
+                        wav = torchaudio.transforms.Resample(sr, sr_ptr[0])(wav)
+                    else:
+                        sr_ptr[0] = sr
+                
+                if wav.ndim == 3: wav = wav.squeeze(0)
+                if wav.ndim == 1: wav = wav.unsqueeze(0)
+                current_full_wav.append(wav)
+
+                # --- Timestamp Tracking ---
+                seg_duration = wav.shape[-1] / sr
+                seg_start = time_ptr[0]
+                seg_end = seg_start + seg_duration
+                
+                segments_info.append({
+                    "start": round(seg_start, 3),
+                    "end": round(seg_end, 3),
+                    "text": text,
+                    "speaker": spk_name,
+                    "visual": original_item.get("visual")
+                })
+                time_ptr[0] += seg_duration
+                
+                # Add a small gap between segments within a Qwen batch
+                gap = 0.2
+                gap_samples = int(gap * sr_ptr[0])
+                current_full_wav.append(torch.zeros(1, gap_samples))
+                time_ptr[0] += gap
+                    
+            except Exception as e:
+                print(f"[Error] Qwen item generation failed: {e}")
+                current_full_wav.append(torch.zeros(1, 24000))
+                time_ptr[0] += 1.0
+
+
     def process_dialogue(self, dialogue_json, tts_engine, pause_duration, speed_global, 
                          qwen_model, cosyvoice_model=None, vibevoice_model=None, 
                          qwen_base_model=None, qwen_custom_model=None, qwen_design_model=None,
-                         cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, **kwargs):
+                         cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, max_batch_char=1000, **kwargs):
         import json
         import torch
         import os
@@ -433,101 +505,84 @@ class AIIA_Dialogue_TTS:
                     time_ptr[0] += 1.0
                     
             elif tts_engine == "Qwen3-TTS":
-                # Qwen3-TTS (Iterative)
-                for i, item in enumerate(batch_items):
-                    spk_name = item["speaker"]
-                    spk_key = get_speaker_key(spk_name)
-                    text = item["text"]
-                    emotion = item.get("emotion", "None")
-                    
-                    # Mapping logic for Qwen
-                    spk_id = kwargs.get(f"speaker_{spk_key}_id", "Vivian") # Default to Vivian if empty
-                    if not spk_id.strip(): spk_id = "Vivian"
-                    
-                    ref_audio = get_ref_audio(spk_key)
-                    
-                    # Merge preset emotion
-                    preset_emo_full = kwargs.get(f"speaker_{spk_key}_emotion", "None")
-                    merged_emo = emotion if emotion and emotion != "None" else ""
-                    if preset_emo_full and preset_emo_full != "None":
-                        emo_label = preset_emo_full.split(" (")[0] if " (" in preset_emo_full else preset_emo_full
-                        if merged_emo: merged_emo = f"{merged_emo}，{emo_label}"
-                        else: merged_emo = emo_label
-                    
-                    instruct = f"{merged_emo}。" if merged_emo else ""
-                    
-                    # --- Qwen Smart Routing ---
-                    # Logic: 
-                    # 1. If ref_audio exists -> Prefer qwen_base_model
-                    # 2. If instruct exists but no ref_audio -> Might be design intent, prefer qwen_design_model
-                    # 3. If spk_id exists -> Prefer qwen_custom_model
-                    # 4. Fallback to primary qwen_model
-                    
-                    target_model = qwen_model
-                    if ref_audio is not None and qwen_base_model is not None:
-                        target_model = qwen_base_model
-                    elif instruct and qwen_design_model is not None and ref_audio is None:
-                        target_model = qwen_design_model
-                    elif qwen_custom_model is not None:
-                        target_model = qwen_custom_model
-                    
-                    print(f"  [Qwen Routing] {spk_name} -> Using {target_model['type']} model ({target_model['name']})")
-                    
-                    try:
-                        # Call Qwen TTS with routed model
-                        res = qwen_gen.generate(
-                            qwen_model=target_model,
-                            text=text,
-                            language="Auto",
-                            speaker=spk_id,
-                            instruct=instruct,
-                            reference_audio=ref_audio,
-                            seed=seed if seed >= 0 else -1,
-                            speed=speed_global,
-                            cfg_scale=cfg_scale,
-                            temperature=temperature,
-                            top_k=top_k,
-                            top_p=top_p
-                        )
-                        
-                        generated = res[0]
-                        wav = generated["waveform"]
-                        sr = generated["sample_rate"]
-                        
-                        if sr_ptr[0] != sr:
-                            if current_full_wav:
-                                wav = torchaudio.transforms.Resample(sr, sr_ptr[0])(wav)
-                            else:
-                                sr_ptr[0] = sr
-                        
-                        if wav.ndim == 3: wav = wav.squeeze(0)
-                        if wav.ndim == 1: wav = wav.unsqueeze(0)
-                        current_full_wav.append(wav)
+                # --- Qwen3-TTS Batch Maximization ---
+                current_batch = []
+                current_batch_char = 0
+                current_hash = None
 
-                        # --- Timestamp Tracking ---
-                        seg_duration = wav.shape[-1] / sr
-                        seg_start = time_ptr[0]
-                        seg_end = seg_start + seg_duration
+                # Batching items by "compatibility"
+                # Compatibility = Same routed model, speaker_id, and reference_audio
+                def get_qwen_params(it):
+                    sk = get_speaker_key(it["speaker"])
+                    tx = it["text"]
+                    em = it.get("emotion", "None")
+                    sid = kwargs.get(f"speaker_{sk}_id", "Vivian") # Default to Vivian if empty
+                    if not sid.strip(): sid = "Vivian"
+                    ref = get_ref_audio(sk)
+                    pemf = kwargs.get(f"speaker_{sk}_emotion", "None")
+                    
+                    me = em if em and em != "None" else ""
+                    if pemf and pemf != "None":
+                        el = pemf.split(" (")[0] if " (" in pemf else pemf
+                        me = f"{me}，{el}" if me else el
+                    ins = f"{me}。" if me else ""
+                    
+                    tm = qwen_model
+                    if ref is not None and qwen_base_model is not None: tm = qwen_base_model
+                    elif ins and qwen_design_model is not None and ref is None: tm = qwen_design_model
+                    elif qwen_custom_model is not None: tm = qwen_custom_model
+                    
+                    # Create a hash based on the parameters that define a unique Qwen generation context
+                    # This is a simplified hash; a more robust one might involve content hashing of ref_audio
+                    # For now, id(tm) is sufficient to group by model.
+                    # We also need to ensure speaker_id and ref_audio are consistent within a batch.
+                    # Since the current batching is greedy and based on `id(tm)`, `speaker_id`, and `ref_audio`
+                    # we need to include these in the hash for proper batching.
+                    # For simplicity, let's assume `id(tm)` is the primary grouping key for now,
+                    # and the `_generate_qwen_batch` will handle the iterative calls.
+                    
+                    # The actual Qwen generation is still iterative, so the batching here is about
+                    # grouping *consecutive* compatible items to call `_generate_qwen_batch` on them.
+                    # The `_generate_qwen_batch` will then iterate and call `qwen_gen.generate` for each.
+                    
+                    # The "hash" here is more about determining if an item can be added to the *current logical batch*
+                    # before flushing.
+                    # A more precise hash would be a tuple of (id(tm), speaker_id, id(ref_audio_waveform_if_any))
+                    # For now, let's just use id(tm) as the primary grouping key, and rely on the fact that
+                    # the `_generate_qwen_batch` will process them individually.
+                    
+                    # Store all relevant parameters for later use in _generate_qwen_batch
+                    return {
+                        "tm": tm, "tx": tx, "sid": sid, "ref": ref, "ins": ins, "me": me, "sk": sk,
+                        "h": id(tm), # Primary grouping key
+                        "original_speaker": it["speaker"],
+                        "original_item": it # Keep original item for visual tag
+                    }
+
+                for it in batch_items:
+                    p = get_qwen_params(it)
+                    
+                    # Check if the current item is compatible with the current batch
+                    # Compatibility: same routed model (via hash), and total char count within limit
+                    can_m = (current_hash is not None and p["h"] == current_hash and (current_batch_char + len(p["tx"]) < max_batch_char))
+                    
+                    if not can_m:
+                        # If not compatible, or if it's the first item, flush the previous batch (if any)
+                        if current_batch:
+                            self._generate_qwen_batch(current_batch, qwen_gen, current_full_wav, sr_ptr, segments_info, time_ptr, speed_global, cfg_scale, temperature, top_k, top_p)
                         
-                        segments_info.append({
-                            "start": round(seg_start, 3),
-                            "end": round(seg_end, 3),
-                            "text": text,
-                            "speaker": spk_name,
-                            "visual": item.get("visual")
-                        })
-                        time_ptr[0] += seg_duration
-                        
-                        # Add a small gap between segments
-                        gap = 0.2
-                        gap_samples = int(gap * sr_ptr[0])
-                        current_full_wav.append(torch.zeros(1, gap_samples))
-                        time_ptr[0] += gap
-                            
-                    except Exception as e:
-                        print(f"[Error] Qwen item generation failed: {e}")
-                        current_full_wav.append(torch.zeros(1, 24000))
-                        time_ptr[0] += 1.0
+                        # Start a new batch
+                        current_batch = [p]
+                        current_batch_char = len(p["tx"])
+                        current_hash = p["h"]
+                    else:
+                        # Add to current batch
+                        current_batch.append(p)
+                        current_batch_char += len(p["tx"])
+                
+                # Flush any remaining items in the last batch
+                if current_batch:
+                    self._generate_qwen_batch(current_batch, qwen_gen, current_full_wav, sr_ptr, segments_info, time_ptr, speed_global, cfg_scale, temperature, top_k, top_p)
 
             else:
                 # CosyVoice (Iterative)
