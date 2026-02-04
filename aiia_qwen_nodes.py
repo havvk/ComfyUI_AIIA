@@ -164,7 +164,8 @@ class AIIA_Qwen_TTS:
                 "speaker": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
                 "instruct": ("STRING", {"multiline": True, "default": ""}),
                 "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
-                "dialect_note": ("STRING", {"default": "💡 提示：方言功能建议配合 VoiceDesign 或 0.6B-CustomVoice 模型使用效果最佳。", "is_label": True}),
+                "dialect_note": ("STRING", {"default": "💡 提示：使用方言或精细情感时，推荐配合 VoiceDesign 模型。", "is_label": True}),
+                "base_note": ("STRING", {"default": "⚠️ 注意：Base 模型仅支持录音克隆，不支持文字指令(Instruct/Dialect)。", "is_label": True}),
                 "reference_audio": ("AUDIO",),
                 "reference_text": ("STRING", {"multiline": True, "default": ""}),
                 "zero_shot_mode": ("BOOLEAN", {"default": False}),
@@ -187,6 +188,11 @@ class AIIA_Qwen_TTS:
     def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", zero_shot_mode=False, emotion="None", dialect="None", seed=42, speed=1.0, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95):
         model = qwen_model["model"]
         m_type = qwen_model["type"]
+        model_path = qwen_model.get("path", "").lower()
+        
+        # Warning for Base model with instruct
+        if "base" in model_path and (instruct.strip() or dialect != "None" or emotion != "None"):
+            print(f"\033[33m[AIIA Qwen] Warning: Base models primarily support cloning and may ignore text instructions/dialects.\033[0m")
         
         if seed >= 0:
             torch.manual_seed(seed)
@@ -316,7 +322,8 @@ class AIIA_Qwen_Dialogue_TTS:
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "zero_shot_mode": ("BOOLEAN", {"default": False}),
                 "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
-                "dialect_note": ("STRING", {"default": "💡 提示：方言建议配合 Design 模式使用效果最佳。", "is_label": True}),
+                "dialect_note": ("STRING", {"default": "💡 提示：方言建议配合 Design 模式使用。", "is_label": True}),
+                "base_note": ("STRING", {"default": "⚠️ 注意：Clone 模式下的 Base 模型不支持文字指令控制。", "is_label": True}),
             },
             "optional": {
                 "qwen_base_model": ("QWEN_MODEL",),
