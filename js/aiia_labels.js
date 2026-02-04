@@ -31,22 +31,52 @@ app.registerExtension({
                         // Change type to avoid standard text box rendering
                         w.type = "AIIA_STATIC_TEXT";
 
+                        // Helper to wrap text
+                        const wrapText = (ctx, text, maxWidth) => {
+                            const words = text.split(" ");
+                            const lines = [];
+                            let currentLine = words[0];
+
+                            for (let i = 1; i < words.length; i++) {
+                                const word = words[i];
+                                const width = ctx.measureText(currentLine + " " + word).width;
+                                if (width < maxWidth) {
+                                    currentLine += " " + word;
+                                } else {
+                                    lines.push(currentLine);
+                                    currentLine = word;
+                                }
+                            }
+                            lines.push(currentLine);
+                            return lines;
+                        };
+
                         w.draw = function (ctx, node, widget_width, y, widget_height) {
                             ctx.save();
-                            // Background or subtle underline if needed
-                            // ctx.fillStyle = "#222222";
-                            // ctx.fillRect(0, y, widget_width, widget_height);
-
                             ctx.fillStyle = "#AAAAAA"; // Label color
                             ctx.font = "italic 12px Arial";
-                            // Draw the text
-                            ctx.fillText(this.value, 15, y + widget_height * 0.7);
+
+                            const margin = 15;
+                            const maxWidth = widget_width - margin * 2;
+                            const lines = wrapText(ctx, this.value, maxWidth);
+
+                            let lineY = y + 15;
+                            for (const line of lines) {
+                                ctx.fillText(line, margin, lineY);
+                                lineY += 16; // Line height
+                            }
+
+                            // Store the actual height for computeSize
+                            this.last_height = (lines.length * 16) + 10;
+
                             ctx.restore();
                         };
 
                         // Disable interaction 
                         w.mouse = () => { };
-                        w.computeSize = () => [200, 20];
+                        w.computeSize = function (width) {
+                            return [width || 200, this.last_height || 20];
+                        };
 
                         // Prevent this widget from being converted to a socket (though it's already a Primitive STRING)
                         w.inputKey = null;
