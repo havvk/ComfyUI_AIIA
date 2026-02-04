@@ -195,7 +195,7 @@ class AIIA_Dialogue_TTS:
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
-                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 5000}),
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
             },
             "optional": {
                 "cosyvoice_model": ("COSYVOICE_MODEL",),

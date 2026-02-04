@@ -297,7 +297,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "zero_shot_mode": ("BOOLEAN", {"default": False}),
-                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 5000}),
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
             },
             "optional": {
                 "qwen_base_model": ("QWEN_MODEL",),
