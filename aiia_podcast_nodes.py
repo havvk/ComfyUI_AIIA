@@ -419,20 +419,10 @@ class AIIA_Dialogue_TTS:
                     
                     internal_id = unique_speakers[spk_key]
                     text = item["text"]
-                    emotion = item.get("emotion", "")
                     
-                    # Merge preset emotion if any
-                    preset_emo_full = kwargs.get(f"speaker_{spk_key}_emotion", "None")
-                    if preset_emo_full and preset_emo_full != "None":
-                        emo_label = preset_emo_full.split(" (")[0] if " (" in preset_emo_full else preset_emo_full
-                        if emotion: text = f"[{emotion}, {emo_label}] {text}"
-                        else: text = f"[{emo_label}] {text}"
-                    elif emotion:
-                        text = f"[{emotion}] {text}"
-
-                    # Clean text for length calc (approx)
-                    clean_text = re.sub(r'\[.*?\]', '', text).strip()
-                    char_len = len(clean_text) if clean_text else 1
+                    # VibeVoice does not support emotion macro text tags.
+                    # We send only pure text to prevent the model from reading tags aloud.
+                    char_len = len(text) if text else 1
                     total_char_len += char_len
                     item_lengths.append(char_len)
 
