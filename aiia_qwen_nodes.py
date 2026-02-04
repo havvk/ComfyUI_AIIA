@@ -529,7 +529,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 }
             
             # Check for at least one model
-            if all(kwargs.get(k) is None for k in ["qwen_model", "qwen_base_model", "qwen_custom_model", "qwen_design_model"]):
+            if qwen_model is None and all(kwargs.get(k) is None for k in ["qwen_base_model", "qwen_custom_model", "qwen_design_model"]):
                 raise ValueError("AIIA_Qwen_Dialogue_TTS: No Qwen model connected! Connect at least one to qwen_model/base/custom/design.")
             
             ref_audio = None
