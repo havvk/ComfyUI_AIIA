@@ -336,10 +336,12 @@ class AIIA_Dialogue_TTS:
                 time_ptr[0] += 1.0
 
 
-    def process_dialogue(self, dialogue_json, tts_engine, pause_duration, speed_global, 
-                         qwen_model, cosyvoice_model=None, vibevoice_model=None, 
+    def process_dialogue(self, dialogue_json, tts_engine, pause_duration, speed_global, batch_mode,
+                         qwen_model=None, cosyvoice_model=None, vibevoice_model=None, 
                          qwen_base_model=None, qwen_custom_model=None, qwen_design_model=None,
                          cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, max_batch_char=1000, **kwargs):
+        # Robustness: ensure max_batch_char is correctly picked up even if shifted or provided as kwarg
+        max_batch_char = kwargs.get("max_batch_char", max_batch_char)
         import json
         import torch
         import os

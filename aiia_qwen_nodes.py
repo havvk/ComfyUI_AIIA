@@ -378,6 +378,8 @@ class AIIA_Qwen_Dialogue_TTS:
             return None
 
     def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed=42, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, zero_shot_mode=False, max_batch_char=1000, **kwargs):
+        # Robustness: ensure max_batch_char is correctly picked up
+        max_batch_char = kwargs.get("max_batch_char", max_batch_char)
         import json
         import torch
         import torchaudio
