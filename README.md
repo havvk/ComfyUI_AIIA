@@ -971,11 +971,35 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 | **克隆能力 (Cloning)**             | **SOTA** (Zero-Shot)`<br>`只需 3-10秒，对**音色质感**还原极高。                                                                                                  | **SOTA** (稳定性)`<br>`对**说话韵律/口音**的捕捉最准。         | **良好** `<br>`适合克隆特定语气，而非纯粹音色。         |
 | **多语言/方言**                    | **中/英** (双语优化)                                                                                                                                                     | **👑 霸主** (9种语言 + 18种方言)                                       | **中/英**                                                 |
 | **语音转换 (VC)** (Audio-to-Audio) | ❌**不支持** `<br>`仅支持 TTS (Text-to-Speech)。无法改变已有音频的音色。                                                                                               | ✅**支持** `<br>`可以将任意音频转换为任意音色 (保留语调/停顿)。      | ❌**不支持** `<br>`纯 TTS 模型。仅支持 Text-to-Speech。 |
+| **Qwen3-TTS** (1.7B/0.6B)           | ✅**支持** `<br>`支持 CustomVoice (内置) 和 VoiceDesign (描述)。                                                                                                         | ✅**支持** `<br>`支持 3秒极速 Zero-shot 克隆。                               | ✅**支持** `<br>`支持 10 种语言。                         |
+
+#### 3.13 Qwen3-TTS (New! 🔥)
+
+- **用途**: 阿里巴巴 Qwen 团队推出的最新旗舰级 TTS 模型，支持 10 种主要语言及多种方言，具备极高的稳定性和表现力。
+- **核心能力**:
+  - **CustomVoice**: 使用内置的高品质音色进行语音合成。提供 1.7B 和 0.6B 两种规格。
+  - **VoiceDesign**: 通过自然语言描述（如“活泼的少女音，带点羞涩”）从零设计音色。
+  - **VoiceClone**: 顶级的 3秒快速音色克隆，支持 X-Vector 模式提升稳定性。
+- **环境要求**:
+  - **qwen-tts**: `pip install qwen-tts` (插件会自动尝试安装)。
+  - **Flash Attention 2**: 强烈推荐以获得最佳推理性能。
+- **节点**:
+  - `🤖 Qwen3-TTS Loader`: 加载模型。支持 `Base` (克隆)、`CustomVoice` (内置音色) 和 `VoiceDesign` (音色设计) 模型。
+  - `🗣️ Qwen3-TTS Synthesis`: 执行合成。根据加载的模型类型自动切换功能。
+- **模型下载**:
+  - `Qwen/Qwen3-TTS-12Hz-1.7B-Base` (或 0.6B-Base)
+  - `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` (或 0.6B-CustomVoice)
+  - `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign`
+
+---
+
+#### 💡 用户实测与选型指南 (Model Comparison & Selection)
 
 **选型建议**:
 
 - **追求“听起来最像真人” (音质+音色)**: 选 **VoxCPM 1.5**。它的 Tokenizer-free 架构带来了质的飞跃。
 - **追求“方言/多语言/稳定性”**: 选 **CosyVoice 3.0**。目前依然是生产环境最稳的选择。
+- **追求“多样化音色设计/最新 Qwen 生态/长语音流畅度”**: 选 **Qwen3-TTS**。其 VoiceDesign 功能能让你用描述语“捏”出从未听过的声音。
 - **要做“长篇广播剧/播客”**: 选 **VibeVoice**。它的长窗口上下文优势依然不可替代。
 
 ### 4. 播客与对话生成 (Podcast & Dialogue Generation)
@@ -1005,6 +1029,7 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 - **TTS Engine**: 后端引擎选择。
   - **CosyVoice**: 精准控制型。
   - **VibeVoice**: 自然演绎型。
+  - **Qwen3-TTS**: 万能旗舰型。支持音色设计与内置高质量音色。
 - **Speaker A/B/C**:
   - **Ref Audio**: 参考音频 (用于 Zero-Shot 克隆)。
   - **ID**: 内置音色 ID (如 CosyVoice 的 `Chinese Female`)。
@@ -1026,6 +1051,7 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 - **原理**:
   - **CosyVoice**: 使用生成时的精确时长。
   - **VibeVoice**: 使用**智能插值算法 (Smart Interpolation)**，根据字符长度自动计算长音频段内的单句时间轴。
+  - **Qwen3-TTS**: 基于生成的音频振幅精准断句，支持多角色时间轴导出。
 
 #### 4.4 AIIA Subtitle to Segments (字幕转分段)
 
@@ -1069,13 +1095,13 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 
 #### 💡 引擎选型与最佳实践 (Best Practices)
 
-| 特性               | **CosyVoice**                        | **VibeVoice**                                                                              |
-| :----------------- | :----------------------------------------- | :----------------------------------------------------------------------------------------------- |
-| **核心优势** | **精准控制 (Instruction)**           | **自然演绎 (Context-Aware)**                                                               |
-| **情感控制** | ✅**支持** (使用 `[Happy]` 等标签) | ❌ 不支持显式标签 (依赖上下文)                                                                   |
-| **生成逻辑** | **逐句生成** (严格遵循每句话的指令)  | **混合批处理** (Hybrid Batching)                                                           |
-| **最佳场景** | 需要精确指定某句话语气、方言时             | 长篇对话、广播剧、闲聊                                                                           |
-| **使用建议** | 可以在剧本中详细标注情感。                 | **尽量减少 `(Pause)`**！`<br>`让多句对话连在一起，模型能更好地联系上下文产生自然语气。 |
+| 特性               | **CosyVoice**                        | **VibeVoice**                                                                              | **Qwen3-TTS**                               |
+| :----------------- | :----------------------------------------- | :----------------------------------------------------------------------------------------------- | :------------------------------------------ |
+| **核心优势** | **精准控制 (Instruction)**           | **自然演绎 (Context-Aware)**                                                               | **万能旗舰 (Voice Design)**                 |
+| **情感控制** | ✅**支持** (使用 `[Happy]` 等标签) | ❌ 不支持显式标签 (依赖上下文)                                                                   | ✅**支持** (通过 `instruct` 或标签) |
+| **生成逻辑** | **逐句生成** (严格遵循每句话的指令)  | **混合批处理** (Hybrid Batching)                                                           | **动态引擎** (支持流式与批处理)             |
+| **最佳场景** | 需要精确指定某句话语气、方言时             | 长篇对话、广播剧、闲聊                                                                           | 音色定制、高质量配音、极速克隆              |
+| **使用建议** | 可以在剧本中详细标注情感。                 | **尽量减少 `(Pause)`**！`<br>`让多句对话连在一起，模型能更好地联系上下文产生自然语气。 | 尝试使用其 Voice Design 进行创意捏人。      |
 
 #### 📝 综合测试剧本 (Example Script)
 
@@ -1174,6 +1200,15 @@ B: 太神奇了！那我们快去生成试试吧！
 ---
 
 ## Changelog
+
+### [1.11.0] - 2026-02-04
+
+- **Qwen3-TTS**: 新增阿里巴巴 **Qwen3-TTS** 全系列支持。
+  - **🤖 Qwen3-TTS Loader**: 支持加载 Base, CustomVoice, VoiceDesign 及其 1.7B/0.6B 版本。
+  - **🗣️ Qwen3-TTS Synthesis**: 实现全功能生成，包括 Zero-shot 克隆、音色设计和内置音色合成。
+- **Podcast Integration**: **AIIA Dialogue TTS** 节点现在正式集成 Qwen3-TTS 引擎。
+  - 支持多角色混合场景下的 Qwen3 驱动，支持使用脚本标签触发 `instruct`。
+- **Auto-Dependency**: 首次运行 Qwen3 节点会自动检测并安装 `qwen-tts` 库。
 
 ### [1.10.17] - 2026-02-03
 

@@ -176,7 +176,7 @@ class AIIA_Dialogue_TTS:
         return {
             "required": {
                 "dialogue_json": ("STRING", {"forceInput": True}),
-                "tts_engine": (["CosyVoice", "VibeVoice"], {"default": "CosyVoice"}),
+                "tts_engine": (["CosyVoice", "VibeVoice", "Qwen3-TTS"], {"default": "CosyVoice"}),
                 "pause_duration": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.1}),
                 "speed_global": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
                 "batch_mode": (["Natural (Hybrid)", "Strict (Per-Speaker)", "Whole (Single Batch)"], {"default": "Natural (Hybrid)"}),
@@ -190,6 +190,7 @@ class AIIA_Dialogue_TTS:
             "optional": {
                 "cosyvoice_model": ("COSYVOICE_MODEL",),
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
+                "qwen_model": ("QWEN_MODEL",),
                 
                 # Speaker A
                 "speaker_A_ref": ("AUDIO",),
@@ -248,7 +249,7 @@ class AIIA_Dialogue_TTS:
             return None
 
     def process_dialogue(self, dialogue_json, tts_engine, pause_duration, speed_global, 
-                         cosyvoice_model=None, vibevoice_model=None, 
+                         cosyvoice_model=None, vibevoice_model=None, qwen_model=None,
                          cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, **kwargs):
         import json
         import torch
@@ -260,6 +261,8 @@ class AIIA_Dialogue_TTS:
             raise ValueError("选择 CosyVoice 引擎时，必须连接 'cosyvoice_model'！")
         if tts_engine == "VibeVoice" and vibevoice_model is None:
             raise ValueError("选择 VibeVoice 引擎时，必须连接 'vibevoice_model'！")
+        if tts_engine == "Qwen3-TTS" and qwen_model is None:
+            raise ValueError("选择 Qwen3-TTS 引擎时，必须连接 'qwen_model'！")
 
         dialogue = json.loads(dialogue_json)
         full_waveform = []
@@ -267,9 +270,11 @@ class AIIA_Dialogue_TTS:
         
         from .aiia_cosyvoice_nodes import AIIA_CosyVoice_TTS
         from .aiia_vibevoice_nodes import AIIA_VibeVoice_TTS
+        from .aiia_qwen_nodes import AIIA_Qwen_TTS
         
         cosy_gen = AIIA_CosyVoice_TTS()
         vibe_gen = AIIA_VibeVoice_TTS()
+        qwen_gen = AIIA_Qwen_TTS()
 
         print(f"[AIIA Podcast] 开始处理对话，共 {len(dialogue)} 个片段。引擎: {tts_engine}")
 
@@ -402,6 +407,74 @@ class AIIA_Dialogue_TTS:
                         })
                     time_ptr[0] += 1.0
                     
+            elif tts_engine == "Qwen3-TTS":
+                # Qwen3-TTS (Iterative)
+                for i, item in enumerate(batch_items):
+                    spk_name = item["speaker"]
+                    spk_key = get_speaker_key(spk_name)
+                    text = item["text"]
+                    emotion = item.get("emotion", "None")
+                    
+                    # Mapping logic for Qwen
+                    spk_id = kwargs.get(f"speaker_{spk_key}_id", "Vivian") # Default to Vivian if empty
+                    if not spk_id.strip(): spk_id = "Vivian"
+                    
+                    ref_audio = get_ref_audio(spk_key)
+                    instruct = f"{emotion}." if emotion and emotion != "None" else ""
+                    
+                    print(f"  [Qwen Processing] {spk_name} (ID: {spk_id}): {text[:15]}...")
+                    try:
+                        # Call Qwen TTS
+                        res = qwen_gen.generate(
+                            qwen_model=qwen_model,
+                            text=text,
+                            language="Auto",
+                            speaker=spk_id,
+                            instruct=instruct,
+                            reference_audio=ref_audio,
+                            seed=42+i,
+                            speed=speed_global
+                        )
+                        
+                        generated = res[0]
+                        wav = generated["waveform"]
+                        sr = generated["sample_rate"]
+                        
+                        if sr_ptr[0] != sr:
+                            if current_full_wav:
+                                wav = torchaudio.transforms.Resample(sr, sr_ptr[0])(wav)
+                            else:
+                                sr_ptr[0] = sr
+                        
+                        if wav.ndim == 3: wav = wav.squeeze(0)
+                        if wav.ndim == 1: wav = wav.unsqueeze(0)
+                        current_full_wav.append(wav)
+
+                        # --- Timestamp Tracking ---
+                        seg_duration = wav.shape[-1] / sr
+                        seg_start = time_ptr[0]
+                        seg_end = seg_start + seg_duration
+                        
+                        segments_info.append({
+                            "start": round(seg_start, 3),
+                            "end": round(seg_end, 3),
+                            "text": text,
+                            "speaker": spk_name,
+                            "visual": item.get("visual")
+                        })
+                        time_ptr[0] += seg_duration
+                        
+                        # Add a small gap between segments
+                        gap = 0.2
+                        gap_samples = int(gap * sr_ptr[0])
+                        current_full_wav.append(torch.zeros(1, gap_samples))
+                        time_ptr[0] += gap
+                            
+                    except Exception as e:
+                        print(f"[Error] Qwen item generation failed: {e}")
+                        current_full_wav.append(torch.zeros(1, 24000))
+                        time_ptr[0] += 1.0
+
             else:
                 # CosyVoice (Iterative)
                 for i, item in enumerate(batch_items):

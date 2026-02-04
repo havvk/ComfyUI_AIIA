@@ -136,6 +136,9 @@ else:
     # 25. 处理 aiia_debug_nodes.py (新增调试节点)
     _load_nodes_from_module(".aiia_debug_nodes", "aiia_debug_nodes")
 
+    # 26. 处理 aiia_qwen_nodes.py (新增 Qwen3-TTS)
+    _load_nodes_from_module(".aiia_qwen_nodes", "aiia_qwen_nodes")
+
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
 
