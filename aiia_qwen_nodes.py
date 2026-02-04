@@ -336,12 +336,6 @@ class AIIA_Qwen_Dialogue_TTS:
                 "qwen_model": ("QWEN_MODEL",),
             },
             "optional": {
-                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
-                "zero_shot_mode": ("BOOLEAN", {"default": False}),
-                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
-                "qwen_base_model": ("QWEN_MODEL",),
-                "qwen_custom_model": ("QWEN_MODEL",),
-                "qwen_design_model": ("QWEN_MODEL",),
                 "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
@@ -370,13 +364,20 @@ class AIIA_Qwen_Dialogue_TTS:
                 "speaker_C_design": ("STRING", {"multiline": True, "default": ""}),
                 "speaker_C_ref": ("AUDIO",),
                 "speaker_C_ref_text": ("STRING", {"multiline": True, "default": ""}),
+                # New Optional Slots (Appended to prevent shift)
+                "qwen_base_model": ("QWEN_MODEL",),
+                "qwen_custom_model": ("QWEN_MODEL",),
+                "qwen_design_model": ("QWEN_MODEL",),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "zero_shot_mode": ("BOOLEAN", {"default": False}),
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
             }
         }
 
-    RETURN_TYPES = ("AUDIO", "STRING")
-    RETURN_NAMES = ("full_audio", "segments_info")
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
     FUNCTION = "process_dialogue"
-    CATEGORY = "AIIA/Podcast"
+    CATEGORY = "AIIA/Qwen"
 
     def _load_fallback_audio(self, target="Male"):
         import os
