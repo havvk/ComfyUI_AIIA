@@ -175,14 +175,6 @@ class AIIA_Qwen_TTS:
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
-            },
-            "optional": {
-                "cosyvoice_model": ("COSYVOICE_MODEL",),
-                "vibevoice_model": ("VIBEVOICE_MODEL",),
-                "qwen_model": ("QWEN_MODEL",),
-                "qwen_base_model": ("QWEN_MODEL",),
-                "qwen_custom_model": ("QWEN_MODEL",),
-                "qwen_design_model": ("QWEN_MODEL",),
             }
         }
 
