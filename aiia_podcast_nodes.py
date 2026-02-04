@@ -3,18 +3,22 @@ import json
 import re
 
 AIIA_EMOTION_LIST = [
-    "None", "Happy", "Sad", "Angry", "Excited", 
-    "Gentle", "Serious", "Fearful", "Surprised", 
-    "Whispering", "Shouting", "Shy", "Seductive", 
-    "Crying", "Laughter", "Embarrassed", "Disappointed", 
-    "Proud", "Doubtful", "Anxious", "Calm"
+    "None", 
+    "Happy (开心)", "Sad (悲伤)", "Angry (生气)", "Excited (兴奋)", 
+    "Gentle (温柔)", "Serious (严肃)", "Fearful (恐惧)", "Surprised (惊讶)", 
+    "Whispering (耳语)", "Shouting (喊叫)", "Shy (害羞)", "Seductive (诱惑)", 
+    "Crying (哭泣)", "Laughter (笑声)", "Embarrassed (尴尬)", "Disappointed (失望)", 
+    "Proud (骄傲)", "Doubtful (疑惑)", "Anxious (焦虑)", "Calm (冷静)",
+    "Affectionate (深情)", "Awkward (尴尬)", "Determined (坚定)", "Hesitant (犹豫)"
 ]
 
 AIIA_DIALECT_LIST = [
-    "None", "Mandarin", "Cantonese", "Shanghainese", 
-    "Sichuanese", "Northeastern", "Hokkien", 
-    "Hakka", "Tianjinese", "Shandongnese",
-    "Henan", "Shaanxi", "Hunan"
+    "None", 
+    "Mandarin (普通话)", "Cantonese (粤语)", "Shanghainese (上海话)", 
+    "Sichuanese (四川话)", "Northeastern (东北话)", "Hokkien (闽南话)", 
+    "Hakka (客家话)", "Tianjinese (天津话)", "Shandongnese (山东话)",
+    "Henan (河南话)", "Shaanxi (陕西话)", "Hunan (湖南话)", "Jiangxi (江西话)",
+    "Hubei (湖北话)", "Guizhou (贵州话)", "Yunnan (云南话)", "Gansu (甘肃话)", "Ningxia (宁夏话)"
 ]
 
 class AIIA_Podcast_Script_Parser:
