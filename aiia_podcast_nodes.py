@@ -204,7 +204,10 @@ class AIIA_Dialogue_TTS:
             "optional": {
                 "cosyvoice_model": ("COSYVOICE_MODEL",),
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
-                "qwen_model": ("QWEN_MODEL",),         # Primary Qwen model (can be a Bundle)
+                "qwen_model": ("QWEN_MODEL",),         # Primary Qwen model
+                "qwen_base_model": ("QWEN_MODEL",),      # Optional specialized Base
+                "qwen_custom_model": ("QWEN_MODEL",),    # Optional specialized CustomVoice
+                "qwen_design_model": ("QWEN_MODEL",),    # Optional specialized VoiceDesign
                 
                 # Speaker A
                 "speaker_A_ref": ("AUDIO",),
@@ -344,7 +347,8 @@ class AIIA_Dialogue_TTS:
 
     def process_dialogue(self, dialogue_json, tts_engine, pause_duration, speed_global, batch_mode,
                          max_batch_char=1000, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95,
-                         qwen_model=None, cosyvoice_model=None, vibevoice_model=None, **kwargs):
+                         qwen_model=None, cosyvoice_model=None, vibevoice_model=None, 
+                         qwen_base_model=None, qwen_custom_model=None, qwen_design_model=None, **kwargs):
         # Robustness: ensure max_batch_char is correctly picked up even if shifted or provided as kwarg
         max_batch_char = kwargs.get("max_batch_char", max_batch_char)
         import json
@@ -357,8 +361,9 @@ class AIIA_Dialogue_TTS:
             raise ValueError("选择 CosyVoice 引擎时，必须连接 'cosyvoice_model'！")
         if tts_engine == "VibeVoice" and vibevoice_model is None:
             raise ValueError("选择 VibeVoice 引擎时，必须连接 'vibevoice_model'！")
-        if tts_engine == "Qwen3-TTS" and qwen_model is None:
-            raise ValueError("选择 Qwen3-TTS 引擎时，必须连接 'qwen_model'！")
+        if tts_engine == "Qwen3-TTS":
+            if all(m is None for m in [qwen_model, qwen_base_model, qwen_custom_model, qwen_design_model]):
+                raise ValueError("选择 Qwen3-TTS 引擎时，必须连接至少一个 Qwen 模型！")
 
         dialogue = json.loads(dialogue_json)
         full_waveform = []
@@ -527,12 +532,17 @@ class AIIA_Dialogue_TTS:
                         me = f"{me}，{el}" if me else el
                     ins = f"{me}。" if me else ""
                     
-                    # Routing: Use bundle if available, else use the single connected model
+                    # Routing: Use bundle if available, else check direct slots
                     tm = qwen_model
-                    if qwen_model.get("is_bundle"):
+                    if qwen_model and qwen_model.get("is_bundle"):
                         if ref is not None: tm = qwen_model.get("base") or qwen_model.get("default")
                         elif ins: tm = qwen_model.get("design") or qwen_model.get("default")
                         else: tm = qwen_model.get("custom") or qwen_model.get("default")
+                    elif tm is None:
+                        # Fallback for deprecated single-slot inputs
+                        if ref is not None: tm = qwen_base_model or qwen_custom_model
+                        elif ins: tm = qwen_design_model or qwen_custom_model
+                        else: tm = qwen_custom_model or qwen_base_model or qwen_design_model
                     
                     # Dialect is part of compatibility
                     return {

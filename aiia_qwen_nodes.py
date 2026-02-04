@@ -332,12 +332,17 @@ class AIIA_Qwen_Dialogue_TTS:
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
-                "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "zero_shot_mode": ("BOOLEAN", {"default": False}),
+                "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
                 "dialect_note": ("STRING", {"default": "💡 提示：方言建议配合 Design 模式使用。", "is_label": True}),
                 "base_note": ("STRING", {"default": "⚠️ 注意：Clone 模式下的 Base 模型不支持文字指令控制。", "is_label": True}),
             },
             "optional": {
                 "qwen_model": ("QWEN_MODEL",),
+                "qwen_base_model": ("QWEN_MODEL",),
+                "qwen_custom_model": ("QWEN_MODEL",),
+                "qwen_design_model": ("QWEN_MODEL",),
                 "preset_note": ("STRING", {"default": QWEN_PRESET_NOTE, "is_label": True}),
                 # Speaker A
                 "speaker_A_mode": (["Clone", "Preset", "Design"], {"default": "Clone"}),
@@ -474,19 +479,29 @@ class AIIA_Qwen_Dialogue_TTS:
             spk_expression_preset = kwargs.get(f"speaker_{spk_key}_expression", "None")
             spk_dialect_preset = kwargs.get(f"speaker_{spk_key}_dialect", "None")
             design = kwargs.get(f"speaker_{spk_key}_design", "")
-            qwen_model = kwargs.get("qwen_model")
-            if qwen_model is None:
-                raise ValueError("AIIA_Qwen_Dialogue_TTS: qwen_model is required. Connect a single Qwen model or a Qwen3 Model Router (Bundle)!")
-
-            # 0. Specialized Qwen Routing from Bundle
+            # 0. Specialized Qwen Routing from Bundle or slots
             def get_model_from_bundle(mode, ref=None):
-                if not qwen_model.get("is_bundle"): return qwen_model
+                # 1. Check primary qwen_model (might be a bundle)
+                main_q = kwargs.get("qwen_model")
+                if main_q and main_q.get("is_bundle"):
+                    if mode == "Clone" or ref is not None:
+                        return main_q.get("base") or main_q.get("default")
+                    elif mode == "Design":
+                        return main_q.get("design") or main_q.get("default")
+                    else: # Preset
+                        return main_q.get("custom") or main_q.get("default")
+                
+                # 2. Check direct slots (compatibility)
+                base_q = kwargs.get("qwen_base_model")
+                custom_q = kwargs.get("qwen_custom_model")
+                design_q = kwargs.get("qwen_design_model")
+                
                 if mode == "Clone" or ref is not None:
-                    return qwen_model.get("base") or qwen_model.get("default")
+                    return base_q or custom_q or main_q
                 elif mode == "Design":
-                    return qwen_model.get("design") or qwen_model.get("default")
+                    return design_q or custom_q or main_q
                 else: # Preset
-                    return qwen_model.get("custom") or qwen_model.get("default")
+                    return custom_q or main_q or base_q or design_q
 
             # Extract Speaker Params
             def get_speaker_params(prefix):
@@ -500,6 +515,10 @@ class AIIA_Qwen_Dialogue_TTS:
                     "exp": kwargs.get(f"{prefix}_expression", ""),
                     "dialect": kwargs.get(f"{prefix}_dialect", "None")
                 }
+            
+            # Check for at least one model
+            if all(kwargs.get(k) is None for k in ["qwen_model", "qwen_base_model", "qwen_custom_model", "qwen_design_model"]):
+                raise ValueError("AIIA_Qwen_Dialogue_TTS: No Qwen model connected! Connect at least one to qwen_model/base/custom/design.")
             
             ref_audio = get_ref_audio_with_fallback(spk_key) if mode == "Clone" else None
             ref_text = kwargs.get(f"speaker_{spk_key}_ref_text", "")
