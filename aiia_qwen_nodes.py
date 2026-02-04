@@ -206,13 +206,21 @@ class AIIA_Qwen_TTS:
                     
                     ref_audio_data = (ref_wav.squeeze().cpu().numpy(), ref_sr)
                     
-                    print(f"[AIIA] Qwen3-TTS VoiceClone: Using provided reference.")
+                    ref_text = reference_text if reference_text and reference_text.strip() != "" else None
+                    mode_param = x_vector_only
+                    
+                    # Robustness: Qwen requires ref_text for ICL mode (x_vector_only=False)
+                    if not ref_text and not mode_param:
+                        print(f"[AIIA Warning] No 'reference_text' provided. Automatically switching to 'x_vector_only=True' (Zero-Shot) to prevent crash.")
+                        mode_param = True
+                    
+                    print(f"[AIIA] Qwen3-TTS VoiceClone: Using reference. Mode: {'Zero-Shot' if mode_param else 'ICL'}")
                     wavs, sr = model.generate_voice_clone(
                         text=text,
                         language=lang_param,
                         ref_audio=ref_audio_data,
-                        ref_text=reference_text if reference_text else None,
-                        x_vector_only_mode=x_vector_only,
+                        ref_text=ref_text,
+                        x_vector_only_mode=mode_param,
                         **gen_kwargs
                     )
                 else:
@@ -253,6 +261,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "x_vector_only": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "qwen_base_model": ("QWEN_MODEL",),
@@ -413,7 +422,8 @@ class AIIA_Qwen_Dialogue_TTS:
                         cfg_scale=cfg_scale,
                         temperature=temperature,
                         top_k=top_k,
-                        top_p=top_p
+                        top_p=top_p,
+                        x_vector_only=kwargs.get("x_vector_only", False)
                     )
                     
                     if res and res[0]:
