@@ -94,7 +94,17 @@ class AIIA_Qwen_Loader:
         torch_dtype = torch.bfloat16 if dtype == "bf16" else (torch.float16 if dtype == "fp16" else torch.float32)
         
         # Resolve path
-        path = local_path if local_path and os.path.exists(local_path) else model_name
+        path = local_path
+        if not path or not os.path.exists(path):
+            # Check ComfyUI models directory
+            # model_name is like "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+            potential_path = os.path.join(folder_paths.models_dir, "qwen_tts", model_name)
+            if os.path.exists(potential_path):
+                path = potential_path
+                print(f"[AIIA] Found local model at: {path}")
+            else:
+                path = model_name
+                print(f"[AIIA] Local model not found, will attempt to load/download via HuggingFace HUB: {path}")
         
         print(f"[AIIA] Loading Qwen3-TTS: {path} on {device} with {dtype}")
         
