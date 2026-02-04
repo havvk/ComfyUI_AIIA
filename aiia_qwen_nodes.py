@@ -22,6 +22,7 @@ QWEN_EMOTION_LIST = [
 QWEN_EXPRESSION_LIST = [
     "None", 
     "With a hint of shyness (带点羞涩)", 
+    "With a hint of a smile (带有一丝笑意)",
     "Seductive tone (充满诱惑力)", 
     "Crying tone (带着哭腔)", 
     "Cheerful tone (充满笑意)", 
