@@ -14,14 +14,46 @@ QWEN_PRESET_NOTE = "Presets (9 premium timbres): Vivian/Serena/Uncle_Fu (CN), Dy
 def _install_qwen_tts_if_needed():
     try:
         from qwen_tts import Qwen3TTSModel
+        # Check if transformers is at least 4.48.0 and not a broken 5.0.0
+        import transformers
+        from packaging import version
+        v = version.parse(transformers.__version__)
+        if v.major >= 5 or v < version.parse("4.48.0"):
+             print(f"[AIIA] Incompatible transformers version {transformers.__version__} found, fixing...")
+             raise ImportError("Need stable transformers")
         return
-    except ImportError:
-        print("[AIIA] qwen-tts missing. Attempting installation...")
+    except (ImportError, ModuleNotFoundError, TypeError):
+        print("[AIIA] Installing/Fixing Qwen3-TTS dependencies (qwen-tts, transformers)...")
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "qwen-tts"])
-            print("[AIIA] qwen-tts installed successfully.")
+            import subprocess
+            import sys
+            import site
+            
+            # Enforce stable transformers version to avoid 'MODELS_TO_PIPELINE' import errors
+            # vllm needs >= 4.56.0, 4.57.x seems to have import issues with qwen-tts
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "transformers==4.56.2", "qwen-tts"])
+            
+            # Surgical patch for qwen-tts @check_model_inputs() bug
+            # Find the qwen_tts installation path
+            import importlib.util
+            spec = importlib.util.find_spec("qwen_tts")
+            if spec and spec.origin:
+                qwen_path = os.path.dirname(os.path.dirname(spec.origin))
+                target_file = os.path.join(qwen_path, "qwen_tts/core/tokenizer_12hz/modeling_qwen3_tts_tokenizer_v2.py")
+                if os.path.exists(target_file):
+                    print(f"[AIIA] Patching qwen-tts decorator bug at {target_file}")
+                    with open(target_file, "r") as f:
+                        content = f.read()
+                    if "@check_model_inputs()" in content:
+                        new_content = content.replace("@check_model_inputs()", "@check_model_inputs")
+                        with open(target_file, "w") as f:
+                            f.write(new_content)
+                        print("[AIIA] Patch applied successfully.")
+            
+            print("[AIIA] Dependencies installed and patched successfully.")
         except Exception as e:
-            print(f"[AIIA] Failed to install qwen-tts: {e}")
+            print(f"[AIIA] Failed to install/patch qwen-tts dependencies: {e}")
+            # Don't raise here, we want the subsequent load attempt to show the real error if any
 
 class AIIA_Qwen_Loader:
     @classmethod
