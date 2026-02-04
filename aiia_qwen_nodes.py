@@ -291,6 +291,7 @@ class AIIA_Qwen_TTS:
                         mode_param = True
                     
                     print(f"[AIIA] Qwen3-TTS VoiceClone: Using reference. Mode: {'Zero-Shot' if mode_param else 'ICL'}")
+                    print(f"  [Debug] Invoking model.generate_voice_clone (Text len: {len(text)})...")
                     wavs, sr = model.generate_voice_clone(
                         text=text,
                         language=lang_param,
@@ -300,6 +301,7 @@ class AIIA_Qwen_TTS:
                         instruct=final_instruct if final_instruct else None,
                         **gen_kwargs
                     )
+                    print(f"  [Debug] Finished model.generate_voice_clone. Wavs count: {len(wavs) if wavs else 0}")
                 else:
                     # Fallback if no reference provided for Base model
                     # Typically Base model MUST have reference.
@@ -669,6 +671,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 print(f"  [Qwen Batch] Final Instruct: {target_instruct}")
 
             try:
+                print(f"  [Debug] Calling qwen_gen.generate for Batch {b_idx}...")
                 res = qwen_gen.generate(
                     qwen_model=qwen_model,
                     text=batched_text.strip(),
@@ -685,6 +688,7 @@ class AIIA_Qwen_Dialogue_TTS:
                     top_p=top_p,
                     zero_shot_mode=zero_shot_mode
                 )
+                print(f"  [Debug] Returned from qwen_gen.generate for Batch {b_idx}.")
                 
                 if res and res[0]:
                     wav = res[0]["waveform"]
