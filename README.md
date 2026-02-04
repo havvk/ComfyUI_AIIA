@@ -1002,7 +1002,7 @@ ComfyUI/models/qwen_tts/Qwen/
 ├── Qwen3-TTS-12Hz-1.7B-CustomVoice/   <-- 对应 1.7B CustomVoice
 ├── Qwen3-TTS-12Hz-1.7B-VoiceDesign/   <-- 对应 1.7B VoiceDesign
 ├── Qwen3-TTS-12Hz-0.6B-Base/          <-- 对应 0.6B Base (Clone)
-└── Qwen3-TTS-12Hz-0.6B-CustomVoice/   <-- 对应 0.6B CustomVoice
+└── Qwen3-TTS-12Hz-0.6B-CustomVoice/   <-- 对应 0.6B CustomVoice/VoiceDesign
 ```
 
 **下载命令 (HuggingFace CLI)**:
@@ -1019,6 +1019,17 @@ hf download Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --local-dir models/qwen_tts/Qwe
 hf download Qwen/Qwen3-TTS-12Hz-0.6B-Base --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-0.6B-Base
 hf download Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
 ```
+
+**ModelScope 下载 (国内推荐)**:
+
+```bash
+# 0.6B 示例
+pip install modelscope
+modelscope download --model qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --local_dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
+```
+
+> [!NOTE]
+> 对于 **0.6B** 系列，官方目前将 `CustomVoice` 和 `VoiceDesign`（文字设计）能力集成在同一个模型中。因此在设计模式下，加载 `0.6B-CustomVoice` 即可获得极佳效果。
 
 #### 🎭 掌握指令控制 (Instruct Control)
 
