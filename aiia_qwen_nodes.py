@@ -453,7 +453,7 @@ class AIIA_Qwen_Dialogue_TTS:
 
         def get_ref_audio_with_fallback(spk_key):
             ref = kwargs.get(f"speaker_{spk_key}_ref")
-            if ref is not None: return ref
+            if ref is not None: return ref, False
             
             # Fallback logic parity with general dialogue node
             fallback_target = "Male"
@@ -463,7 +463,7 @@ class AIIA_Qwen_Dialogue_TTS:
             else: fallback_target = "Female"
             
             print(f"  [Qwen Auto-Fallback] Speaker {spk_key} using {fallback_target}")
-            return self._load_fallback_audio(fallback_target)
+            return self._load_fallback_audio(fallback_target), True
 
         segments_info = []
         time_ptr = 0.0
@@ -532,8 +532,18 @@ class AIIA_Qwen_Dialogue_TTS:
             if all(kwargs.get(k) is None for k in ["qwen_model", "qwen_base_model", "qwen_custom_model", "qwen_design_model"]):
                 raise ValueError("AIIA_Qwen_Dialogue_TTS: No Qwen model connected! Connect at least one to qwen_model/base/custom/design.")
             
-            ref_audio = get_ref_audio_with_fallback(spk_key) if mode == "Clone" else None
+            ref_audio = None
+            is_fallback = False
+            if mode == "Clone":
+                ref_audio, is_fallback = get_ref_audio_with_fallback(spk_key)
+            
             ref_text = kwargs.get(f"speaker_{spk_key}_ref_text", "")
+            
+            if is_fallback:
+                # Force Zero-Shot for fallback audio because we don't have matching text
+                # and incorrect text causes ICL to hang/crash.
+                ref_text = ""
+                # print(f"  [Debug] Fallback used for {spk_key}, forcing ref_text to empty to trigger Zero-Shot.")
             
             # Determine the actual Qwen model to use for this segment
             segment_qwen_model = get_model_from_bundle(mode, ref_audio)
