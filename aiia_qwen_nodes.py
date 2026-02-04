@@ -307,6 +307,12 @@ class AIIA_Qwen_TTS:
                     if ref_wav.ndim == 3: ref_wav = ref_wav[0]
                     if ref_wav.shape[0] > 1: ref_wav = torch.mean(ref_wav, dim=0, keepdim=True)
                     
+                    # AIIA Fix: Normalize reference audio volume to a standard level (0.8 peak)
+                    # This ensures Qwen's cloning isn't influenced by extremely quiet or loud reference files.
+                    ref_peak = ref_wav.abs().max()
+                    if ref_peak > 0.01:
+                        ref_wav = ref_wav * (0.8 / ref_peak)
+                    
                     ref_audio_data = (ref_wav.squeeze().cpu().numpy(), ref_sr)
                     
                     ref_text = reference_text if reference_text and reference_text.strip() != "" else None
@@ -345,6 +351,21 @@ class AIIA_Qwen_TTS:
                     # Simple speed change via resampling (pitch change) - matches CosyVoice fallback
                     resampler = torchaudio.transforms.Resample(orig_freq=int(sr*speed), new_freq=sr)
                     audio_out = resampler(audio_out)
+                
+                # AIIA Fix: RMS Normalization
+                # This ensures consistent volume across segments and matches CosyVoice output levels.
+                if audio_out.abs().max() > 0:
+                    current_rms = torch.sqrt(torch.mean(audio_out**2))
+                    if current_rms > 0:
+                        # Target RMS 0.22 matches CosyVoice implementation
+                        target_rms = 0.22
+                        scale = target_rms / current_rms.item()
+                        audio_out = audio_out * scale
+                        print(f"[AIIA] Qwen3-TTS: Applied RMS Normalization (RMS: {current_rms.item():.4f} -> {target_rms}).")
+                    
+                    # Safety cap to prevent hard digital clipping
+                    if audio_out.abs().max() > 0.95:
+                        audio_out = audio_out / (audio_out.abs().max() / 0.95)
                 
                 return ({"waveform": audio_out.unsqueeze(0), "sample_rate": sr},)
             
