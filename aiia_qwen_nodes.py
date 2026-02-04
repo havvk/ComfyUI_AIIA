@@ -100,6 +100,10 @@ class AIIA_Qwen_TTS:
                 "x_vector_only": ("BOOLEAN", {"default": False}),
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
+                "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
+                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
+                "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
             }
         }
 
@@ -108,7 +112,7 @@ class AIIA_Qwen_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/Synthesis"
 
-    def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", x_vector_only=False, seed=42, speed=1.0):
+    def generate(self, qwen_model, text, language, speaker="Vivian", instruct="", reference_audio=None, reference_text="", x_vector_only=False, seed=42, speed=1.0, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95):
         model = qwen_model["model"]
         m_type = qwen_model["type"]
         
@@ -117,6 +121,14 @@ class AIIA_Qwen_TTS:
             if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed)
 
         lang_param = language if language != "Auto" else "Auto"
+        
+        # Generation Kwargs
+        gen_kwargs = {
+            "temperature": temperature,
+            "top_k": top_k,
+            "top_p": top_p,
+            "cfg_scale": cfg_scale # Usually passed as cfg_scale or guidance_scale in Qwen3-TTS API
+        }
         
         wavs = None
         sr = 24000 # Default if unknown
@@ -128,14 +140,16 @@ class AIIA_Qwen_TTS:
                     text=text,
                     language=lang_param,
                     speaker=speaker,
-                    instruct=instruct if instruct else None
+                    instruct=instruct if instruct else None,
+                    **gen_kwargs
                 )
             elif m_type == "VoiceDesign":
                 print(f"[AIIA] Qwen3-TTS VoiceDesign: {instruct}")
                 wavs, sr = model.generate_voice_design(
                     text=text,
                     language=lang_param,
-                    instruct=instruct
+                    instruct=instruct,
+                    **gen_kwargs
                 )
             else: # Base / Clone
                 if reference_audio is not None:
@@ -156,7 +170,8 @@ class AIIA_Qwen_TTS:
                         language=lang_param,
                         ref_audio=ref_audio_data,
                         ref_text=reference_text if reference_text else None,
-                        x_vector_only_mode=x_vector_only
+                        x_vector_only_mode=x_vector_only,
+                        **gen_kwargs
                     )
                 else:
                     # Fallback if no reference provided for Base model
@@ -192,6 +207,10 @@ class AIIA_Qwen_Dialogue_TTS:
                 "pause_duration": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.1}),
                 "speed_global": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
+                "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
+                "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
+                "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
+                "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
             },
             "optional": {
                 "qwen_base_model": ("QWEN_MODEL",),
@@ -225,7 +244,7 @@ class AIIA_Qwen_Dialogue_TTS:
     FUNCTION = "process_dialogue"
     CATEGORY = "AIIA/Podcast"
 
-    def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed=42, **kwargs):
+    def process_dialogue(self, dialogue_json, pause_duration, speed_global, seed=42, cfg_scale=1.5, temperature=0.8, top_k=20, top_p=0.95, **kwargs):
         import json
         import torch
         import torchaudio
@@ -295,7 +314,11 @@ class AIIA_Qwen_Dialogue_TTS:
                         instruct=target_instruct,
                         reference_audio=ref_audio,
                         seed=seed if seed >= 0 else -1,
-                        speed=speed_global
+                        speed=speed_global,
+                        cfg_scale=cfg_scale,
+                        temperature=temperature,
+                        top_k=top_k,
+                        top_p=top_p
                     )
                     
                     if res and res[0]:

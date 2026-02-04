@@ -1074,10 +1074,12 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 
 **[v1.11.0 New]** 深度集成 Qwen3-TTS 的多模式特性，支持复杂的混合角色场景。
 
-- **Input Model Pins**:
-  - `qwen_base_model`: 连接 Clone 模型，用于高保真克隆。
-  - `qwen_custom_model`: 连接 Custom 模型，用于官方内置精品音色。
-  - `qwen_design_model`: 连接 Design 模型，用于自然语言捏人。
+- **Parameters**: 
+  - `seed`: 随机种子。
+  - `speed`: 语速调节。
+  - `cfg_scale`: 指令遵循强度 (Classifier-Free Guidance)。建议值 1.5-7.0。
+  - `temperature`: 采样温度，控制随机性。
+  - `top_k`/`top_p`: 采样阈值。
 - **Speaker A/B/C Configuration**:
   - **Mode**: 选择 `Clone` (音色克隆)、`Preset` (官方预设) 或 `Design` (文字设计)。
   - **ID**: 当模式为 Preset 时，输入预设音色名 (如 `Vivian`, `Serena`, `Uncle_Fu`, `Dylan`, `Eric`, `Ryan`, `Aiden`, `Ono_Anna`, `Sohee`)。

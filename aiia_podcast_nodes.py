@@ -452,8 +452,12 @@ class AIIA_Dialogue_TTS:
                             speaker=spk_id,
                             instruct=instruct,
                             reference_audio=ref_audio,
-                            seed=42+i,
-                            speed=speed_global
+                            seed=seed if seed >= 0 else -1,
+                            speed=speed_global,
+                            cfg_scale=cfg_scale,
+                            temperature=temperature,
+                            top_k=top_k,
+                            top_p=top_p
                         )
                         
                         generated = res[0]
