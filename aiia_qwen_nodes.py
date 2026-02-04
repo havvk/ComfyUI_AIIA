@@ -332,6 +332,7 @@ class AIIA_Qwen_Dialogue_TTS:
                 "seed": ("INT", {"default": 42, "min": -1, "max": 2147483647}),
                 "cfg_scale": ("FLOAT", {"default": 1.5, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0, "step": 0.1}),
+                "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "zero_shot_mode": ("BOOLEAN", {"default": False}),
                 "max_batch_char": ("INT", {"default": 1000, "min": 100, "max": 32768}),
