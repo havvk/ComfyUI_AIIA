@@ -347,6 +347,14 @@ class AIIA_Podcast_Stitcher:
             model = bundle.get_model().to('cuda' if torch.cuda.is_available() else 'cpu')
             tokenizer = bundle.get_tokenizer()
             aligner = bundle.get_aligner()
+
+            # 下载完成后，将模型复制到 models/mms_fa/ 以便统一管理
+            if os.path.exists(hub_cache) and not os.path.exists(local_model):
+                import shutil
+                os.makedirs(os.path.dirname(local_model), exist_ok=True)
+                shutil.copy2(hub_cache, local_model)
+                print(f"[{cls.__name__}] 已复制模型到本地: {hub_cache} -> {local_model}")
+
             cls._fa_model = model
             cls._fa_tokenizer = tokenizer
             cls._fa_aligner = aligner
