@@ -205,7 +205,7 @@ class AIIA_VibeVoice_TTS:
             "required": {
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
                 "text": ("STRING", {"multiline": True, "default": "Hello, this is a test of VibeVoice."}),
-                # "reference_audio": ("AUDIO",),  <-- Moved to optional
+                "voice_preset": (["Female_HQ", "Male_HQ", "Female", "Male"], {"default": "Female_HQ"}),
                 "cfg_scale": ("FLOAT", {"default": 1.3, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "ddpm_steps": ("INT", {"default": 20, "min": 10, "max": 100, "step": 1}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
@@ -303,7 +303,7 @@ class AIIA_VibeVoice_TTS:
                 
         return "\n".join(normalized_lines), roles_map
 
-    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, normalize_text, 
+    def generate(self, vibevoice_model, text, voice_preset, cfg_scale, ddpm_steps, speed, normalize_text, 
                  do_sample, temperature, top_k, top_p, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
@@ -341,27 +341,33 @@ class AIIA_VibeVoice_TTS:
              num_roles = len(spk_ids) if spk_ids else 1
 
         # Process Reference Audio
+        # Priority: user-provided reference_audio > voice_preset dropdown
         if reference_audio is None:
-            print(f"[AIIA INFO] No reference audio provided. Auto-loading fallbacks for {num_roles} speakers...")
+            print(f"[AIIA INFO] No reference audio connected. Using voice preset '{voice_preset}' for {num_roles} speaker(s).")
             reference_audio = []
             
-            # Simple alternating strategy
-            # Speaker 1 (or Host A) -> Female HQ
-            # Speaker 2 (or Host B) -> Male HQ
-            # Speaker 3 -> Female
-            # Speaker 4 -> Male
-            patterns = ["Female_HQ", "Male_HQ", "Female", "Male"]
-            
-            for i in range(max(num_roles, 1)):
-                target = patterns[i % len(patterns)]
-                fb = self._load_fallback_audio(target)
+            if num_roles <= 1:
+                # Single speaker: use the selected preset
+                fb = self._load_fallback_audio(voice_preset)
                 if fb: reference_audio.append(fb)
-                else: 
-                     # Should not happen if assets exist, but fallback to anything
-                     if reference_audio: reference_audio.append(reference_audio[0])
+            else:
+                # Multi-speaker: use selected preset for Speaker 1, alternate for others
+                # Build pattern starting with user's choice
+                all_presets = ["Female_HQ", "Male_HQ", "Female", "Male"]
+                # Put user's choice first, then the rest in order
+                patterns = [voice_preset] + [p for p in all_presets if p != voice_preset]
+                
+                for i in range(num_roles):
+                    target = patterns[i % len(patterns)]
+                    fb = self._load_fallback_audio(target)
+                    if fb: reference_audio.append(fb)
+                    else:
+                         if reference_audio: reference_audio.append(reference_audio[0])
 
             if not reference_audio:
-                 raise ValueError("Could not load any fallback audio!")
+                 raise ValueError(f"Could not load voice preset '{voice_preset}'! Check assets/ directory.")
+        else:
+            print(f"[AIIA INFO] Using user-provided reference audio (voice_preset '{voice_preset}' ignored).")
 
         voice_samples = []
         
