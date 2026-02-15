@@ -597,16 +597,17 @@ class AIIA_Qwen_Dialogue_TTS:
             segment_qwen_model = get_model_from_bundle(mode, ref_audio)
 
             # Unique key for "homogeneity"
-            # For Preset, we can merge DIFFERENT speakers by using [Speaker] tags
-            # So they only need to share the same qwen_model and mode="Preset"
+            # Include emotion so batches split when per-sentence emotion changes
+            # (merged emotions like "Happy，Calm。" in one instruct don't make sense)
+            emo_key = (emotion or "", spk_emotion_preset or "", spk_expression_preset or "")
             if mode == "Preset":
-                param_hash = (f"Preset_{id(segment_qwen_model)}", spk_dialect_preset)
+                param_hash = (f"Preset_{id(segment_qwen_model)}", spk_dialect_preset, emo_key)
             elif mode == "Clone":
-                # Must share same ref_audio and ref_text and dialect
-                param_hash = (f"Clone_{id(segment_qwen_model)}", id(ref_audio), ref_text, spk_dialect_preset)
+                # Must share same ref_audio and ref_text and dialect and emotion
+                param_hash = (f"Clone_{id(segment_qwen_model)}", id(ref_audio), ref_text, spk_dialect_preset, emo_key)
             else: # Design
-                # Must share the same design text and dialect
-                param_hash = (f"Design_{id(segment_qwen_model)}", design, spk_dialect_preset)
+                # Must share the same design text and dialect and emotion
+                param_hash = (f"Design_{id(segment_qwen_model)}", design, spk_dialect_preset, emo_key)
             
             return {
                 "spk_name": spk_name,
