@@ -1,0 +1,390 @@
+{
+    "last_node_id": 7,
+    "last_link_id": 7,
+    "nodes": [
+        {
+            "id": 1,
+            "type": "LoadImage",
+            "pos": [
+                100,
+                200
+            ],
+            "size": [
+                280,
+                400
+            ],
+            "flags": {},
+            "order": 0,
+            "mode": 0,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "IMAGE",
+                    "type": "IMAGE",
+                    "links": [
+                        1
+                    ]
+                },
+                {
+                    "name": "MASK",
+                    "type": "MASK",
+                    "links": null
+                }
+            ],
+            "title": "参考人物图片",
+            "properties": {
+                "Node name for S&R": "LoadImage"
+            },
+            "widgets_values": [
+                "",
+                "image"
+            ]
+        },
+        {
+            "id": 2,
+            "type": "LoadAudio",
+            "pos": [
+                100,
+                680
+            ],
+            "size": [
+                280,
+                120
+            ],
+            "flags": {},
+            "order": 1,
+            "mode": 0,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "AUDIO",
+                    "type": "AUDIO",
+                    "links": [
+                        2,
+                        6
+                    ]
+                }
+            ],
+            "title": "驱动音频",
+            "properties": {
+                "Node name for S&R": "LoadAudio"
+            },
+            "widgets_values": [
+                ""
+            ]
+        },
+        {
+            "id": 3,
+            "type": "AIIA_DittoLoader",
+            "pos": [
+                100,
+                880
+            ],
+            "size": [
+                280,
+                100
+            ],
+            "flags": {},
+            "order": 2,
+            "mode": 0,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "pipe",
+                    "type": "DITTO_PIPE",
+                    "links": [
+                        3
+                    ]
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "AIIA_DittoLoader"
+            },
+            "widgets_values": [
+                "ditto-talkinghead",
+                "cuda"
+            ]
+        },
+        {
+            "id": 4,
+            "type": "AIIA_DittoSampler",
+            "pos": [
+                480,
+                200
+            ],
+            "size": [
+                380,
+                780
+            ],
+            "flags": {},
+            "order": 3,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "pipe",
+                    "type": "DITTO_PIPE",
+                    "link": 3
+                },
+                {
+                    "name": "ref_image",
+                    "type": "IMAGE",
+                    "link": 1
+                },
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "link": 2
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "images",
+                    "type": "IMAGE",
+                    "links": null
+                },
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "links": null
+                },
+                {
+                    "name": "frames_dir",
+                    "type": "STRING",
+                    "links": [
+                        4
+                    ]
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "AIIA_DittoSampler"
+            },
+            "widgets_values": [
+                50,
+                25.0,
+                2.3,
+                "Neutral",
+                true,
+                true,
+                5,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                true,
+                0.005,
+                "Natural",
+                false,
+                "Natural (0.8s)",
+                "Normal",
+                "Disk (OOM-Safe)",
+                42
+            ]
+        },
+        {
+            "id": 5,
+            "type": "AIIA_BodySway",
+            "pos": [
+                960,
+                200
+            ],
+            "size": [
+                340,
+                260
+            ],
+            "flags": {},
+            "order": 4,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "frames_directory",
+                    "type": "STRING",
+                    "widget": {
+                        "name": "frames_directory"
+                    },
+                    "link": 4
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "images",
+                    "type": "IMAGE",
+                    "links": null
+                },
+                {
+                    "name": "output_frames_dir",
+                    "type": "STRING",
+                    "links": [
+                        5
+                    ]
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "AIIA_BodySway"
+            },
+            "widgets_values": [
+                0.99,
+                0.1,
+                0.02,
+                42
+            ]
+        },
+        {
+            "id": 6,
+            "type": "AIIA_VideoCombine",
+            "pos": [
+                1400,
+                200
+            ],
+            "size": [
+                380,
+                500
+            ],
+            "flags": {},
+            "order": 5,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "frames_directory",
+                    "type": "STRING",
+                    "widget": {
+                        "name": "frames_directory"
+                    },
+                    "link": 5
+                },
+                {
+                    "name": "audio_tensor",
+                    "type": "AUDIO",
+                    "link": 6
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "video_path",
+                    "type": "STRING",
+                    "links": null
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "AIIA_VideoCombine"
+            },
+            "widgets_values": [
+                25.0,
+                "AIIA_Ditto_Video",
+                "video/h264-mp4",
+                23,
+                "medium",
+                true,
+                true,
+                "frame_%08d.png",
+                "",
+                "auto",
+                "auto",
+                ""
+            ]
+        }
+    ],
+    "links": [
+        [
+            1,
+            1,
+            0,
+            4,
+            1,
+            "IMAGE"
+        ],
+        [
+            2,
+            2,
+            0,
+            4,
+            2,
+            "AUDIO"
+        ],
+        [
+            3,
+            3,
+            0,
+            4,
+            0,
+            "DITTO_PIPE"
+        ],
+        [
+            4,
+            4,
+            2,
+            5,
+            0,
+            "STRING"
+        ],
+        [
+            5,
+            5,
+            1,
+            6,
+            0,
+            "STRING"
+        ],
+        [
+            6,
+            2,
+            0,
+            6,
+            1,
+            "AUDIO"
+        ]
+    ],
+    "groups": [
+        {
+            "id": 1,
+            "title": "📸 输入",
+            "bounding": [
+                60,
+                120,
+                360,
+                920
+            ],
+            "color": "#3f789e",
+            "font_size": 24,
+            "flags": {}
+        },
+        {
+            "id": 2,
+            "title": "🎬 Ditto 生成 (Disk OOM-Safe)",
+            "bounding": [
+                440,
+                120,
+                480,
+                900
+            ],
+            "color": "#8A5CF5",
+            "font_size": 24,
+            "flags": {}
+        },
+        {
+            "id": 3,
+            "title": "🌊 BodySway 微动 + 🎥 视频合成 (cleanup_frames=ON)",
+            "bounding": [
+                920,
+                120,
+                920,
+                640
+            ],
+            "color": "#2a963b",
+            "font_size": 24,
+            "flags": {}
+        }
+    ],
+    "config": {},
+    "extra": {
+        "ds": {
+            "scale": 0.6,
+            "offset": [
+                50,
+                50
+            ]
+        }
+    },
+    "version": 0.4
+}

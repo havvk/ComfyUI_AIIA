@@ -70,9 +70,23 @@ app.registerExtension({
 
                 // 为format widget的callback链接上更新函数
                 chainCallback(formatWidget, "callback", updateWidgetsVisibility);
-                
+
+                // Expose function for onConfigure
+                node.aiiaUpdateVideoWidgets = updateWidgetsVisibility;
+
                 // 初始加载时触发
                 updateWidgetsVisibility(formatWidget.value);
+            });
+
+            chainCallback(nodeType.prototype, "onConfigure", function () {
+                const node = this;
+                // 使用 requestAnimationFrame 确保在所有widget值被写入后再执行更新
+                requestAnimationFrame(() => {
+                    const formatWidget = findWidgetByName(node, "format");
+                    if (formatWidget && node.aiiaUpdateVideoWidgets) {
+                        node.aiiaUpdateVideoWidgets(formatWidget.value);
+                    }
+                });
             });
         }
     }

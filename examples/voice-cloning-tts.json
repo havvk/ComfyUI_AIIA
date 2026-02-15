@@ -1,0 +1,232 @@
+{
+    "last_node_id": 4,
+    "last_link_id": 3,
+    "nodes": [
+        {
+            "id": 1,
+            "type": "AIIA_CosyVoice_ModelLoader",
+            "pos": [
+                100,
+                200
+            ],
+            "size": [
+                300,
+                130
+            ],
+            "flags": {},
+            "order": 0,
+            "mode": 0,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "model",
+                    "type": "COSYVOICE_MODEL",
+                    "links": [
+                        1
+                    ]
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "AIIA_CosyVoice_ModelLoader"
+            },
+            "widgets_values": [
+                "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+                true,
+                true
+            ]
+        },
+        {
+            "id": 2,
+            "type": "LoadAudio",
+            "pos": [
+                100,
+                420
+            ],
+            "size": [
+                300,
+                120
+            ],
+            "flags": {},
+            "order": 1,
+            "mode": 0,
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "AUDIO",
+                    "type": "AUDIO",
+                    "links": [
+                        2
+                    ]
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "LoadAudio"
+            },
+            "widgets_values": [
+                ""
+            ]
+        },
+        {
+            "id": 3,
+            "type": "AIIA_CosyVoice_TTS",
+            "pos": [
+                500,
+                200
+            ],
+            "size": [
+                380,
+                480
+            ],
+            "flags": {},
+            "order": 2,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "model",
+                    "type": "COSYVOICE_MODEL",
+                    "link": 1
+                },
+                {
+                    "name": "prompt_label_1",
+                    "type": "STRING",
+                    "widget": {
+                        "name": "prompt_label_1"
+                    },
+                    "link": null
+                },
+                {
+                    "name": "tts_text",
+                    "type": "STRING",
+                    "widget": {
+                        "name": "tts_text"
+                    },
+                    "link": null
+                },
+                {
+                    "name": "prompt_label_2",
+                    "type": "STRING",
+                    "widget": {
+                        "name": "prompt_label_2"
+                    },
+                    "link": null
+                },
+                {
+                    "name": "instruct_text",
+                    "type": "STRING",
+                    "widget": {
+                        "name": "instruct_text"
+                    },
+                    "link": null
+                },
+                {
+                    "name": "reference_audio",
+                    "type": "AUDIO",
+                    "link": 2
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "links": [
+                        3
+                    ]
+                }
+            ],
+            "properties": {
+                "Node name for S&R": "AIIA_CosyVoice_TTS"
+            },
+            "widgets_values": [
+                "Step 1: Enter TTS Text here.",
+                "大家好，欢迎使用 AIIA 节点套件。这是一个音色克隆的演示，您可以替换参考音频和文本来生成属于您自己声音的语音。",
+                "Step 2: Enter Style Description here.",
+                "语速适中，语气温和，充满自信。",
+                "Female",
+                "None (Auto)",
+                "None (Neutral)",
+                "",
+                1.0,
+                42
+            ]
+        },
+        {
+            "id": 4,
+            "type": "PreviewAudio",
+            "pos": [
+                960,
+                300
+            ],
+            "size": [
+                350,
+                200
+            ],
+            "flags": {},
+            "order": 3,
+            "mode": 0,
+            "inputs": [
+                {
+                    "name": "audio",
+                    "type": "AUDIO",
+                    "link": 3
+                }
+            ],
+            "outputs": [],
+            "properties": {
+                "Node name for S&R": "PreviewAudio"
+            },
+            "widgets_values": []
+        }
+    ],
+    "links": [
+        [
+            1,
+            1,
+            0,
+            3,
+            0,
+            "COSYVOICE_MODEL"
+        ],
+        [
+            2,
+            2,
+            0,
+            3,
+            5,
+            "AUDIO"
+        ],
+        [
+            3,
+            3,
+            0,
+            4,
+            0,
+            "AUDIO"
+        ]
+    ],
+    "groups": [
+        {
+            "id": 1,
+            "title": "🎤 CosyVoice 3.0 音色克隆 TTS | 加载参考音频即可克隆声音",
+            "bounding": [
+                60,
+                120,
+                1300,
+                560
+            ],
+            "color": "#3f789e",
+            "font_size": 24,
+            "flags": {}
+        }
+    ],
+    "config": {},
+    "extra": {
+        "ds": {
+            "scale": 0.8,
+            "offset": [
+                50,
+                50
+            ]
+        }
+    },
+    "version": 0.4
+}
