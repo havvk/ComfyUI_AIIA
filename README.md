@@ -1373,6 +1373,16 @@ B: 太神奇了！那我们快去生成试试吧！
 
 ## Changelog
 
+### [1.12.0] - 2026-02-16
+
+- **Podcast Stitcher - MMS Forced Alignment 集成**: 新增 `use_forced_align` 开关，使用 Facebook MMS 声学模型（~1.2GB）进行字级强制对齐。
+  - 中文文本自动转拼音（pypinyin），英文自动小写化以兼容 MMS_FA tokenizer。
+  - **混合切割策略**: FA 精确定位语音起点 + 能量检测定位自然收尾点，兼顾起音精准与尾音完整。
+  - **重叠防护**: 尾部扩展不会吃进下一句 FA 起点，取中点并保底不低于 FA 原始终点。
+  - **三方法交叉验证**: FA + VAD + Energy 同时启用时，输出 IoU 匹配度（`✂️ USED` / `🔬`），方便评估各方法精度。
+  - 优先级: FA > VAD > Energy，FA 缺失时自动回退。
+  - 模型支持从 `models/mms_fa/model.pt` 本地加载，避免重复下载。
+
 ### [1.11.1] - 2026-02-15
 
 - **Video Combine**: 新增 `cleanup_frames` 开关（默认关闭）。

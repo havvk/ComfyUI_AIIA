@@ -6,5 +6,5 @@
 
 ## Stitch / 切分精度
 
-- [ ] **Silero VAD 集成**：用极轻量 VAD 模型（~2MB ONNX）替代纯能量检测，作为切分边界的最终裁决者。ASR 负责粗定位，VAD 精确修正语音起止点，彻底解决尾音误切、清辅音误判等问题。`pip install silero-vad` 或 `torch.hub.load('snakers4/silero-vad', 'silero_vad')`。
-- [ ] **Forced Alignment（强制对齐）**：用 Wav2Vec2 基础的对齐模型（如 MFA / mms-fa）替代 ASR 做时间对齐。输入音频+讲稿，输出每个字/音素的毫秒级位置，彻底避免 ASR 错字/漏字的匹配漂移。
+- [x] **Silero VAD 集成**：用极轻量 VAD 模型（~2MB ONNX）替代纯能量检测，作为切分边界的最终裁决者。ASR 负责粗定位，VAD 精确修正语音起止点，彻底解决尾音误切、清辅音误判等问题。`pip install silero-vad` 或 `torch.hub.load('snakers4/silero-vad', 'silero_vad')`。
+- [x] **Forced Alignment（强制对齐）**：用 MMS_FA 模型（torchaudio）实现字级强制对齐。混合策略：FA 精确起点 + 能量检测自然收尾，中文文本自动转拼音。支持 FA/VAD/Energy 三方法交叉验证（IoU），带重叠防护和尾音保护。
