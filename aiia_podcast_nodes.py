@@ -482,7 +482,7 @@ class AIIA_Dialogue_TTS:
                     total_char_len += char_len
                     item_lengths.append(char_len)
 
-                    final_text_lines.append(f"Speaker {internal_id}: {text}")
+                    final_text_lines.append(f"[{internal_id + 1}]: {text}")
                 
                 full_text = "\n".join(final_text_lines)
                 print(f"  [Batch Process] Processing {len(batch_items)} segments using {len(unique_speakers)} speakers.")
@@ -491,6 +491,7 @@ class AIIA_Dialogue_TTS:
                     res = vibe_gen.generate(
                         vibevoice_model=vibevoice_model,
                         text=full_text,
+                        voice_preset="Female_HQ",
                         reference_audio=ref_audio_list,
                         cfg_scale=cfg_scale,
                         ddpm_steps=20,
