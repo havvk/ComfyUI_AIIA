@@ -356,8 +356,15 @@ class AIIA_VibeVoice_TTS:
         # [AIIA v1.11.4] Auto-wrap plain text without any speaker labels
         # VibeVoice processor requires "[N]: text" format
         if num_roles == 1 and not re.search(r'^\[\d+\]\s*[:\uff1a]', text, re.MULTILINE) and not re.search(r'^Speaker\s+\d+:', text, re.MULTILINE):
-            text = f"[1]: {text}"
-            print(f"[AIIA INFO] Plain text detected, auto-wrapped as '[1]: ...'")
+            # Wrap EACH non-empty line with [1]: prefix
+            lines = text.split('\n')
+            wrapped = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped:
+                    wrapped.append(f"[1]: {stripped}")
+            text = '\n'.join(wrapped)
+            print(f"[AIIA INFO] Plain text detected, auto-wrapped {len(wrapped)} lines as '[1]: ...'")
 
         # Process Reference Audio
         # Priority: user-provided reference_audio > voice_preset dropdown
