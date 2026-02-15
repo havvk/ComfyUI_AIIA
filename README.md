@@ -163,6 +163,9 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **直接张量输入**: 接受上游节点的 `IMAGE` 张量，方便快速迭代和测试。
 - **全面的音频控制**: 支持 `AUDIO` 张量和外部文件，并提供对编解码器和码率的精细控制。
 - **智能自动配置**: `auto` 模式能自动应用格式预设中的音频参数，并能自动检测源文件的码率。
+- **安全清理帧目录** (v1.11.1 New): `cleanup_frames` 开关（默认关闭）。开启后，视频合成**成功**时自动删除输入的 `frames_directory`。
+  - **防误删机制**: 仅删除包含 `.aiia_temp` 标记文件的目录（由 AIIA 上游节点自动写入），用户自己提供的素材目录**永远不会被误删**。
+  - 合成**失败**时不执行任何删除操作，确保帧文件安全。
 
 #### 2.2 FLOAT 影片生成 (内存与磁盘模式)
 
@@ -459,6 +462,7 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 > [!TIP]
 > **OOM-Safe 工作流** (v1.9.24+): Ditto (`Disk`) → BodySway (`frames_directory`) → VideoCombine (`frames_directory`)，全流程无 OOM 风险。
 > **性能无损** (v1.9.28+): 采用并行 I/O 和零压缩策略，**Disk 模式生成速度与 Memory 模式完全一致** (~30fps+)，且极大降低 RAM 占用。强烈推荐长视频生成使用！
+> **自动清理** (v1.11.1 New): 开启 VideoCombine 的 `cleanup_frames` 后，中间帧目录会在合成成功后自动删除，无需手动清理磁盘。
 
 ### 3. 音频智能处理 (Intelligent Audio Processing)
 
@@ -1322,6 +1326,13 @@ B: 太神奇了！那我们快去生成试试吧！
 ---
 
 ## Changelog
+
+### [1.11.1] - 2026-02-15
+
+- **Video Combine**: 新增 `cleanup_frames` 开关（默认关闭）。
+  - 开启后，视频合成成功时自动删除输入的 `frames_directory`，减少磁盘空间占用。
+  - **防误删安全机制**: 引入 `.aiia_temp` 标记文件，只有 AIIA 节点自动生成的帧目录才会包含此标记，用户提供的素材目录不会被误删。
+- **ToDisk 节点安全标记**: 所有产生帧输出的节点（`FloatProcess_ToDisk`、`DittoSampler` 磁盘模式、`PersonaLive_ToDisk`、`BodySway`）现在会在输出目录中写入 `.aiia_temp` 标记文件。
 
 ### [1.11.0] - 2026-02-04
 
