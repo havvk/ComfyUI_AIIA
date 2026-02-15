@@ -354,7 +354,8 @@ class AIIA_Podcast_Stitcher:
 
     def _expand_to_midpoints(self, boundaries: list, total_duration: float) -> list:
         """将切割点扩展到相邻句子间隙中，但限制最大扩展量以避免吃进下一句。"""
-        MAX_EXPAND = 0.15  # 最多从语音边界向外扩展 150ms
+        MAX_EXPAND_START = 0.15  # cut_start 向前扩展：最多 150ms（保留吸气/起音余量）
+        MAX_EXPAND_END = 0.05    # cut_end 向后扩展：最多 50ms（保守，避免吃到下一句）
 
         if len(boundaries) <= 1:
             if boundaries:
@@ -366,18 +367,18 @@ class AIIA_Podcast_Stitcher:
             if i == 0:
                 boundaries[i]["cut_start"] = 0.0
             else:
-                # 与前一句的间隙中点，但不超过 MAX_EXPAND
+                # 与前一句的间隙中点，但不超过 MAX_EXPAND_START
                 gap_mid = (boundaries[i - 1]["end"] + boundaries[i]["start"]) / 2
                 boundaries[i]["cut_start"] = round(
-                    max(gap_mid, boundaries[i]["start"] - MAX_EXPAND), 3)
+                    max(gap_mid, boundaries[i]["start"] - MAX_EXPAND_START), 3)
 
             if i == len(boundaries) - 1:
                 boundaries[i]["cut_end"] = total_duration
             else:
-                # 与后一句的间隙中点，但不超过 MAX_EXPAND
+                # 与后一句的间隙中点，但不超过 MAX_EXPAND_END
                 gap_mid = (boundaries[i]["end"] + boundaries[i + 1]["start"]) / 2
                 boundaries[i]["cut_end"] = round(
-                    min(gap_mid, boundaries[i]["end"] + MAX_EXPAND), 3)
+                    min(gap_mid, boundaries[i]["end"] + MAX_EXPAND_END), 3)
 
         return boundaries
 
@@ -482,9 +483,9 @@ class AIIA_Podcast_Stitcher:
             cut_start = self._refine_cut_point(wav, sr, cut_start, direction="before")
             cut_end = self._refine_cut_point(wav, sr, cut_end, direction="before")
 
-            # 应用 padding
+            # 应用 padding（仅对 cut_start，给吸气/起音留余量；cut_end 不加 padding 避免吃下一句）
             cut_start = max(0, cut_start - padding)
-            cut_end = min(len(wav) / sr, cut_end + padding)
+            cut_end = min(len(wav) / sr, cut_end)
 
             # 防重叠：确保 cut_start 不早于同一说话人上一个片段的 cut_end
             if cut_start < prev_cut_end[speaker]:
