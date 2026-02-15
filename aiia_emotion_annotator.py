@@ -157,9 +157,12 @@ class AIIA_Emotion_Annotator:
             ctx.verify_mode = ssl.CERT_NONE
 
         try:
-            # 读取代理设置（从环境变量）
-            proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or os.environ.get("ALL_PROXY")
+            # 读取代理设置（从环境变量或 ~/run.sh）
+            proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or os.environ.get("ALL_PROXY") or os.environ.get("all_proxy")
+            if not proxy_url:
+                proxy_url = self._read_proxy_from_runsh()
             if proxy_url and "localhost" not in api_base_url and "127.0.0.1" not in api_base_url:
+                print(f"{log} 使用代理: {proxy_url}")
                 proxy_handler = urllib.request.ProxyHandler({
                     "https": proxy_url,
                     "http": proxy_url
@@ -182,6 +185,23 @@ class AIIA_Emotion_Annotator:
             return None, f"HTTP {e.code}: {err_body[:200]}"
         except Exception as e:
             return None, f"{type(e).__name__}: {e}"
+
+    def _read_proxy_from_runsh(self):
+        """从 ~/run.sh 读取代理设置"""
+        run_sh = os.path.expanduser("~/run.sh")
+        if not os.path.exists(run_sh):
+            return None
+        try:
+            with open(run_sh, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("export https_proxy=") or line.startswith("export HTTPS_PROXY="):
+                        return line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if line.startswith("export http_proxy=") or line.startswith("export HTTP_PROXY="):
+                        return line.split("=", 1)[1].strip().strip('"').strip("'")
+        except Exception:
+            pass
+        return None
 
     def _parse_llm_response(self, raw_text, line_count):
         """从 LLM 响应中提取 JSON 数组"""
