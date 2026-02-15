@@ -799,6 +799,13 @@ class AIIA_Podcast_Stitcher:
                     cut_end = self._refine_cut_point(wav, sr, fa_end,
                         search_radius=0.15, direction="after")
                     
+                    # 防止尾部扩展吃进下一句的 FA 起点
+                    if fa_results and sent_local_idx + 1 < len(fa_results):
+                        next_fa = fa_results[sent_local_idx + 1]
+                        if next_fa and cut_end > next_fa['start']:
+                            # 取中点，而非硬切
+                            cut_end = (fa_end + next_fa['start']) / 2
+                    
                     # 交叉验证：同时计算 VAD 和 Energy 的结果做对比
                     if use_vad and vad_timestamps_A is not None:
                         vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
