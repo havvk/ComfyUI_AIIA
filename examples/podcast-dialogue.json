@@ -204,7 +204,7 @@
         },
         {
             "id": 6,
-            "type": "AIIA_SubtitleGen",
+            "type": "AIIA_Subtitle_Gen",
             "pos": [
                 1080,
                 200
@@ -239,7 +239,7 @@
                 }
             ],
             "properties": {
-                "Node name for S&R": "AIIA_SubtitleGen"
+                "Node name for S&R": "AIIA_Subtitle_Gen"
             },
             "widgets_values": []
         },
