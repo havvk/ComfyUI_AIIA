@@ -214,8 +214,11 @@ class AIIA_Emotion_Annotator:
         annotations = {}
         for item in result:
             if isinstance(item, dict) and "line" in item and "emotion" in item:
-                line_idx = item["line"]
-                emo = item["emotion"].lower().strip()
+                try:
+                    line_idx = int(item["line"])  # LLM 可能返回字符串
+                except (ValueError, TypeError):
+                    continue
+                emo = str(item["emotion"]).lower().strip()
                 if emo in EMOTION_TAGS:
                     annotations[line_idx] = emo
                 else:
@@ -307,6 +310,9 @@ class AIIA_Emotion_Annotator:
             logs.append(f"❌ API 错误: {api_error}")
             return (dialogue_json, "\n".join(logs))
 
+        # 打印原始响应用于调试
+        print(f"{log} LLM 原始响应: {raw_response[:500]}")
+
         # 解析响应
         annotations, parse_error = self._parse_llm_response(raw_response, len(speech_items))
 
@@ -317,25 +323,31 @@ class AIIA_Emotion_Annotator:
             logs.append(f"原始响应: {raw_response[:300]}")
             return (dialogue_json, "\n".join(logs))
 
+        print(f"{log} 解析到 {len(annotations)} 条标注: {annotations}")
+
         # 合并情感标注到 dialogue_json
         annotated_count = 0
+        neutral_count = 0
         for local_idx, emo in annotations.items():
             if local_idx < len(speech_indices):
                 global_idx = speech_indices[local_idx]
                 tag = EMOTION_TO_TAG.get(emo)
-                if tag:  # neutral = None → 不注入
+                speaker = dialogue[global_idx].get("speaker", "?")
+                text_preview = dialogue[global_idx].get("text", "")[:20]
+                if tag:  # 有具体情感标签
                     dialogue[global_idx]["emotion"] = tag
                     annotated_count += 1
-                    display = EMOTION_DISPLAY.get(emo, emo)
-                    speaker = dialogue[global_idx].get("speaker", "?")
-                    text_preview = dialogue[global_idx].get("text", "")[:20]
                     logs.append(f"  [{tag}] {speaker}: {text_preview}...")
                 else:
                     # neutral: 清除已有标签（如果是 overwrite 模式）
+                    neutral_count += 1
                     if override_mode == "overwrite_all":
                         dialogue[global_idx]["emotion"] = None
+                    logs.append(f"  [neutral] {speaker}: {text_preview}...")
+            else:
+                print(f"{log} ⚠ 索引越界: line={local_idx}, 最大={len(speech_indices)-1}")
 
-        logs.insert(0, f"✅ 标注完成: {annotated_count}/{len(speech_items)} 句获得情感标签")
+        logs.insert(0, f"✅ 标注完成: {annotated_count}/{len(speech_items)} 句获得情感标签 ({neutral_count} 句 neutral)")
         summary = "\n".join(logs)
         print(f"{log} {logs[0]}")
 
