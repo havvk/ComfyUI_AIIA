@@ -155,7 +155,7 @@
         },
         {
             "id": 5,
-            "type": "AIIA_AudioPostProcess",
+            "type": "AIIA_Audio_PostProcess",
             "pos": [
                 940,
                 200
@@ -184,7 +184,7 @@
                 }
             ],
             "properties": {
-                "Node name for S&R": "AIIA_AudioPostProcess"
+                "Node name for S&R": "AIIA_Audio_PostProcess"
             },
             "widgets_values": [
                 44100,
