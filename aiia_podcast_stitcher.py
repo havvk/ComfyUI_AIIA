@@ -440,6 +440,15 @@ class AIIA_Podcast_Stitcher:
 
             seg_duration = len(segment) / sr
 
+            # 对片段首尾施加短淡入淡出，消除拼接爆音
+            fade_samples = min(int(0.005 * sr), len(segment) // 4)  # 5ms fade, 不超过片段长度 1/4
+            if fade_samples > 1:
+                fade_in = np.linspace(0.0, 1.0, fade_samples, dtype=np.float32)
+                fade_out = np.linspace(1.0, 0.0, fade_samples, dtype=np.float32)
+                segment = segment.copy()
+                segment[:fade_samples] *= fade_in
+                segment[-fade_samples:] *= fade_out
+
             audio_segments.append(segment)
 
             # 记录 segment info
