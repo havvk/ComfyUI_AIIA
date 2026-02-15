@@ -254,6 +254,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_VoxCPM_Loader": "🎤 VoxCPM Loader",
-    "AIIA_VoxCPM_TTS": "🗣️ VoxCPM 1.5 TTS"
+    "AIIA_VoxCPM_Loader": "VoxCPM Loader",
+    "AIIA_VoxCPM_TTS": "VoxCPM 1.5 TTS"
 }

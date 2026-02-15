@@ -4,6 +4,9 @@ import torch
 import numpy as np
 import torchaudio
 import folder_paths
+import subprocess
+import tempfile
+import soundfile as sf
 # print(f"\n[AIIA DEBUG] Loaded aiia_vibevoice_nodes.py from: {os.path.abspath(__file__)}\n")
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer, Qwen2TokenizerFast
@@ -202,7 +205,7 @@ class AIIA_VibeVoice_TTS:
             "required": {
                 "vibevoice_model": ("VIBEVOICE_MODEL",),
                 "text": ("STRING", {"multiline": True, "default": "Hello, this is a test of VibeVoice."}),
-                "reference_audio": ("AUDIO",),
+                # "reference_audio": ("AUDIO",),  <-- Moved to optional
                 "cfg_scale": ("FLOAT", {"default": 1.3, "min": 1.0, "max": 10.0, "step": 0.1}),
                 "ddpm_steps": ("INT", {"default": 20, "min": 10, "max": 100, "step": 1}),
                 "speed": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1}),
@@ -211,6 +214,9 @@ class AIIA_VibeVoice_TTS:
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0}),
+            },
+            "optional": {
+                "reference_audio": ("AUDIO",),
             }
         }
 
@@ -219,12 +225,95 @@ class AIIA_VibeVoice_TTS:
     FUNCTION = "generate"
     CATEGORY = "AIIA/VibeVoice"
 
-    def generate(self, vibevoice_model, text, reference_audio, cfg_scale, ddpm_steps, speed, normalize_text, 
-                 do_sample, temperature, top_k, top_p):
+    def _load_fallback_audio(self, target_name="Female_HQ"):
+        import torchaudio
+        # 定位 assets 目录 (Shared with Podcast nodes)
+        nodes_path = os.path.dirname(os.path.abspath(__file__))
+        assets_dir = os.path.join(nodes_path, "assets")
+        
+        # Consistent mapping with Podcast node
+        filename_map = {
+            "Female_HQ": "seed_female_hq.wav",
+            "Male_HQ": "seed_male_hq.wav",
+            "Female": "seed_female.wav",
+            "Male": "seed_male.wav"
+        }
+        
+        filename = filename_map.get(target_name, "seed_female_hq.wav")
+        path = os.path.join(assets_dir, filename)
+        
+        if not os.path.exists(path):
+            print(f"[AIIA Warning] Fallback seed not found at {path}")
+            return None
+        
+        try:
+            waveform, sample_rate = torchaudio.load(path)
+            if waveform.shape[0] > 1:
+                waveform = torch.mean(waveform, dim=0, keepdim=True)
+            waveform = waveform * 0.8 # Attenuate
+            return {"waveform": waveform, "sample_rate": sample_rate}
+        except Exception as e:
+            print(f"[AIIA Error] Failed to load fallback audio: {e}")
+            return None
+
+    def _normalize_roles(self, text):
+        """
+        Detects custom roles (e.g. 'Host A:', 'User:') and normalizes them to 'Speaker N:'.
+        Returns: (normalized_text, role_mapping)
+        """
+        import re
+        lines = text.split('\n')
+        # Matches "Role Name:" at start of line. 
+        # Excludes "Speaker N:" which is already valid.
+        # Limit role name to 30 chars to avoid matching long sentences.
+        role_pattern = re.compile(r'^([^\n:]{1,30}):\s+')
+        speaker_pattern = re.compile(r'^Speaker\s*\d+', re.IGNORECASE)
+        
+        roles_map = {} 
+        next_id = 1
+        normalized_lines = []
+        
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                normalized_lines.append(line)
+                continue
+                
+            match = role_pattern.match(stripped)
+            if match:
+                role_name = match.group(1).strip()
+                
+                # If already standard format, keep it
+                if speaker_pattern.match(role_name):
+                    normalized_lines.append(line)
+                    continue
+                    
+                # Map custom role
+                if role_name not in roles_map:
+                    roles_map[role_name] = next_id
+                    next_id += 1
+                
+                spk_id = roles_map[role_name]
+                # Replace prefix with Speaker N
+                # We reconstruct the line to ensure standard formatting
+                content = stripped[match.end():]
+                normalized_lines.append(f"Speaker {spk_id}: {content}")
+            else:
+                normalized_lines.append(line)
+                
+        return "\n".join(normalized_lines), roles_map
+
+    def generate(self, vibevoice_model, text, cfg_scale, ddpm_steps, speed, normalize_text, 
+                 do_sample, temperature, top_k, top_p, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
         is_streaming = vibevoice_model.get("is_streaming", False)
+        
+        # AIIA Fix: Ensure model is on GPU (it might have been offloaded to CPU by previous run)
+        if torch.cuda.is_available():
+            model.to("cuda")
+        
         device = model.device 
         
         if processor is None: raise RuntimeError("Processor is missing.")
@@ -241,12 +330,39 @@ class AIIA_VibeVoice_TTS:
             text = re.sub(r'(\d+年)\s*[-—–]\s*(\d+年)', r'\1至\2', text)
             text = text.replace('"', '').replace("'", '')
         
-        # Default Speaker Tag
-        if not re.search(r'^Speaker\s+\d+\s*:', text, re.IGNORECASE | re.MULTILINE):
-            lines = text.split('\n')
-            text = "\n".join([f"Speaker 1: {line.strip()}" for line in lines if line.strip()])
+        # [AIIA v1.10.8] Auto-Normalize Roles (e.g. "Host A:" -> "Speaker 1:")
+        text, role_map = self._normalize_roles(text)
+        num_roles = len(role_map) if role_map else 0
+        
+        # Determine unique speakers count from text if no role map (e.g. manual Speaker 1, Speaker 2)
+        if not role_map:
+             # Basic regex count of unique "Speaker N"
+             spk_ids = set(re.findall(r'^Speaker\s+(\d+):', text, re.MULTILINE))
+             num_roles = len(spk_ids) if spk_ids else 1
 
         # Process Reference Audio
+        if reference_audio is None:
+            print(f"[AIIA INFO] No reference audio provided. Auto-loading fallbacks for {num_roles} speakers...")
+            reference_audio = []
+            
+            # Simple alternating strategy
+            # Speaker 1 (or Host A) -> Female HQ
+            # Speaker 2 (or Host B) -> Male HQ
+            # Speaker 3 -> Female
+            # Speaker 4 -> Male
+            patterns = ["Female_HQ", "Male_HQ", "Female", "Male"]
+            
+            for i in range(max(num_roles, 1)):
+                target = patterns[i % len(patterns)]
+                fb = self._load_fallback_audio(target)
+                if fb: reference_audio.append(fb)
+                else: 
+                     # Should not happen if assets exist, but fallback to anything
+                     if reference_audio: reference_audio.append(reference_audio[0])
+
+            if not reference_audio:
+                 raise ValueError("Could not load any fallback audio!")
+
         voice_samples = []
         
         # Determine if input is list or single item
@@ -254,6 +370,19 @@ class AIIA_VibeVoice_TTS:
             raw_refs = reference_audio
         else:
             raw_refs = [reference_audio]
+        
+        # [AIIA v1.10.9] Smart Pad: If we have more roles than refs, recycle or pad?
+        # If user provided 1 ref but text has 2 speakers, previous behavior: Speaker 2 gets nothing?
+        # VibeVoice processor slices refs[:num_speakers].
+        # If we pad, we can give Speaker 2 the SAME voice, or a fallback?
+        # Usually if user gives 1 ref, they might want cloning for Speaker 1, but what for Speaker 2?
+        # Safest is to Repeat, or maybe Fallback?
+        # Let's Repeat the last ref to avoid errors, assuming 'Cloning' context.
+        # But for distinct roles, users SHOULD provide distinct audios.
+        if len(raw_refs) < num_roles:
+            print(f"[AIIA Warning] Text has {num_roles} roles but only {len(raw_refs)} reference audios. Recycling last audio for remaining speakers.")
+            while len(raw_refs) < num_roles:
+                raw_refs.append(raw_refs[-1])
             
         for ref_item in raw_refs:
             if ref_item is None:
@@ -324,9 +453,67 @@ class AIIA_VibeVoice_TTS:
                 if audio_out.ndim == 1: audio_out = audio_out.unsqueeze(0)
                 if audio_out.ndim == 3: audio_out = audio_out.squeeze(0)
                 
+                # Ensure float32 (Vital for downstream nodes like Resemble Enhance which fail on fp16)
+                audio_out = audio_out.float()
+
                 # Speed adj
                 if speed != 1.0:
-                    audio_out = torchaudio.transforms.Resample(orig_freq=int(24000*speed), new_freq=24000)(audio_out)
+                    original_device = audio_out.device
+                    
+                    # Try System 'sox' command for time stretching (pitch preservation)
+                    # This is more robust than torchaudio.sox_effects which may be missing in some builds
+                    try:
+                        # Prepare input
+                        audio_cpu = audio_out.cpu().numpy()
+                        # Ensure [C, T]
+                        if audio_cpu.ndim == 1: audio_cpu = audio_cpu[np.newaxis, :] # [1, T]
+                        elif audio_cpu.ndim == 3: audio_cpu = audio_cpu.squeeze(0)   # [C, T]
+                        
+                        # soundfile writes [T, C]
+                        audio_cpu_t = audio_cpu.T 
+
+                        # Normalize to -1dB (approx 0.9) to prevent clipping during sox processing
+                        # Sox 'tempo' effect can increase peak amplitude
+                        max_val = np.abs(audio_cpu_t).max()
+                        if max_val > 0.9:
+                             audio_cpu_t = audio_cpu_t * (0.9 / max_val)
+
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as in_f, \
+                             tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as out_f:
+                            in_path = in_f.name
+                            out_path = out_f.name
+                        
+                        try:
+                            # Write temp file
+                            sf.write(in_path, audio_cpu_t, 24000)
+                            
+                            # Call sox
+                            # tempo command: changes speed without pitch
+                            # -q: quiet
+                            # -s: use sequence search (better quality for speech)
+                            cmd = ["sox", "-q", in_path, out_path, "tempo", "-s", str(speed)]
+                            subprocess.run(cmd, check=True)
+                            print(f"[AIIA] Applied time stretch: speed={speed}x (pitch preserved)")
+                            
+                            # Read back
+                            out_wav, out_sr = sf.read(out_path)
+                            # sf reads as [T, C] or [T] if mono
+                            if out_wav.ndim == 1: 
+                                out_wav = out_wav[np.newaxis, :] # [1, T]
+                            else:
+                                out_wav = out_wav.T # [C, T]
+                            
+                            audio_out = torch.from_numpy(out_wav).float().to(original_device)
+                            
+                        finally:
+                            if os.path.exists(in_path): os.remove(in_path)
+                            if os.path.exists(out_path): os.remove(out_path)
+                        
+                    except Exception as e:
+                        # Fallback to Resample (Pitch Shift)
+                        print(f"[AIIA WARNING] System 'sox' failed ({e}), using Resample (Pitch Shift).")
+                        resampler = torchaudio.transforms.Resample(orig_freq=int(24000*speed), new_freq=24000).to(original_device)
+                        audio_out = resampler(audio_out)
                 
                 if audio_out.ndim == 2: audio_out = audio_out.unsqueeze(0)
 
@@ -366,6 +553,14 @@ class AIIA_VibeVoice_TTS:
                 except Exception as e:
                     print(f"[AIIA WARNING] Failed to trim audio: {e}")
 
+                # Cleanup: Move model back to CPU to release VRAM
+                try:
+                    model.to("cpu")
+                    if hasattr(model, "model") and hasattr(model.model, "to"): 
+                         model.model.to("cpu") 
+                    torch.cuda.empty_cache()
+                except: pass
+
                 return ({"waveform": audio_out.cpu(), "sample_rate": 24000},)
 
         except Exception as e:
@@ -380,7 +575,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_VibeVoice_Loader": "🎤 VibeVoice Loader",
-    "AIIA_VibeVoice_TTS": "🗣️ VibeVoice TTS (Standard)"
+    "AIIA_VibeVoice_Loader": "VibeVoice Loader",
+    "AIIA_VibeVoice_TTS": "VibeVoice TTS (Standard)"
 }
 
