@@ -214,6 +214,7 @@ class AIIA_VibeVoice_TTS:
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 2.0}),
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0}),
+                "seed": ("INT", {"default": 0, "min": -1, "max": 2147483647, "tooltip": "Random seed for reproducible generation. -1 = random."}),
             },
             "optional": {
                 "reference_audio": ("AUDIO",),
@@ -315,7 +316,7 @@ class AIIA_VibeVoice_TTS:
         return "\n".join(normalized_lines), roles_map
 
     def generate(self, vibevoice_model, text, voice_preset, cfg_scale, ddpm_steps, speed, normalize_text, 
-                 do_sample, temperature, top_k, top_p, reference_audio=None):
+                 do_sample, temperature, top_k, top_p, seed=0, reference_audio=None):
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -436,6 +437,13 @@ class AIIA_VibeVoice_TTS:
             voice_samples.append(wav.squeeze().cpu().numpy())
 
         try:
+            # 设置随机种子以确保可复现性
+            if seed >= 0:
+                torch.manual_seed(seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(seed)
+                print(f"[AIIA] VibeVoice seed set to {seed}")
+
             with torch.no_grad():
                 # 1.5B/7B Standard Logic
                 inputs = processor(text=text, voice_samples=voice_samples, return_tensors="pt")

@@ -26,6 +26,7 @@ class AIIA_VibeVoice_Realtime_TTS:
                 "top_k": ("INT", {"default": 20, "min": 0, "max": 100}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0}),
                 "cfg_scale": ("FLOAT", {"default": 1.3, "min": 1.0, "max": 10.0, "step": 0.1}),
+                "seed": ("INT", {"default": 0, "min": -1, "max": 2147483647, "tooltip": "Random seed for reproducible generation. -1 = random."}),
             },
             "optional": {
                 "voice_preset_input": ("VOICE_PRESET",),
@@ -38,7 +39,7 @@ class AIIA_VibeVoice_Realtime_TTS:
     CATEGORY = "AIIA/VibeVoice"
 
     def generate(self, vibevoice_model, text, voice_preset, ddpm_steps, speed, normalize_text, 
-                 do_sample, temperature, top_k, top_p, cfg_scale, voice_preset_input=None): 
+                 do_sample, temperature, top_k, top_p, cfg_scale, seed=0, voice_preset_input=None): 
         model = vibevoice_model["model"]
         tokenizer = vibevoice_model["tokenizer"]
         processor = vibevoice_model.get("processor")
@@ -70,6 +71,13 @@ class AIIA_VibeVoice_Realtime_TTS:
             text = text.replace('"', '').replace("'", '')
         
         try:
+            # 设置随机种子以确保可复现性
+            if seed >= 0:
+                torch.manual_seed(seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(seed)
+                print(f"[AIIA] VibeVoice Realtime seed set to {seed}")
+
             with torch.no_grad():
                 print(f"[AIIA] Using 0.5B Streaming Inference with preset: {voice_preset_name}")
                 
