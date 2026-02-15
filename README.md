@@ -1219,6 +1219,48 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
   - 支持绝对 URL: `(Visual: https://example.com)`
   - 支持相对路径: `(Visual: ./slides/01.jpg)` (相对于导出 HTML 的位置)
 
+#### 4.8 AIIA Podcast Splitter (对话拆分器)
+
+**[v1.12.0 New]** 将对话 JSON 按说话人拆分为独立文本列表，用于"**拆分→生成→拼接**"的高级流程。
+
+- **Input**:
+  - `dialogue_json`: 来自 `Script Parser` 的对话 JSON。
+- **Output**:
+  - `split_map`: 拆分映射表（JSON），保存原始顺序和各句话归属信息。
+  - `text_A`, `text_B`: 分别为说话人 A、B 的纯文本列表（每行一句），可直接送入各自的 TTS 节点独立生成。
+- **用途**: 实现对不同说话人使用不同 TTS 引擎/参数生成音频，再通过 Stitcher 精确拼接的高级工作流。
+
+#### 4.9 AIIA ASR Node (语音识别)
+
+**[v1.12.0 New]** 基于 FunASR 的语音识别节点，输出带词级时间戳的识别结果，为 Stitcher 提供精确对齐依据。
+
+- **Input**: `audio` (AUDIO 张量)。
+- **Output**: `ASR_RESULT`（包含词级时间戳的识别结果）。
+- **依赖**: 需要安装 `funasr` 库。模型首次运行时自动下载。
+
+#### 4.10 AIIA Podcast Stitcher (精确拼接器)
+
+**[v1.12.0 New]** 将分轨生成的多角色音频按原始对话顺序精确拼接，还原自然对话节奏。
+
+- **核心工作原理**:
+  1. 利用 ASR 词级时间戳找到每句话在各自音频中的时间边界。
+  2. 通过三层匹配策略（精确子串→编辑距离模糊→等分回退）实现鲁棒对齐。
+  3. 在切分边界处进行精细微调（能量检测或 VAD），确保不切断语音、不吃进相邻句子。
+  4. 对切片施加余弦淡入淡出，并在说话人切换处插入自然过渡间隙。
+- **Input**:
+  - `split_map`: 来自 Splitter 的拆分映射。
+  - `audio_A`, `audio_B`: 各说话人独立生成的完整音频。
+  - `asr_A`, `asr_B`: 对应的 ASR 识别结果。
+- **Parameters**:
+  - `gap_duration` (Default 0.25s): 说话人交替时的过渡间隙。
+  - `padding` (Default 0.10s): 切片前后保留的呼吸/尾音余量。
+  - `fade_ms` (Default 30ms): 余弦淡入淡出时长。
+  - `use_vad` (Default False): **🔬 启用 Silero VAD 精确边界检测**。
+    - 开启后，使用 Silero VAD 神经网络模型（~2MB，首次自动下载）替代基于能量的边界检测。
+    - VAD 能精确识别语音起止点，彻底解决清辅音误切、尾音截断等能量检测的固有缺陷。
+    - 关闭时使用内置的**平滑能量包络检测**（20ms 窗口 + 5-point 滑动平均），已能应对大部分场景。
+- **Output**: 拼接后的完整 `AUDIO` + `segments_info` (JSON)。
+
 #### 💡 引擎选型与最佳实践 (Best Practices)
 
 | 特性               | **CosyVoice**                        | **VibeVoice**                                                                              | **Qwen3-TTS**                               |
