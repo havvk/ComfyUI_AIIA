@@ -206,6 +206,7 @@ class AIIA_VideoCombine:
                 "crf": ("INT", {"default": 23, "min": 0, "max": 51}),
                 "codec_preset": (['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow', 'placebo'], {"default": 'medium'}),
                 "save_output": ("BOOLEAN", {"default": True}),
+                "cleanup_frames": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "images": ("IMAGE",), "frames_directory": ("STRING", {"default": ""}),
@@ -220,6 +221,7 @@ class AIIA_VideoCombine:
 
     def combine_video(
         self, frame_rate: float, output_filename_prefix: str, format: str, crf: int, codec_preset: str, save_output: bool,
+        cleanup_frames: bool = False,
         images: Union[torch.Tensor, None] = None, frames_directory: str = "", filename_pattern: str = "frame_%06d.png",
         audio_tensor: Union[dict, None] = None, audio_file_path: str = "",
         audio_codec: str = "auto", audio_bitrate: str = "auto", custom_ffmpeg_args: str = "",
@@ -229,6 +231,7 @@ class AIIA_VideoCombine:
         logger.info(f"{node_name_log} 开始视频合并。")
         
         temp_image_dir_to_delete, temp_audio_file_to_delete = None, None
+        user_frames_dir_to_cleanup = None  # 用户提供的帧目录，成功后可清理
         
         try:
             effective_frames_dir, effective_filename_pattern = None, filename_pattern
@@ -281,6 +284,8 @@ class AIIA_VideoCombine:
                 effective_frames_dir = strip_path_aiia(frames_directory)
                 if not validate_path_aiia(effective_frames_dir, check_is_dir=True):
                     raise ValueError(f"帧目录验证失败: {effective_frames_dir}")
+                if cleanup_frames:
+                    user_frames_dir_to_cleanup = effective_frames_dir
                 
                 # Intelligent Pattern Detection (Fix for v1.9.27 compatibility)
                 # If user workflow has old default (%06d) but files are new (%08d), auto-correct it.
@@ -378,6 +383,14 @@ class AIIA_VideoCombine:
 
             if not os.path.exists(final_video_filepath) or os.path.getsize(final_video_filepath) == 0:
                 raise FileNotFoundError("FFmpeg 执行后未生成有效输出文件。")
+
+            # 合成成功，清理用户指定的帧目录
+            if user_frames_dir_to_cleanup and os.path.isdir(user_frames_dir_to_cleanup):
+                try:
+                    shutil.rmtree(user_frames_dir_to_cleanup)
+                    logger.info(f"{node_name_log} 已清理帧目录: {user_frames_dir_to_cleanup}")
+                except Exception as e_del:
+                    logger.warning(f"{node_name_log} 清理帧目录失败: {e_del}")
 
             preview_item = {"filename": final_video_filename, "subfolder": subfolder, "type": "output" if save_output else "temp"}
             return {"ui": {"images": [preview_item], "animated": (True,)}, "result": (final_video_filepath,)}
