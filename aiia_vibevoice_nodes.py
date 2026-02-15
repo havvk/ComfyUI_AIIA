@@ -340,6 +340,12 @@ class AIIA_VibeVoice_TTS:
              spk_ids = set(re.findall(r'^Speaker\s+(\d+):', text, re.MULTILINE))
              num_roles = len(spk_ids) if spk_ids else 1
 
+        # [AIIA v1.11.4] Auto-wrap plain text without any speaker labels
+        # VibeVoice processor requires "Speaker N: text" format
+        if num_roles == 1 and not re.search(r'^Speaker\s+\d+:', text, re.MULTILINE):
+            text = f"Speaker 1: {text}"
+            print(f"[AIIA INFO] Plain text detected, auto-wrapped as 'Speaker 1: ...'")
+
         # Process Reference Audio
         # Priority: user-provided reference_audio > voice_preset dropdown
         if reference_audio is None:
