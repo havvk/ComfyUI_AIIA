@@ -353,7 +353,9 @@ class AIIA_Podcast_Stitcher:
         return best_sample / sr
 
     def _expand_to_midpoints(self, boundaries: list, total_duration: float) -> list:
-        """将切割点扩展到相邻句子间隙的中点，避免截断尾音/吸气声。"""
+        """将切割点扩展到相邻句子间隙中，但限制最大扩展量以避免吃进下一句。"""
+        MAX_EXPAND = 0.15  # 最多从语音边界向外扩展 150ms
+
         if len(boundaries) <= 1:
             if boundaries:
                 boundaries[0]["cut_start"] = 0.0
@@ -364,16 +366,18 @@ class AIIA_Podcast_Stitcher:
             if i == 0:
                 boundaries[i]["cut_start"] = 0.0
             else:
-                # 与前一句的间隙中点
+                # 与前一句的间隙中点，但不超过 MAX_EXPAND
                 gap_mid = (boundaries[i - 1]["end"] + boundaries[i]["start"]) / 2
-                boundaries[i]["cut_start"] = round(gap_mid, 3)
+                boundaries[i]["cut_start"] = round(
+                    max(gap_mid, boundaries[i]["start"] - MAX_EXPAND), 3)
 
             if i == len(boundaries) - 1:
                 boundaries[i]["cut_end"] = total_duration
             else:
-                # 与后一句的间隙中点
+                # 与后一句的间隙中点，但不超过 MAX_EXPAND
                 gap_mid = (boundaries[i]["end"] + boundaries[i + 1]["start"]) / 2
-                boundaries[i]["cut_end"] = round(gap_mid, 3)
+                boundaries[i]["cut_end"] = round(
+                    min(gap_mid, boundaries[i]["end"] + MAX_EXPAND), 3)
 
         return boundaries
 
@@ -474,9 +478,9 @@ class AIIA_Podcast_Stitcher:
             cut_start = boundary.get("cut_start", boundary["start"])
             cut_end = boundary.get("cut_end", boundary["end"])
 
-            # 基于能量的边界微调：方向性搜索，确保切割点只远离语音
+            # 基于能量的边界微调：找到语音实际结束/开始位置
             cut_start = self._refine_cut_point(wav, sr, cut_start, direction="before")
-            cut_end = self._refine_cut_point(wav, sr, cut_end, direction="after")
+            cut_end = self._refine_cut_point(wav, sr, cut_end, direction="before")
 
             # 应用 padding
             cut_start = max(0, cut_start - padding)
