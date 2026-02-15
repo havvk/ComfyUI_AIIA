@@ -114,6 +114,12 @@ class AIIA_Emotion_Annotator:
     FUNCTION = "annotate"
     CATEGORY = "AIIA/Podcast"
 
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        # 每次都重新执行，不缓存（LLM 标注结果可能因模型/参数变化而不同）
+        import time
+        return time.time()
+
     def _get_api_key(self, api_key_override=""):
         """获取 API Key：优先使用 override，否则读取环境变量 GROQ_API_KEY"""
         if api_key_override and api_key_override.strip():
