@@ -77,6 +77,8 @@ class AIIABrowserDialog extends ComfyDialog {
         this.applyFocusRaf = null;
         this.iconLoadTimers = new Map();
 
+        this.outsideClickListener = null;
+
         this.tooltipImage = $el("img.aiia-tooltip-image");
         this.tooltipVideo = $el("video.aiia-tooltip-video", { autoplay: true, muted: true, loop: true, controls: false, volume: 0.8 });
         this.tooltipAudio = $el("audio", { autoplay: true });
@@ -91,7 +93,10 @@ class AIIABrowserDialog extends ComfyDialog {
 
         const splitViewContainer = $el("div.aiia-split-view-container", [this.directoryPanel, this.contentPanel, this.tooltipElement]);
 
-        this.iconViewObserver = new IntersectionObserver(this.handleIconIntersection.bind(this), { root: this.contentArea, rootMargin: '300px 0px 300px 0px' });
+        this.iconViewObserver = new IntersectionObserver(this.handleIconIntersection.bind(this), {
+            root: null, // Use root: null to observe relative to browser viewport
+            rootMargin: '500px 0px 500px 0px'
+        });
 
         this.titleElement = $el("span", { textContent: "AIIA Media Browser" });
         this.closeButton = $el("button.close", { textContent: "✖", title: "Close" });
@@ -296,6 +301,25 @@ class AIIABrowserDialog extends ComfyDialog {
                 alert(`Error loading workflow: ${e.message}`);
                 console.error(e);
             }
+        }
+    }
+    async deleteItem(itemName) {
+        if (!itemName) return;
+        if (!confirm(`Are you sure you want to delete "${itemName}"? This action cannot be undone.`)) return;
+        try {
+            const res = await api.fetchApi('/aiia/v1/browser/delete_item', {
+                method: 'POST',
+                body: JSON.stringify({ path: this.currentPath, filename: itemName })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+            const result = await res.json();
+            if (result.status === 'success') {
+                this.setFocus(null, null);
+                this.refreshCurrentDirectory();
+            }
+        } catch (e) {
+            alert(`Error deleting item: ${e.message}`);
+            console.error(e);
         }
     }
     updateTooltipSizeLimits() { const rect = this.contentPanel.getBoundingClientRect(); const maxSize = Math.min(rect.width, rect.height) * 0.30; this.tooltipElement.style.setProperty('--aiia-tooltip-media-max-size', `${maxSize}px`); }
@@ -1311,11 +1335,15 @@ class AIIABrowserDialog extends ComfyDialog {
 
         if ((target.tagName === 'INPUT' && target !== this.pathInput) || target.tagName === 'SELECT') return;
 
-        const keyMap = { 'ArrowUp': 'moveFocus', 'ArrowDown': 'moveFocus', 'ArrowLeft': 'moveFocus', 'ArrowRight': 'moveFocus', 'Enter': 'activateFocusedItem', ' ': 'toggleTooltipForFocusedItem' };
+        const keyMap = { 'ArrowUp': 'moveFocus', 'ArrowDown': 'moveFocus', 'ArrowLeft': 'moveFocus', 'ArrowRight': 'moveFocus', 'Enter': 'activateFocusedItem', ' ': 'toggleTooltipForFocusedItem', 'Escape': 'close', 'Delete': 'deleteFocusedItem' };
         if (keyMap[e.key]) {
             e.preventDefault(); e.stopPropagation();
             this.isKeyboardNavigating = true;
             if (keyMap[e.key] === 'moveFocus') this.moveFocus(e.key);
+            else if (keyMap[e.key] === 'deleteFocusedItem') {
+                const item = this.getAllNavigableItems()[this.currentFocusIndex];
+                if (item) this.deleteItem(item.name);
+            }
             else this[keyMap[e.key]]();
         }
     }
@@ -1327,6 +1355,35 @@ class AIIABrowserDialog extends ComfyDialog {
         super.show();
         this.updateTooltipSizeLimits();
         this.element.focus({ preventScroll: true });
+
+        // [v1.9.184] Click-outside to close - targeting the native ComfyUI modal backdrop
+        if (!this.outsideClickListener) {
+            this.outsideClickListener = (e) => {
+                if (this.element.style.display !== "none") {
+                    // If the click is on the parent container (the backdrop) and NOT on the element itself
+                    if (e.target === this.element.parentElement || e.target.classList.contains('comfy-modal')) {
+                        // Safety check: Don't close if we are interacting with another aiia modal
+                        if (this.fullscreenViewer && this.fullscreenViewer.element.style.display !== 'none') return;
+                        this.close();
+                    }
+                }
+            };
+            setTimeout(() => document.addEventListener("mousedown", this.outsideClickListener), 10);
+        }
+
+        // Force a resize/scroll event to trigger initial icon rendering
+        setTimeout(() => { this.render(); }, 100);
+    }
+
+    close() {
+        if (this.outsideClickListener) {
+            document.removeEventListener("mousedown", this.outsideClickListener);
+            this.outsideClickListener = null;
+        }
+        this.element.style.display = "none";
+        this.hideTooltip();
+        if (typeof super.close === "function") super.close();
+        else if (typeof super.hide === "function") super.hide();
     }
 }
 
@@ -1361,8 +1418,16 @@ app.registerExtension({
         let browserDialog = null;
         const createDialog = () => { if (!browserDialog) browserDialog = new AIIABrowserDialog(); browserDialog.show(); };
         document.addEventListener('keydown', (e) => {
-            if (!browserDialog || browserDialog.element.style.display === 'none') return;
-            if (browserDialog.fullscreenViewer && browserDialog.fullscreenViewer.element.style.display !== 'none') return;
+            if (!browserDialog || (browserDialog.element && browserDialog.element.style.display === 'none')) return;
+            if (browserDialog.fullscreenViewer && browserDialog.fullscreenViewer.element && browserDialog.fullscreenViewer.element.style.display !== 'none') return;
+
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                browserDialog.close();
+                return;
+            }
+
             if (!browserDialog.element.contains(document.activeElement)) {
                 const isNavKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(e.key);
                 if (isNavKey) {
