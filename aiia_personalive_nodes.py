@@ -401,6 +401,9 @@ class AIIA_PersonaLive_PhotoSampler_ToDisk:
         run_unique_folder_name = f"{output_subdir_name}_{timestamp_str}_{int(torch.randint(0,10000,(1,)).item())}"
         frames_output_directory = os.path.join(output_node_main_dir, run_unique_folder_name)
         os.makedirs(frames_output_directory, exist_ok=True)
+        # 写入标记文件，供下游 Video Combine 的 cleanup_frames 安全识别
+        from pathlib import Path
+        Path(frames_output_directory, ".aiia_temp").touch()
         
         print(f"Processing {num_frames} frames (To-Disk). Output: {frames_output_directory}")
 

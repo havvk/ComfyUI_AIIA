@@ -937,6 +937,9 @@ class AIIA_DittoSampler:
             import tempfile
             import folder_paths
             frames_dir = tempfile.mkdtemp(prefix="ditto_frames_", dir=folder_paths.get_temp_directory())
+            # 写入标记文件，供下游 Video Combine 的 cleanup_frames 安全识别
+            from pathlib import Path
+            Path(frames_dir, ".aiia_temp").touch()
             master_sdk.set_disk_mode(True, frames_dir)
             logger.info(f"[Ditto] Disk mode enabled. Saving frames to: {frames_dir}")
         else:

@@ -37,6 +37,9 @@ import tempfile # 用于创建临时目录和文件
 
 from comfy.utils import ProgressBar
 
+# --- AIIA 常量 ---
+AIIA_TEMP_MARKER = ".aiia_temp"  # 标记文件，表示该目录由 AIIA 节点自动生成，可安全清理
+
 # --- AIIA 特定工具函数 ---
 
 DEFAULT_STD_ENCODING = "utf-8"
@@ -384,13 +387,17 @@ class AIIA_VideoCombine:
             if not os.path.exists(final_video_filepath) or os.path.getsize(final_video_filepath) == 0:
                 raise FileNotFoundError("FFmpeg 执行后未生成有效输出文件。")
 
-            # 合成成功，清理用户指定的帧目录
+            # 合成成功，清理用户指定的帧目录（仅当存在 .aiia_temp 标记时）
             if user_frames_dir_to_cleanup and os.path.isdir(user_frames_dir_to_cleanup):
-                try:
-                    shutil.rmtree(user_frames_dir_to_cleanup)
-                    logger.info(f"{node_name_log} 已清理帧目录: {user_frames_dir_to_cleanup}")
-                except Exception as e_del:
-                    logger.warning(f"{node_name_log} 清理帧目录失败: {e_del}")
+                marker_path = os.path.join(user_frames_dir_to_cleanup, AIIA_TEMP_MARKER)
+                if os.path.exists(marker_path):
+                    try:
+                        shutil.rmtree(user_frames_dir_to_cleanup)
+                        logger.info(f"{node_name_log} 已清理帧目录: {user_frames_dir_to_cleanup}")
+                    except Exception as e_del:
+                        logger.warning(f"{node_name_log} 清理帧目录失败: {e_del}")
+                else:
+                    logger.warning(f"{node_name_log} 未发现 {AIIA_TEMP_MARKER} 标记，跳过清理以防误删用户文件: {user_frames_dir_to_cleanup}")
 
             preview_item = {"filename": final_video_filename, "subfolder": subfolder, "type": "output" if save_output else "temp"}
             return {"ui": {"images": [preview_item], "animated": (True,)}, "result": (final_video_filepath,)}
@@ -579,6 +586,9 @@ class AIIA_BodySway:
         if use_disk_mode:
             import folder_paths
             output_frames_dir = tempfile.mkdtemp(prefix="bodysway_frames_", dir=folder_paths.get_temp_directory())
+            # 写入标记文件，供下游 Video Combine 的 cleanup_frames 安全识别
+            from pathlib import Path
+            Path(output_frames_dir, ".aiia_temp").touch()
             logger.info(f"[BodySway] Output frames will be saved to: {output_frames_dir}")
         
         # Process frames: disk mode or memory mode

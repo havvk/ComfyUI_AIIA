@@ -344,6 +344,9 @@ class AIIA_FloatProcess_ToDisk:
         frames_output_directory_final = os.path.join(output_node_main_dir, run_unique_folder_name)
         try:
             os.makedirs(frames_output_directory_final, exist_ok=True)
+            # 写入标记文件，供下游 Video Combine 的 cleanup_frames 安全识别
+            from pathlib import Path
+            Path(frames_output_directory_final, ".aiia_temp").touch()
         except Exception as e_mkdir:
             return self._create_error_string_count(f"无法创建输出目录 {frames_output_directory_final}: {e_mkdir}", log_message=True)
 
