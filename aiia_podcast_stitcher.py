@@ -306,12 +306,28 @@ class AIIA_Podcast_Stitcher:
 
         return filled
 
-    def _refine_cut_point(self, wav, sr, time_s, search_radius=0.15):
-        """在 time_s 附近 ±search_radius 范围内，找到能量最低的点作为切割位置。"""
+    def _refine_cut_point(self, wav, sr, time_s, search_radius=0.15, direction="both"):
+        """
+        在 time_s 附近找到能量最低的点作为切割位置。
+        
+        direction:
+            "before" — 只在 [time_s - radius, time_s] 搜索（用于 cut_start，远离语音）
+            "after"  — 只在 [time_s, time_s + radius] 搜索（用于 cut_end，远离语音）
+            "both"   — 在 ±radius 搜索（向后兼容）
+        """
         center = int(time_s * sr)
         radius = int(search_radius * sr)
-        start = max(0, center - radius)
-        end = min(len(wav), center + radius)
+
+        if direction == "before":
+            start = max(0, center - radius)
+            end = center
+        elif direction == "after":
+            start = center
+            end = min(len(wav), center + radius)
+        else:
+            start = max(0, center - radius)
+            end = min(len(wav), center + radius)
+
         if end - start < 2:
             return time_s
         
@@ -358,7 +374,7 @@ class AIIA_Podcast_Stitcher:
         return boundaries
 
     def stitch(self, split_map, audio_A, audio_B, asr_A, asr_B,
-               gap_duration=0.3, padding=0.05):
+               gap_duration=0.3, padding=0.10):
         log = f"[{self.NODE_NAME}]"
 
         # 解析 split_map
@@ -450,9 +466,9 @@ class AIIA_Podcast_Stitcher:
             cut_start = boundary.get("cut_start", boundary["start"])
             cut_end = boundary.get("cut_end", boundary["end"])
 
-            # 基于能量的边界微调：在 cut_start/cut_end 附近找到真正的静音点
-            cut_start = self._refine_cut_point(wav, sr, cut_start)
-            cut_end = self._refine_cut_point(wav, sr, cut_end)
+            # 基于能量的边界微调：方向性搜索，确保切割点只远离语音
+            cut_start = self._refine_cut_point(wav, sr, cut_start, direction="before")
+            cut_end = self._refine_cut_point(wav, sr, cut_end, direction="after")
 
             # 应用 padding
             cut_start = max(0, cut_start - padding)
