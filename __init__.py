@@ -148,6 +148,9 @@ else:
     # 29. 处理 aiia_podcast_stitcher.py (播客音频拼接)
     _load_nodes_from_module(".aiia_podcast_stitcher", "aiia_podcast_stitcher")
 
+    # 30. 处理 aiia_emotion_annotator.py (LLM 情感标注)
+    _load_nodes_from_module(".aiia_emotion_annotator", "aiia_emotion_annotator")
+
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
 
