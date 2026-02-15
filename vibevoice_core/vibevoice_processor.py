@@ -391,7 +391,7 @@ class VibeVoiceProcessor:
         speech_input_mask += [False] * len(self.tokenizer.encode(' Text input:\n', add_special_tokens=False))
         
         for speaker_id, speaker_text in parsed_lines:
-            speaker_text_tokens = self.tokenizer.encode(f" Speaker {speaker_id}:{speaker_text}\n", add_special_tokens=False)
+            speaker_text_tokens = self.tokenizer.encode(f"[{speaker_id + 1}]:{speaker_text}\n", add_special_tokens=False)
             full_tokens += speaker_text_tokens
             speech_input_mask += [False] * len(speaker_text_tokens)
         
@@ -524,7 +524,7 @@ class VibeVoiceProcessor:
         voice_speech_masks = [False] * len(voice_full_tokens)
         
         for speaker_id, speaker_audio in enumerate(speaker_samples):
-            prefix_tokens = self.tokenizer.encode(f" Speaker {speaker_id}:", add_special_tokens=False)
+            prefix_tokens = self.tokenizer.encode(f"[{speaker_id + 1}]:", add_special_tokens=False)
             
             # Process audio
             if isinstance(speaker_audio, str):
@@ -698,7 +698,11 @@ class VibeVoiceProcessor:
         return "\n".join(script_lines)
 
     def _parse_script(self, script: str) -> List[Tuple[int, str]]:
-        """Parse script into list of (speaker_id, text) tuples."""
+        """Parse script into list of (speaker_id, text) tuples.
+        
+        Accepts both official VibeVoice format '[N]: text' and legacy 'Speaker N: text'.
+        Speaker IDs are normalized to 0-based internally.
+        """
         lines = script.strip().split("\n")
         parsed_lines = []
         speaker_ids = []
@@ -707,9 +711,13 @@ class VibeVoiceProcessor:
         for line in lines:
             if not line.strip():
                 continue
-                
-            # Use regex to handle edge cases like multiple colons
-            match = re.match(r'^Speaker\s+(\d+)\s*:\s*(.*)$', line.strip(), re.IGNORECASE)
+            
+            # Official VibeVoice format: [N]: text  (1-based)
+            match = re.match(r'^\[(\d+)\]\s*[:\uff1a]\s*(.*)$', line.strip())
+            
+            if not match:
+                # Legacy format: Speaker N: text
+                match = re.match(r'^Speaker\s+(\d+)\s*[:\uff1a]\s*(.*)$', line.strip(), re.IGNORECASE)
             
             if match:
                 speaker_id = int(match.group(1))
@@ -722,16 +730,14 @@ class VibeVoiceProcessor:
         if not parsed_lines:
             raise ValueError("No valid speaker lines found in script")
         
-        # Check if we need to normalize speaker IDs (only if all are > 0)
+        # Normalize speaker IDs to 0-based
         min_speaker_id = min(speaker_ids)
         if min_speaker_id > 0:
-            # Normalize to start from 0
             normalized_lines = []
             for speaker_id, text in parsed_lines:
                 normalized_lines.append((speaker_id - 1, text))
             return normalized_lines
         else:
-            # Keep original IDs
             return parsed_lines
 
     def _merge_inputs(self, text_inputs: BatchEncoding, audio_inputs: Dict) -> BatchEncoding:

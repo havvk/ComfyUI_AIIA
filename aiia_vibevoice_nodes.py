@@ -258,16 +258,18 @@ class AIIA_VibeVoice_TTS:
 
     def _normalize_roles(self, text):
         """
-        Detects custom roles (e.g. 'Host A:', 'User:') and normalizes them to 'Speaker N:'.
+        Detects custom roles (e.g. 'Host A:', 'User:') and normalizes them to '[N]: ' format.
+        Also converts legacy 'Speaker N:' format to '[N]: ' format.
         Returns: (normalized_text, role_mapping)
         """
         import re
         lines = text.split('\n')
-        # Matches "Role Name:" at start of line. 
-        # Excludes "Speaker N:" which is already valid.
-        # Limit role name to 30 chars to avoid matching long sentences.
-        role_pattern = re.compile(r'^([^\n:]{1,30}):\s+')
-        speaker_pattern = re.compile(r'^Speaker\s*\d+', re.IGNORECASE)
+        # Match "Role Name:" at start of line (limit to 30 chars to avoid long sentences)
+        role_pattern = re.compile(r'^([^\n:]{1,30})[:\uff1a]\s+')
+        # Already in [N] format
+        bracket_pattern = re.compile(r'^\[\d+\]\s*[:\uff1a]')
+        # Legacy Speaker N: format
+        speaker_pattern = re.compile(r'^Speaker\s*(\d+)\s*[:\uff1a]\s*(.*)', re.IGNORECASE)
         
         roles_map = {} 
         next_id = 1
@@ -278,26 +280,35 @@ class AIIA_VibeVoice_TTS:
             if not stripped:
                 normalized_lines.append(line)
                 continue
-                
+            
+            # Already in [N]: format - keep as is
+            if bracket_pattern.match(stripped):
+                normalized_lines.append(line)
+                continue
+            
+            # Legacy Speaker N: format -> convert to [N]:
+            spk_match = speaker_pattern.match(stripped)
+            if spk_match:
+                spk_id = int(spk_match.group(1))
+                content = spk_match.group(2).strip()
+                normalized_lines.append(f"[{spk_id}]: {content}")
+                if f"Speaker {spk_id}" not in roles_map:
+                    roles_map[f"Speaker {spk_id}"] = spk_id
+                continue
+            
+            # Custom role name -> assign new ID
             match = role_pattern.match(stripped)
             if match:
                 role_name = match.group(1).strip()
                 
-                # If already standard format, keep it
-                if speaker_pattern.match(role_name):
-                    normalized_lines.append(line)
-                    continue
-                    
                 # Map custom role
                 if role_name not in roles_map:
                     roles_map[role_name] = next_id
                     next_id += 1
                 
                 spk_id = roles_map[role_name]
-                # Replace prefix with Speaker N
-                # We reconstruct the line to ensure standard formatting
                 content = stripped[match.end():]
-                normalized_lines.append(f"Speaker {spk_id}: {content}")
+                normalized_lines.append(f"[{spk_id}]: {content}")
             else:
                 normalized_lines.append(line)
                 
@@ -334,17 +345,19 @@ class AIIA_VibeVoice_TTS:
         text, role_map = self._normalize_roles(text)
         num_roles = len(role_map) if role_map else 0
         
-        # Determine unique speakers count from text if no role map (e.g. manual Speaker 1, Speaker 2)
+        # Determine unique speakers count from text if no role map
         if not role_map:
-             # Basic regex count of unique "Speaker N"
-             spk_ids = set(re.findall(r'^Speaker\s+(\d+):', text, re.MULTILINE))
+             # Check [N]: format first, then legacy Speaker N:
+             spk_ids = set(re.findall(r'^\[(\d+)\]\s*[:\uff1a]', text, re.MULTILINE))
+             if not spk_ids:
+                 spk_ids = set(re.findall(r'^Speaker\s+(\d+):', text, re.MULTILINE))
              num_roles = len(spk_ids) if spk_ids else 1
 
         # [AIIA v1.11.4] Auto-wrap plain text without any speaker labels
-        # VibeVoice processor requires "Speaker N: text" format
-        if num_roles == 1 and not re.search(r'^Speaker\s+\d+:', text, re.MULTILINE):
-            text = f"Speaker 1: {text}"
-            print(f"[AIIA INFO] Plain text detected, auto-wrapped as 'Speaker 1: ...'")
+        # VibeVoice processor requires "[N]: text" format
+        if num_roles == 1 and not re.search(r'^\[\d+\]\s*[:\uff1a]', text, re.MULTILINE) and not re.search(r'^Speaker\s+\d+:', text, re.MULTILINE):
+            text = f"[1]: {text}"
+            print(f"[AIIA INFO] Plain text detected, auto-wrapped as '[1]: ...'")
 
         # Process Reference Audio
         # Priority: user-provided reference_audio > voice_preset dropdown
