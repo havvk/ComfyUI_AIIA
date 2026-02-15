@@ -248,35 +248,6 @@ async def get_video_poster(request):
         traceback.print_exc()
         return web.Response(status=500, text=str(e))
 
-async def delete_item(request):
-    data = await request.json()
-    relative_path_str = data.get("path", "")
-    filename = data.get("filename", "")
-    if not filename:
-        return web.Response(status=400, text="Filename is required.")
-
-    try:
-        file_path = get_safe_path(output_dir, os.path.join(relative_path_str, filename))
-        
-        if file_path.is_file():
-            os.remove(file_path)
-            # Also cleanup potential cache files
-            cache_thumb = get_safe_path(image_thumb_dir, os.path.join(relative_path_str, f"{file_path.stem}.jpg"))
-            if cache_thumb.exists(): os.remove(cache_thumb)
-            cache_poster = get_safe_path(video_poster_dir, os.path.join(relative_path_str, f"{file_path.stem}.jpg"))
-            if cache_poster.exists(): os.remove(cache_poster)
-            
-            return web.json_response({"status": "success", "message": f"File {filename} deleted."})
-        elif file_path.is_dir():
-            shutil.rmtree(file_path)
-            return web.json_response({"status": "success", "message": f"Directory {filename} deleted."})
-        else:
-            return web.Response(status=404, text="Item not found")
-
-    except Exception as e:
-        traceback.print_exc()
-        return web.Response(status=500, text=str(e))
-
 async def get_batch_metadata(request):
     data = await request.json()
     path = data.get("path", "")
@@ -365,7 +336,6 @@ server.PromptServer.instance.app.router.add_post('/api/aiia/v1/browser/get_batch
 server.PromptServer.instance.app.router.add_get('/api/aiia/v1/browser/thumbnail', get_thumbnail)
 server.PromptServer.instance.app.router.add_get('/api/aiia/v1/browser/poster', get_video_poster)
 server.PromptServer.instance.app.router.add_get('/api/aiia/v1/browser/get_workflow', get_workflow)
-server.PromptServer.instance.app.router.add_post('/api/aiia/v1/browser/delete_item', delete_item)
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}

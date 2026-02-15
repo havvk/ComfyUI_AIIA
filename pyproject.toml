@@ -1,29 +1,26 @@
 [project]
 name = "aiia"
-description = "The Ultimate AI Audio/Video toolkit for ComfyUI. Features an enhanced Ditto (with optimizations that outperform official demos and other SOTA talking head models in lip-sync accuracy and natural motion), EchoMimic V3 & FLOAT, VibeVoice, CosyVoice 3.0 & Qwen3-TTS (Zero-Shot Voice Cloning), Multi-Role Podcast Generation, and a powerful Media Browser."
-version = "1.11.3"
+description = "Advanced AI Audio/Video toolkit for ComfyUI. Features Multi-Role Podcast/Dialogue Generation, High-Fidelity Voice Cloning (CosyVoice/VibeVoice), TTS, Media Management, and efficient Video tools."
+version = "1.8.2"
 license = {file = "LICENSE"}
 readme = "README.md"
 authors = [
-    { name = "hawk", email = "hawk@aiia.ai" }
+    { name = "Hawk Lee", email = "l.y@live.cn" }
 ]
+keywords = ["ComfyUI", "Audio", "TTS", "Voice Cloning", "Podcast", "Dialogue", "CosyVoice", "VibeVoice", "Media Management", "Video"]
 dependencies = [
-    "torch",
+    "soundfile",
     "numpy",
-    "Pillow",
-    "torchaudio",
-    "tqdm",
-    "scipy",
-    "huggingface_hub",
-    "opencv-python",
-    "ffmpeg-python",
-    "qwen-tts",
+    "matplotlib",
+    "torchaudio"
 ]
 
 [project.urls]
-Homepage = "https://github.com/havvk/ComfyUI_AIIA"
-Repository = "https://github.com/havvk/ComfyUI_AIIA.git"
+Repository = "https://github.com/havvk/ComfyUI_AIIA"
+#  Used by Comfy Registry https://registry.comfy.org
 
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+[tool.comfy]
+PublisherId = "hawk"
+DisplayName = "ComfyUI_AIIA"
+Icon = "https://github.com/user-attachments/assets/358b9ca9-59c8-4433-b84c-c150503af04a"
+

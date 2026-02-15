@@ -1,0 +1,1 @@
+A person is holding an object in a relaxed pose. As the video progresses, the character speaks while arm and body movements are minimal and consistent with a natural speaking posture. Hand movements remain minimal. Don't blink too often. Preserve background integrity matching the reference image's spatial configuration, lighting conditions, and color temperature.

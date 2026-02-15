@@ -1,0 +1,481 @@
+import json
+import torch
+import numpy as np
+
+
+class AIIA_Podcast_Stitcher:
+    """
+    将分轨生成的多角色音频按原始对话顺序精确拼接。
+    
+    利用 ASR 词级时间戳找到每句话在音频中的边界，切分后交错拼接。
+    """
+
+    NODE_NAME = "AIIA Podcast Stitcher"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "split_map": ("STRING", {"forceInput": True}),
+                "audio_A": ("AUDIO",),
+                "audio_B": ("AUDIO",),
+                "asr_A": ("ASR_RESULT",),
+                "asr_B": ("ASR_RESULT",),
+            },
+            "optional": {
+                "gap_duration": ("FLOAT", {
+                    "default": 0.3, "min": 0.0, "max": 2.0, "step": 0.05,
+                    "tooltip": "说话人交替时插入的静音时长（秒）"
+                }),
+                "padding": ("FLOAT", {
+                    "default": 0.05, "min": 0.0, "max": 0.5, "step": 0.01,
+                    "tooltip": "每个切片前后保留的呼吸/尾音余量（秒）"
+                }),
+            }
+        }
+
+    RETURN_TYPES = ("AUDIO", "STRING",)
+    RETURN_NAMES = ("audio", "segments_info",)
+    FUNCTION = "stitch"
+    CATEGORY = "AIIA/Podcast"
+
+    def _audio_to_numpy(self, audio: dict) -> tuple:
+        """将 ComfyUI AUDIO 转为 numpy 数组和采样率。"""
+        waveform = audio["waveform"]
+        sr = audio["sample_rate"]
+
+        if waveform.ndim == 3:
+            wav = waveform[0]
+        else:
+            wav = waveform
+
+        if wav.ndim == 2 and wav.shape[0] > 1:
+            wav = wav.mean(dim=0)
+        elif wav.ndim == 2:
+            wav = wav.squeeze(0)
+
+        return wav.cpu().numpy().astype(np.float32), sr
+
+    def _find_sentence_boundaries(self, asr_words: list, sentences: list, total_duration: float) -> list:
+        """
+        将 ASR 词级时间戳与原始句子列表对齐，找到每句话在音频中的时间范围。
+        
+        三层匹配策略：
+        1. 精确子串匹配（去标点后）
+        2. 编辑距离模糊匹配（滑动窗口，容忍 ASR 错字/漏字）
+        3. 间隙填补 / 等分回退
+        """
+        log = f"[{self.NODE_NAME}]"
+
+        if not asr_words:
+            print(f"{log} ASR 结果为空，使用等分策略")
+            return self._fallback_equal_split(sentences, total_duration)
+
+        if not sentences:
+            return []
+
+        # 构建 ASR 文本和字符到词索引的映射
+        asr_full_text = ""
+        char_to_word_idx = []  # char_to_word_idx[i] = 该字符属于哪个 word
+        for word_idx, w in enumerate(asr_words):
+            word_text = w["word"]
+            for ch in word_text:
+                char_to_word_idx.append(word_idx)
+            asr_full_text += word_text
+
+        print(f"{log} ASR 全文 ({len(asr_full_text)} 字): {asr_full_text[:100]}...")
+
+        # 为每句话找到在 ASR 文本中的匹配位置
+        boundaries = []
+        search_start = 0  # 保证顺序匹配
+
+        for sent_idx, sentence in enumerate(sentences):
+            # 清理句子文本（去除标点符号和空格，与 ASR 输出对齐）
+            clean_sent = self._clean_text_for_matching(sentence)
+
+            if not clean_sent:
+                print(f"{log} 句子 {sent_idx} 清理后为空: '{sentence}'")
+                boundaries.append(None)
+                continue
+
+            # === 第 1 层：精确子串匹配 ===
+            match_pos = asr_full_text.find(clean_sent, search_start)
+
+            if match_pos != -1:
+                match_end = match_pos + len(clean_sent) - 1
+                match_quality = "精确"
+            else:
+                # === 第 2 层：编辑距离模糊匹配 ===
+                match_pos, match_end, edit_dist = self._fuzzy_find(
+                    asr_full_text, clean_sent, search_start
+                )
+
+                if match_pos != -1:
+                    match_quality = f"模糊(ed={edit_dist})"
+                else:
+                    print(f"{log} 句子 {sent_idx} 无法匹配: '{clean_sent[:30]}...'")
+                    boundaries.append(None)
+                    continue
+
+            # 映射字符位置到词索引
+            start_word_idx = char_to_word_idx[match_pos] if match_pos < len(char_to_word_idx) else len(asr_words) - 1
+            end_word_idx = char_to_word_idx[min(match_end, len(char_to_word_idx) - 1)]
+
+            start_time = asr_words[start_word_idx]["start"]
+            end_time = asr_words[end_word_idx]["end"]
+
+            print(f"{log} 句子 {sent_idx} [{match_quality}]: "
+                  f"'{clean_sent[:15]}' → pos={match_pos}-{match_end}, "
+                  f"time={start_time:.2f}-{end_time:.2f}s")
+
+            boundaries.append({
+                "start": start_time,
+                "end": end_time,
+                "start_word_idx": start_word_idx,
+                "end_word_idx": end_word_idx,
+            })
+
+            # 更新搜索起点
+            search_start = match_end + 1
+
+        # 填补未匹配的句子（使用前后句子的时间插值）
+        boundaries = self._fill_missing_boundaries(boundaries, asr_words, total_duration)
+
+        # 扩展边界到句间间隙的中点（避免截断尾音）
+        boundaries = self._expand_to_midpoints(boundaries, total_duration)
+
+        return boundaries
+
+    @staticmethod
+    def _edit_distance(s1: str, s2: str) -> int:
+        """计算两个字符串的编辑距离（Levenshtein distance），使用空间优化的 DP。"""
+        m, n = len(s1), len(s2)
+        if m == 0:
+            return n
+        if n == 0:
+            return m
+
+        # 只需两行
+        prev = list(range(n + 1))
+        curr = [0] * (n + 1)
+
+        for i in range(1, m + 1):
+            curr[0] = i
+            for j in range(1, n + 1):
+                if s1[i - 1] == s2[j - 1]:
+                    curr[j] = prev[j - 1]
+                else:
+                    curr[j] = 1 + min(prev[j], curr[j - 1], prev[j - 1])
+            prev, curr = curr, prev
+
+        return prev[n]
+
+    def _fuzzy_find(self, haystack: str, needle: str, search_start: int = 0,
+                    max_error_ratio: float = 0.4) -> tuple:
+        """
+        在 haystack 中从 search_start 开始，用滑动窗口+编辑距离找到与 needle 最相似的子串。
+        
+        参数:
+            haystack: ASR 全文
+            needle: 待匹配的原始句子（已去标点）
+            search_start: 搜索起始位置
+            max_error_ratio: 允许的最大错误率（编辑距离 / needle 长度）
+        
+        返回:
+            (match_pos, match_end, edit_distance)  或  (-1, -1, -1) 表示失败
+        """
+        needle_len = len(needle)
+        if needle_len == 0:
+            return (-1, -1, -1)
+
+        max_errors = int(needle_len * max_error_ratio)
+        remaining = haystack[search_start:]
+        remaining_len = len(remaining)
+
+        if remaining_len == 0:
+            return (-1, -1, -1)
+
+        best_pos = -1
+        best_end = -1
+        best_dist = needle_len + 1  # 初始化为一个大值
+
+        # 尝试多种窗口大小（needle 长度的 ±30%），处理 ASR 漏字/多字的情况
+        window_sizes = set()
+        for ratio in [1.0, 0.85, 0.9, 0.95, 1.05, 1.1, 1.15, 1.2]:
+            ws = max(1, int(needle_len * ratio))
+            if ws <= remaining_len:
+                window_sizes.add(ws)
+
+        # 限制搜索范围以避免 O(n²) 爆炸
+        # 在合理的搜索范围内：从 search_start 开始，最多搜到 needle 长度的 3 倍
+        max_search_len = min(remaining_len, needle_len * 3 + 20)
+
+        for window_size in sorted(window_sizes):
+            for i in range(0, max_search_len - window_size + 1):
+                candidate = remaining[i:i + window_size]
+                dist = self._edit_distance(needle, candidate)
+
+                if dist < best_dist:
+                    best_dist = dist
+                    best_pos = search_start + i
+                    best_end = search_start + i + window_size - 1
+
+                    # 如果编辑距离为 0 或 1，可以提前退出
+                    if dist <= 1:
+                        break
+
+            if best_dist <= 1:
+                break
+
+        # 只接受错误率在阈值内的匹配
+        if best_dist <= max_errors:
+            return (best_pos, best_end, best_dist)
+        else:
+            return (-1, -1, -1)
+
+    def _clean_text_for_matching(self, text: str) -> str:
+        """清理文本用于与 ASR 输出匹配：去除标点、空格、英文转小写。"""
+        import re
+        # 去除常见中英文标点和空格
+        cleaned = re.sub(r'[，。！？、；：""''「」【】（）《》\s,\.!?\-\;\:\"\'\(\)\[\]\{\}…—~～·]', '', text)
+        # 英文转小写（ASR 可能输出不同大小写）
+        cleaned = cleaned.lower()
+        return cleaned
+
+    def _fallback_equal_split(self, sentences: list, total_duration: float) -> list:
+        """回退策略：按句子字符数等比例分配时间。"""
+        if not sentences:
+            return []
+
+        total_chars = sum(len(s) for s in sentences)
+        if total_chars == 0:
+            segment_duration = total_duration / len(sentences)
+            return [{"start": i * segment_duration, "end": (i + 1) * segment_duration}
+                    for i in range(len(sentences))]
+
+        boundaries = []
+        current_time = 0.0
+        for sent in sentences:
+            ratio = len(sent) / total_chars
+            duration = ratio * total_duration
+            boundaries.append({
+                "start": round(current_time, 3),
+                "end": round(current_time + duration, 3),
+            })
+            current_time += duration
+
+        return boundaries
+
+    def _fill_missing_boundaries(self, boundaries: list, asr_words: list, total_duration: float) -> list:
+        """填补未能匹配的句子边界。"""
+        filled = list(boundaries)
+
+        for i in range(len(filled)):
+            if filled[i] is not None:
+                continue
+
+            # 找前一个已知边界
+            prev_end = 0.0
+            for j in range(i - 1, -1, -1):
+                if filled[j] is not None:
+                    prev_end = filled[j]["end"]
+                    break
+
+            # 找后一个已知边界
+            next_start = total_duration
+            for j in range(i + 1, len(filled)):
+                if filled[j] is not None:
+                    next_start = filled[j]["start"]
+                    break
+
+            # 在空隙中均匀分配
+            gap_count = 0
+            gap_start_idx = i
+            for j in range(i, len(filled)):
+                if filled[j] is None:
+                    gap_count += 1
+                else:
+                    break
+
+            gap_duration = (next_start - prev_end) / gap_count
+            for k in range(gap_count):
+                filled[gap_start_idx + k] = {
+                    "start": round(prev_end + k * gap_duration, 3),
+                    "end": round(prev_end + (k + 1) * gap_duration, 3),
+                }
+
+        return filled
+
+    def _expand_to_midpoints(self, boundaries: list, total_duration: float) -> list:
+        """将切割点扩展到相邻句子间隙的中点，避免截断尾音/吸气声。"""
+        if len(boundaries) <= 1:
+            if boundaries:
+                boundaries[0]["cut_start"] = 0.0
+                boundaries[0]["cut_end"] = total_duration
+            return boundaries
+
+        for i in range(len(boundaries)):
+            if i == 0:
+                boundaries[i]["cut_start"] = 0.0
+            else:
+                # 与前一句的间隙中点
+                gap_mid = (boundaries[i - 1]["end"] + boundaries[i]["start"]) / 2
+                boundaries[i]["cut_start"] = round(gap_mid, 3)
+
+            if i == len(boundaries) - 1:
+                boundaries[i]["cut_end"] = total_duration
+            else:
+                # 与后一句的间隙中点
+                gap_mid = (boundaries[i]["end"] + boundaries[i + 1]["start"]) / 2
+                boundaries[i]["cut_end"] = round(gap_mid, 3)
+
+        return boundaries
+
+    def stitch(self, split_map, audio_A, audio_B, asr_A, asr_B,
+               gap_duration=0.3, padding=0.05):
+        log = f"[{self.NODE_NAME}]"
+
+        # 解析 split_map
+        try:
+            map_items = json.loads(split_map)
+        except json.JSONDecodeError as e:
+            print(f"{log} split_map JSON 解析失败: {e}")
+            return (audio_A, "[]")
+
+        # 提取音频数据
+        wav_A, sr_A = self._audio_to_numpy(audio_A)
+        wav_B, sr_B = self._audio_to_numpy(audio_B)
+        duration_A = len(wav_A) / sr_A
+        duration_B = len(wav_B) / sr_B
+
+        # 使用统一采样率
+        sr = sr_A
+        if sr_A != sr_B:
+            print(f"{log} 警告: sr_A={sr_A} != sr_B={sr_B}, 使用 sr_A")
+
+        print(f"{log} Audio A: {duration_A:.2f}s, Audio B: {duration_B:.2f}s, SR: {sr}")
+
+        # 收集每个说话人的句子列表
+        sentences_A = [item["text"] for item in map_items if item.get("type") == "speech" and item.get("speaker") == "A"]
+        sentences_B = [item["text"] for item in map_items if item.get("type") == "speech" and item.get("speaker") == "B"]
+
+        print(f"{log} 句子数 - A: {len(sentences_A)}, B: {len(sentences_B)}")
+
+        # ASR 对齐切分
+        words_A = asr_A.get("words", []) if isinstance(asr_A, dict) else []
+        words_B = asr_B.get("words", []) if isinstance(asr_B, dict) else []
+
+        print(f"{log} ASR 词数 - A: {len(words_A)}, B: {len(words_B)}")
+
+        boundaries_A = self._find_sentence_boundaries(words_A, sentences_A, duration_A)
+        boundaries_B = self._find_sentence_boundaries(words_B, sentences_B, duration_B)
+
+        print(f"{log} 边界数 - A: {len(boundaries_A)}, B: {len(boundaries_B)}")
+
+        # 按 split_map 顺序拼接
+        audio_segments = []
+        segments_info = []
+        current_time = 0.0
+        idx_A = 0
+        idx_B = 0
+        prev_speaker = None
+
+        for item in map_items:
+            if item.get("type") == "pause":
+                # 显式暂停
+                pause_dur = item.get("duration", 0.3)
+                pause_samples = int(pause_dur * sr)
+                audio_segments.append(np.zeros(pause_samples, dtype=np.float32))
+                current_time += pause_dur
+                continue
+
+            if item.get("type") != "speech":
+                continue
+
+            speaker = item["speaker"]
+            
+            # 说话人切换时插入间隙
+            if prev_speaker is not None and speaker != prev_speaker:
+                gap_samples = int(gap_duration * sr)
+                audio_segments.append(np.zeros(gap_samples, dtype=np.float32))
+                current_time += gap_duration
+
+            # 获取对应的边界和音频
+            if speaker == "A":
+                if idx_A >= len(boundaries_A):
+                    print(f"{log} 警告: A 的句子索引 {idx_A} 超出边界数 {len(boundaries_A)}")
+                    idx_A += 1
+                    continue
+                boundary = boundaries_A[idx_A]
+                wav = wav_A
+                idx_A += 1
+            elif speaker == "B":
+                if idx_B >= len(boundaries_B):
+                    print(f"{log} 警告: B 的句子索引 {idx_B} 超出边界数 {len(boundaries_B)}")
+                    idx_B += 1
+                    continue
+                boundary = boundaries_B[idx_B]
+                wav = wav_B
+                idx_B += 1
+            else:
+                continue
+
+            # 切割音频片段（使用 cut_start/cut_end，带 padding）
+            cut_start = boundary.get("cut_start", boundary["start"])
+            cut_end = boundary.get("cut_end", boundary["end"])
+
+            # 应用 padding
+            cut_start = max(0, cut_start - padding)
+            cut_end = min(len(wav) / sr, cut_end + padding)
+
+            start_sample = int(cut_start * sr)
+            end_sample = int(cut_end * sr)
+            end_sample = min(end_sample, len(wav))
+
+            segment = wav[start_sample:end_sample]
+
+            if len(segment) == 0:
+                print(f"{log} 警告: 空片段 at {cut_start:.3f}-{cut_end:.3f}s")
+                continue
+
+            seg_duration = len(segment) / sr
+
+            audio_segments.append(segment)
+
+            # 记录 segment info
+            original_speaker = item.get("original_speaker", speaker)
+            segments_info.append({
+                "start": round(current_time, 3),
+                "end": round(current_time + seg_duration, 3),
+                "text": item["text"],
+                "speaker": original_speaker,
+            })
+
+            current_time += seg_duration
+            prev_speaker = speaker
+
+        # 拼接所有片段
+        if not audio_segments:
+            print(f"{log} 错误: 没有任何音频片段")
+            return (audio_A, "[]")
+
+        final_audio = np.concatenate(audio_segments)
+        total_duration = len(final_audio) / sr
+        print(f"{log} 拼接完成: {total_duration:.2f}s, {len(segments_info)} 个语音段")
+
+        # 转为 ComfyUI AUDIO 格式
+        audio_tensor = torch.from_numpy(final_audio).unsqueeze(0).unsqueeze(0)  # (1, 1, samples)
+        audio_output = {"waveform": audio_tensor, "sample_rate": sr}
+
+        segments_info_json = json.dumps(segments_info, ensure_ascii=False, indent=2)
+
+        return (audio_output, segments_info_json)
+
+
+# --- ComfyUI 节点注册 ---
+NODE_CLASS_MAPPINGS = {
+    "AIIA_Podcast_Stitcher": AIIA_Podcast_Stitcher,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIIA_Podcast_Stitcher": "🧵 AIIA Podcast Stitcher",
+}

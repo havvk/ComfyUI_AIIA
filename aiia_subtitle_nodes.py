@@ -2,7 +2,6 @@ import json
 import datetime
 import os
 import random
-import re
 import torchaudio
 import folder_paths
 
@@ -16,12 +15,9 @@ class AIIA_Subtitle_Gen:
             "required": {
                 "segments_info": ("STRING", {"forceInput": True}),
                 "format": (["SRT", "ASS", "Both"], {"default": "SRT"}),
-                "save_file": ("BOOLEAN", {"default": False, "label_on": "Save to Disk", "label_off": "Memory Only"}),
             },
             "optional": {
-                "calibration_info": ("WHISPER_CHUNKS",),
                 "ass_style": ("STRING", {"default": "Default", "multiline": False}),
-                "filename_prefix": ("STRING", {"default": "aiia_subtitle"}),
             }
         }
 
@@ -29,23 +25,13 @@ class AIIA_Subtitle_Gen:
     RETURN_NAMES = ("srt_content", "ass_content")
     FUNCTION = "generate_subtitle"
     CATEGORY = "AIIA/Subtitle"
-    OUTPUT_NODE = True
 
-    def generate_subtitle(self, segments_info, format="SRT", save_file=False, ass_style="Default", filename_prefix="aiia_subtitle", calibration_info=None):
+    def generate_subtitle(self, segments_info, format="SRT", ass_style="Default"):
         try:
             segments = json.loads(segments_info)
         except Exception as e:
             print(f"[AIIA Subtitle] Error parsing segments JSON: {e}")
             return ("", "")
-
-        if not isinstance(segments, list):
-            print("[AIIA Subtitle] Segments info must be a list of dicts.")
-            return ("", "")
-
-        # --- Subtitle Calibration (v1.10.2) ---
-        if calibration_info and "chunks" in calibration_info:
-            print(f"[AIIA Subtitle] Calibrating {len(segments)} segments using {len(calibration_info['chunks'])} high-precision chunks.")
-            segments = self._calibrate_segments(segments, calibration_info["chunks"])
 
         if not isinstance(segments, list):
             print("[AIIA Subtitle] Segments info must be a list of dicts.")
@@ -59,36 +45,12 @@ class AIIA_Subtitle_Gen:
         
         if format in ["ASS", "Both"]:
             ass_out = self._generate_ass(segments, ass_style)
-            
-        # File Saving Logic
-        if save_file:
-            output_dir = folder_paths.get_output_directory()
-            
-            # Timestamp (uniques)
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            if format in ["SRT", "Both"]:
-                srt_name = f"{filename_prefix}_{timestamp}.srt"
-                srt_path = os.path.join(output_dir, srt_name)
-                with open(srt_path, "w", encoding="utf-8") as f:
-                    f.write(srt_out)
-                print(f"[AIIA Subtitle] Saved SRT to: {srt_path}")
-                
-            if format in ["ASS", "Both"]:
-                ass_name = f"{filename_prefix}_{timestamp}.ass"
-                ass_path = os.path.join(output_dir, ass_name)
-                with open(ass_path, "w", encoding="utf-8") as f:
-                    f.write(ass_out)
-                print(f"[AIIA Subtitle] Saved ASS to: {ass_path}")
 
         return (srt_out, ass_out)
 
     def _generate_srt(self, segments):
         output = []
-        # Filter out zero-duration (silenced) segments
-        valid_segments = [s for s in segments if s["end"] - s["start"] >= 0.01]
-        
-        for i, seg in enumerate(valid_segments):
+        for i, seg in enumerate(segments):
             start = self._format_srt_time(seg["start"])
             end = self._format_srt_time(seg["end"])
             text = seg["text"]
@@ -100,21 +62,18 @@ class AIIA_Subtitle_Gen:
         return "\n".join(output)
 
     def _generate_ass(self, segments, style_name="Default"):
-        # Filter out zero-duration (silenced) segments
-        valid_segments = [s for s in segments if s["end"] - s["start"] >= 0.01]
-        
         # 1. Collect unique speakers
         speakers = set()
-        for seg in valid_segments:
+        for seg in segments:
             speakers.add(seg.get("speaker", "Unknown"))
         
         # 2. Assign colors to speakers
         # Simple palette: White, Yellow, Cyan, Green, Orange, Pink, LightBlue
         palette = [
-            "&H00FFFFFF", # White (Pure)
-            "&H0000D7FF", # Gold/Yellow (Cinematic)
-            "&H00FFFF00", # Cyan (Standard)
-            "&H0000FF00", # Green (Lime)
+            "&H00FFFFFF", # White
+            "&H0000FFFF", # Yellow (BGR)
+            "&H00FFFF00", # Cyan
+            "&H0000FF00", # Green
             "&H000080FF", # Orange
             "&H00FF80FF", # Pink
             "&H00FFC0C0"  # LightBlue
@@ -125,10 +84,7 @@ class AIIA_Subtitle_Gen:
         
         # Base Style String Template
         # Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, ...
-        # Base Style String Template
-        # Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, ...
-        # Changes: Bold=1, Outline=2, Shadow=1 for professional look
-        base_style = "Arial,40,{primary_color},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,10,1"
+        base_style = "Arial,20,{primary_color},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1"
         
         sorted_speakers = sorted(list(speakers))
         for i, spk in enumerate(sorted_speakers):
@@ -161,12 +117,10 @@ class AIIA_Subtitle_Gen:
         ]
         
         events = []
-        for seg in valid_segments:
+        for seg in segments:
             start = self._format_ass_time(seg["start"])
             end = self._format_ass_time(seg["end"])
             text = seg["text"].replace("\n", "\\N")
-            # [v1.10.8] Support Markdown Bold (**text**) -> ASS Bold ({\b1}text{\b0})
-            text = re.sub(r'\*\*(.*?)\*\*', r'{\\b1}\1{\\b0}', text)
             speaker = seg.get("speaker", "Unknown")
             # Use the mapped style name
             style_for_event = speaker_map.get(speaker, "Default")
@@ -187,260 +141,6 @@ class AIIA_Subtitle_Gen:
         millis = int(td.microseconds / 1000)
         
         return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
-
-    def _calibrate_segments(self, segments, chunks):
-        """
-        Calibrate estimated segments using high-precision VAD chunks.
-        Algorithm: Iterative sequence matching with speaker-centric isolation (v1.10.5).
-        """
-        if not chunks:
-            return segments
-
-        # 1. Ensure chunks are sorted chronologically
-        sorted_chunks = sorted(chunks, key=lambda x: x["timestamp"][0])
-        
-        calibrated = []
-        chunk_idx = 0
-        num_chunks = len(sorted_chunks)
-        
-        def normalize_spk(s):
-            if not s: return ""
-            return str(s).lower().replace("speaker_", "").replace("speaker ", "").strip()
-
-        # [v1.10.17] Speaker Mapping: Script Identity -> VAD Identity
-        speaker_map = {} # e.g. {"speaker_a": "speaker_00", "speaker_b": "speaker_01"}
-
-        for i, seg in enumerate(segments):
-            seg_start = seg["start"]
-            seg_end = seg["end"]
-            seg_dur = seg_end - seg_start
-            seg_spk = normalize_spk(seg.get("speaker"))
-            
-            # --- Speaker-Centric Magic (v1.10.5) ---
-            # 1. Find the "Winner Speaker" for this segment based on maximum overlap duration
-            speaker_overlaps = {}
-            # Large window for initial scan to be robust
-            scan_idx = chunk_idx
-            while scan_idx < num_chunks:
-                c = sorted_chunks[scan_idx]
-                c_start, c_end = c["timestamp"]
-                # Hard break if the chunk is way past our segment (relaxed to 60s for sequential matching)
-                if c_start > seg_end + 60.0: break
-                
-                # Calculate overlap duration
-                overlap = min(seg_end, c_end) - max(seg_start, c_start)
-                if overlap > 0:
-                    spk = normalize_spk(c.get("speaker", "unknown"))
-                    speaker_overlaps[spk] = speaker_overlaps.get(spk, 0.0) + overlap
-                scan_idx += 1
-            
-            winner_spk = None
-            
-            # [v1.10.17] Consistency Logic
-            # If we already know who this Script Speaker maps to, try to find THAT VAD Speaker first.
-            if seg_spk in speaker_map:
-                mapped_vad_spk = speaker_map[seg_spk]
-                # Trust the map (Sequence Priority). Even if no overlap, we search for this speaker.
-                winner_spk = mapped_vad_spk
-            
-            # Fallback (First time seeing this speaker OR mapped speaker missing): Max Overlap
-            if winner_spk is None and speaker_overlaps:
-                # Get speaker with most accumulated overlap duration
-                winner_spk = max(speaker_overlaps, key=speaker_overlaps.get)
-            
-            # Update Map
-            if winner_spk and seg_spk:
-                speaker_map[seg_spk] = winner_spk
-            
-            # 2. Find chunks belonging to the winner spk to use for snapping
-            # [v1.10.16] Greedy Speaker Turn Collection: collect all consecutive chunks for winner_spk
-            matched_chunks = []
-            find_idx = chunk_idx
-            found_start = False
-            
-            while find_idx < num_chunks:
-                chunk = sorted_chunks[find_idx]
-                c_start, c_end = chunk["timestamp"]
-                c_spk = normalize_spk(chunk.get("speaker", "unknown"))
-                
-                overlap = min(seg_end, c_end) - max(seg_start, c_start)
-                is_overlap = overlap > 0.05
-                
-                # Case: First segment special snapping
-                if not is_overlap and i == 0 and find_idx == 0:
-                    if abs(c_start - seg_start) < 0.5 and c_end > seg_start - 0.1:
-                        is_overlap = True
-
-                if not found_start:
-                    # Looking for the first chunk that belongs to our speaker
-                    # Trust Sequence: If we have a winner_spk, find their next chunk regardless of overlap
-                    match_condition = is_overlap
-                    if winner_spk is not None:
-                        match_condition = is_overlap or (c_spk == winner_spk)
-                    
-                    if match_condition and (winner_spk is None or c_spk == winner_spk):
-                        matched_chunks.append(find_idx)
-                        found_start = True
-                        if winner_spk is None: winner_spk = c_spk
-                    elif c_start > seg_end + 60.0:
-                        # Way past the estimated end, give up
-                        break
-                else:
-                    # Already started collecting. 
-                    if c_spk == winner_spk:
-                        # Ensure no massive gap (e.g. 8s) within a single turn, unless it's within expected segment time
-                        last_matched_end = sorted_chunks[matched_chunks[-1]]["timestamp"][1]
-                        if (c_start - last_matched_end < 8.0) or (c_start < seg_end + 1.0):
-                            matched_chunks.append(find_idx)
-                        else:
-                            break
-                    else:
-                        # [v1.10.18 Fix] Encountered unrelated speaker. 
-                        # Check if this is just a brief interruption (noise/other speaker) 
-                        # and if our speaker resumes shortly.
-                        # Mismatch! 
-                        # [v1.10.19] Check if this is a real turn of another speaker.
-                        # If a different speaker talks for more than 0.5s, we must yield the turn.
-                        interruption_dur = c["timestamp"][1] - c["timestamp"][0]
-                        if interruption_dur > 0.5:
-                            break
-                        
-                        # Lookahead mechanism
-                        resume_idx = -1
-                        lookahead_limit = 5 # Check next 5 chunks
-                        
-                        for k in range(1, lookahead_limit + 1):
-                            next_idx = find_idx + k
-                            if next_idx >= num_chunks: break
-                            
-                            nc = sorted_chunks[next_idx]
-                            nc_spk = normalize_spk(nc.get("speaker", "unknown"))
-                            nc_start = nc["timestamp"][0]
-                            
-                            
-                            # If we find our speaker again
-                            if nc_spk == winner_spk:
-                                # Check if the gap is acceptable:
-                                # 1. Short interruption (< 0.8s)
-                                # 2. OR the resume chunk starts reasonably close to the EXPECTED end of the segment.
-                                #    (This handles cases where VAD has a large gap but Script says it should be one segment)
-                                last_matched_end = sorted_chunks[matched_chunks[-1]]["timestamp"][1]
-                                if (nc_start - last_matched_end < 0.8) or (nc_start < seg_end + 1.0):
-                                    resume_idx = next_idx
-                                break
-                            
-                            # If we hit a substantial chunk of another speaker, stop looking
-                            if nc["timestamp"][1] - nc["timestamp"][0] > 0.5:
-                                break
-                                
-                        if resume_idx != -1:
-                            # Resume found! Skip intermediate chunks.
-                            # We do NOT add the intermediate chunks to matched_chunks (they belong to noise/others)
-                            # But we continue the loop from the resume point.
-                            
-                            # Note: The intermediate chunks are effectively "skipped" by this segment.
-                            # If they were important for another segment, that segment logic needs to handle them.
-                            # But typically, if they are "interruptions" inside a sentence, they are noise.
-                            
-                            # Advance find_idx to just before resume_idx (loop will increment)
-                            find_idx = resume_idx - 1 
-                            # We will pick up the resumed chunk in next iteration
-                        else:
-                            # comprehensive stop
-                            break
-                
-                find_idx += 1
-                # Limit lookahead for safety (total span)
-                if found_start and (find_idx - matched_chunks[0] > 50): break
-                if not found_start and (find_idx - chunk_idx > 20): break
-            
-            if matched_chunks:
-                # Use min/max over all matched chunks
-                actual_starts = [sorted_chunks[idx]["timestamp"][0] for idx in matched_chunks]
-                actual_ends = [sorted_chunks[idx]["timestamp"][1] for idx in matched_chunks]
-                
-                min_s = min(actual_starts)
-                max_e = max(actual_ends)
-                
-                # [v1.10.7 Fix] Handle Multi-Segment Chunks (Shared Chunk Logic)
-                # If we are reusing a chunk from previous segment, we must start AFTER previous segment
-                new_start = min_s
-                if i > 0:
-                    prev_end = calibrated[-1]["end"]
-                    if prev_end > new_start and prev_end < max_e:
-                        new_start = prev_end
-
-                # Determine if we should consume the chunk or share it
-                # Check if next segment also wants this chunk (overlaps with the tail of this chunk)
-                is_shared = False
-                last_matched_idx = max(matched_chunks)
-                chunk_end_time = sorted_chunks[last_matched_idx]["timestamp"][1]
-                
-                # Predicted end for this segment
-                predicted_end = new_start + seg_dur
-                
-                # Only check for sharing if there is significant leftover time in the chunk
-                # AND if the next segment belongs to the same speaker (critical fix v1.10.15)
-                if chunk_end_time - predicted_end > 0.5 and i + 1 < len(segments):
-                    next_seg = segments[i+1]
-                    # If next segment effectively overlaps the remainder of this chunk
-                    if next_seg["start"] < chunk_end_time:
-                         # [v1.10.15] Ensure speaker match before sharing
-                         current_spk = normalize_spk(seg.get("speaker"))
-                         next_spk = normalize_spk(next_seg.get("speaker"))
-                         if current_spk == next_spk:
-                             is_shared = True
-                
-                if is_shared:
-                    # If shared, we limit our end to our duration (trust TTS relative duration)
-                    new_end = predicted_end
-                    # And we DO NOT advance past this chunk, so next segment can pick it up
-                    chunk_idx = last_matched_idx 
-                else:
-                    # If not shared, we consume the full VAD chunk (snap to VAD end)
-                    new_end = max_e
-                    chunk_idx = last_matched_idx + 1
-                
-                seg["start"] = round(new_start, 3)
-                seg["end"] = round(new_end, 3)
-            else:
-                # No match found for the specific speaker.
-                # [v1.10.19] Silence-Aware Fallback:
-                # Check if there is ANY speech (any speaker) in the estimated range.
-                has_speech = False
-                fallback_scan_idx = chunk_idx
-                while fallback_scan_idx < num_chunks:
-                    fc = sorted_chunks[fallback_scan_idx]
-                    fc_start, fc_end = fc["timestamp"]
-                    if fc_start > seg["end"]: break # Past our range
-                    
-                    # Check overlap
-                    overlap = min(seg["end"], fc_end) - max(seg["start"], fc_start)
-                    if overlap > 0.1: # Threshold for "speech exists"
-                        has_speech = True
-                        break
-                    
-                    fallback_scan_idx += 1
-                
-                start_point = calibrated[-1]["end"] if i > 0 else 0.0
-                
-                if has_speech:
-                     # Someone is speaking, so we keep the text but shift it to avoid overlap
-                     duration = seg["end"] - seg["start"]
-                     if seg["start"] < start_point:
-                         seg["start"] = start_point
-                         seg["end"] = start_point + duration
-                else:
-                    # [Silence Detected]
-                    # User feedback: segments_info is the "Plan". Even if silent, the dialogue must be shown to preserve order.
-                    # We place the subtitle in the gap (after previous segment) with its estimated duration.
-                    duration = seg["end"] - seg["start"]
-                    seg["start"] = start_point
-                    seg["end"] = start_point + duration
-            
-            calibrated.append(seg)
-            
-        return calibrated
 
     def _format_ass_time(self, seconds):
         # H:MM:SS.cs (centiseconds)
@@ -497,128 +197,12 @@ class AIIA_Subtitle_Preview:
 
         return {"ui": {"text": [subtitle_content], "audio": [audio_info] if audio_info else []}}
 
-class AIIA_Subtitle_To_Segments:
-    """Convert SRT/ASS text or files into segments_info format."""
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "subtitle_text": ("STRING", {"multiline": True, "default": ""}),
-            },
-            "optional": {
-                "subtitle_path": ("STRING", {"default": ""}),
-            }
-        }
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("segments_info",)
-    FUNCTION = "convert"
-    CATEGORY = "AIIA/Subtitle"
-
-    def convert(self, subtitle_text, subtitle_path=""):
-        import re
-        content = subtitle_text.strip()
-        
-        # If path provided and exists, read it
-        if subtitle_path and os.path.exists(subtitle_path):
-            try:
-                with open(subtitle_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read().strip()
-            except Exception as e:
-                print(f"[AIIA Subtitle Convert] Error reading file: {e}")
-
-        if not content:
-            return (json.dumps([]),)
-
-        segments = []
-        
-        # Detect Format
-        if "Dialogue:" in content:
-            segments = self._parse_ass(content)
-        elif " --> " in content:
-            segments = self._parse_srt(content)
-        else:
-            print("[AIIA Subtitle Convert] Unknown format or empty content.")
-
-        return (json.dumps(segments, ensure_ascii=False, indent=2),)
-
-    def _parse_srt(self, text):
-        import re
-        segments = []
-        # Pattern: Index, Time, Text
-        # Handles \n and \r\n
-        blocks = re.split(r'\n\s*\n', text.strip())
-        for block in blocks:
-            lines = [l.strip() for l in block.split('\n') if l.strip()]
-            if len(lines) < 2: continue
-            
-            # Find time line
-            time_match = re.search(r'(\d+:\d+:\d+,\d+) --> (\d+:\d+:\d+,\d+)', lines[0] if "-->" in lines[0] else lines[1])
-            if not time_match: continue
-            
-            start_s = self._time_to_seconds(time_match.group(1), "srt")
-            end_s = self._time_to_seconds(time_match.group(2), "srt")
-            
-            # Content is everything after the time line
-            idx = 1 if "-->" in lines[0] else 2
-            content = " ".join(lines[idx:])
-            
-            segments.append({
-                "start": round(start_s, 3),
-                "end": round(end_s, 3),
-                "text": content,
-                "speaker": "Unknown"
-            })
-        return segments
-
-    def _parse_ass(self, text):
-        import re
-        segments = []
-        # Look for Dialogue: lines
-        for line in text.split('\n'):
-            if line.startswith("Dialogue:"):
-                # Dialogue: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-                parts = line.split(',', 9)
-                if len(parts) < 10: continue
-                
-                start_s = self._time_to_seconds(parts[1].strip(), "ass")
-                end_s = self._time_to_seconds(parts[2].strip(), "ass")
-                speaker = parts[4].strip() or "Unknown"
-                content = parts[9].strip().replace('\\N', ' ').replace('\\n', ' ')
-                # Clean ASS tags like {\pos(x,y)}
-                content = re.sub(r'\{.*?\}', '', content)
-                
-                segments.append({
-                    "start": round(start_s, 3),
-                    "end": round(end_s, 3),
-                    "text": content,
-                    "speaker": speaker
-                })
-        return segments
-
-    def _time_to_seconds(self, t_str, fmt):
-        try:
-            if fmt == "srt":
-                # HH:MM:SS,mmm
-                h, m, s_ms = t_str.split(':')
-                s, ms = s_ms.split(',')
-                return int(h)*3600 + int(m)*60 + int(s) + int(ms)/1000.0
-            else:
-                # H:MM:SS.cc
-                h, m, s_cs = t_str.split(':')
-                s, cs = s_cs.split('.')
-                return int(h)*3600 + int(m)*60 + int(s) + int(cs)/100.0
-        except:
-            return 0.0
-
 NODE_CLASS_MAPPINGS = {
     "AIIA_Subtitle_Gen": AIIA_Subtitle_Gen,
-    "AIIA_Subtitle_Preview": AIIA_Subtitle_Preview,
-    "AIIA_Subtitle_To_Segments": AIIA_Subtitle_To_Segments
+    "AIIA_Subtitle_Preview": AIIA_Subtitle_Preview
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AIIA_Subtitle_Gen": "AIIA Subtitle Generation",
-    "AIIA_Subtitle_Preview": "AIIA Subtitle Preview",
-    "AIIA_Subtitle_To_Segments": "AIIA Subtitle to Segments"
+    "AIIA_Subtitle_Gen": "📝 AIIA Subtitle Generation",
+    "AIIA_Subtitle_Preview": "🎬 AIIA Subtitle Preview"
 }

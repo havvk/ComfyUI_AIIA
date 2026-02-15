@@ -165,33 +165,11 @@ class AIIA_GenerateSpeakerSegments:
         if not model_path: 
             return self._create_error_output(f"模型 '{e2e_backend_model}' 文件路径无效")
         
-        if audio is None:
-             return self._create_error_output("音频数据为 None")
-             
-        # Handle cases where audio might be passed as a single-item list
-        if isinstance(audio, list) and len(audio) > 0:
-            audio = audio[0]
-
-        # Try to treat as a dictionary or object with waveform/sample_rate
-        try:
-            waveform = audio["waveform"]
-            sample_rate = audio["sample_rate"]
-        except (KeyError, TypeError):
-             try:
-                 waveform = getattr(audio, "waveform", None)
-                 sample_rate = getattr(audio, "sample_rate", None)
-             except:
-                 waveform, sample_rate = None, None
-
-        if waveform is None or sample_rate is None:
-            return self._create_error_output(f"音频数据格式错误: 无法获取 waveform 或 sample_rate (输入类型: {type(audio)})")
-
-        # Ensure waveform is a tensor and sample_rate is a number
-        if not isinstance(waveform, torch.Tensor) or not isinstance(sample_rate, (int, float)):
-            return self._create_error_output(f"音频数据类型错误: waveform={type(waveform)}, sample_rate={type(sample_rate)}")
-
-        if waveform.ndim < 1:
-            return self._create_error_output("音频波形维度不足")
+        if audio is None or not isinstance(audio, dict) or \
+           "waveform" not in audio or not isinstance(audio["waveform"], torch.Tensor) or \
+           "sample_rate" not in audio or not isinstance(audio["sample_rate"], int) or \
+           audio["waveform"].ndim < 1:
+            return self._create_error_output("音频数据缺失或无效")
 
         # 检查音频长度
         if audio["waveform"].shape[-1] == 0:
@@ -333,19 +311,6 @@ class AIIA_GenerateSpeakerSegments:
                      print(f"警告: [{self.NODE_NAME}] 最终未能获取任何说话人分段。")
                 
                 output_data_structure = {"text": "", "chunks": speaker_segments_for_json_chunks, "language": ""}
-                
-                # Cleanup: Move model to CPU and delete
-                try:
-                    if 'diar_model' in locals() and diar_model is not None:
-                        print(f"{node_name_log} Cleaning up NeMo model (Moving to CPU)...")
-                        diar_model.to("cpu")
-                        if hasattr(diar_model, 'encoder'): diar_model.encoder.to("cpu")
-                        if hasattr(diar_model, 'decoder'): diar_model.decoder.to("cpu")
-                        del diar_model
-                    torch.cuda.empty_cache()
-                except Exception as cleanup_err:
-                    print(f"Warning: Cleanup failed: {cleanup_err}")
-
                 print(f"{node_name_log} 流程结束。")
                 return (output_data_structure,)
 

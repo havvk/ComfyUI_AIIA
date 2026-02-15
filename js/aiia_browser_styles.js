@@ -2,7 +2,7 @@
 export const browserStyles = `
     /* Main Browser Styles */
     #aiia-browser-menu-button { margin-left: 10px; }
-    .comfy-modal.aiia-browser-dialog-root { top: calc(50% + 40px); left: 50%; transform: translate(-50%, -50%); width: 80vw; height: 85vh; max-width: 1400px; max-height: 1000px; min-width: 800px; min-height: 500px; display: flex; flex-direction: column; padding: 0; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); resize: both; overflow: hidden; }
+    .comfy-modal.aiia-browser-dialog-root { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80vw; height: 85vh; max-width: 1400px; max-height: 1000px; min-width: 800px; min-height: 500px; display: flex; flex-direction: column; padding: 0; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); resize: both; overflow: hidden; }
     .aiia-browser-titlebar { background: var(--comfy-box-bg); padding: 4px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); flex-shrink: 0; color: #F9FAFB; cursor: default; }
     .aiia-browser-main-container { display: flex; flex-direction: column; flex-grow: 1; padding: 8px; overflow: hidden; }
     .aiia-browser-header-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-shrink: 0; gap: 8px; flex-wrap: wrap; }

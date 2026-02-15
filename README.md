@@ -1,6 +1,6 @@
 ![image](https://github.com/user-attachments/assets/7e38d3fd-2084-4d0c-bf86-4b500eba5ced)
 
-<h1><img src="assets/logo_small.png" alt="AIIA Logo" align="center" /> AIIA Nodes for ComfyUI</h1>
+# AIIA Nodes for ComfyUI
 
 欢迎来到 AIIA Nodes for ComfyUI 仓库！这是一个旨在为 ComfyUI 提供一系列强大、直观且高度可定制的节点的集合。这些节点专注于简化复杂的工作流，并为创意工作者提供最大的灵活性。
 
@@ -13,7 +13,6 @@
 **还在费力地翻找 `output` 文件夹，或者对着一堆时间戳命名的文件猜内容吗？**
 
 我们隆重推出 **AIIA 媒体浏览器**——一个完全集成在 ComfyUI 内部的、功能完备的媒体文件管理中心。它的诞生，旨在彻底改变你管理和使用生成结果的方式，让整个过程变得高效、直观且充满乐趣。
-
 ![image](https://github.com/user-attachments/assets/358b9ca9-59c8-4433-b84c-c150503af04a)
 
 ### ✨ 为何选择 AIIA 浏览器？
@@ -59,21 +58,14 @@
 
 处理成百上千张高清图像帧时，轻易就会耗尽 VRAM 和系统内存，导致工作流中断。AIIA 节点通过 **增量式处理（Incremental Processing）** 的策略从根本上解决了这个问题。
 
-#### v1.9.21+ 内存优化
+无论是从磁盘流式读取帧进行视频合并，还是将生成结果逐帧保存到磁盘，我们的节点都**永远不需要将所有图像一次性加载到内存中**。这意味着您可以轻松生成数千帧的视频，而无需再为内存限制而烦恼。
 
-自 v1.9.21 起，**AIIA Body Sway** 和 **AIIA Video Combine** 节点实现了激进的内存管理策略：
-*   **分批处理**：每次只处理 50 帧，处理完立即释放中间变量。
-*   **逐帧释放**：每帧转换后立即 `del` 并定期 `gc.collect()`。
-*   **GPU 内存同步释放**：处理前移至 CPU 并调用 `torch.cuda.empty_cache()`。
-
-这意味着即使处理 **1500+ 帧的高分辨率视频**（如 1288×1920），也能在合理的内存占用下完成，**无需磁盘中转**。
-
-#### 两种工作模式
+### ✨ 无缝与高效的平衡
 
 我们提供了两种工作模式，以适应不同场景：
 
-- **内存模式 (推荐)**: 直接将上游节点的 `IMAGE` 张量输入。v1.9.21+ 的优化使其可处理数千帧而不 OOM。
-- **磁盘模式**: 对于极端长序列或内存受限环境，仍可通过 `frames_directory` 从磁盘流式读取帧。
+- **内存模式**: 对于短序列或测试，可以直接将上游节点的 `IMAGE` 张量输入，实现无缝、快速的内存内处理。
+- **磁盘模式**: 对于长序列的最终生成，节点会高效地从磁盘流式读取/写入帧，保证了稳定性和极低的内存占用。
 
 ### 🔧 强大且可扩展的预设系统
 
@@ -91,15 +83,7 @@
 - **强烈建议**将 FFmpeg 的 `bin` 目录添加到您系统的 `PATH` 环境变量中。
 - 在终端中运行 `ffmpeg -version` 和 `ffprobe -version` 来验证安装。
 
-### 2. 安装 SoX (VibeVoice 变速不变调必须)
-
-VibeVoice 节点的 `speed` 参数依赖系统级 `sox` 命令。
-
-- **Ubuntu/Debian**: `sudo apt-get update && sudo apt-get install -y libsox-dev sox`
-- **macOS**: `brew install sox`
-- **Windows**: 下载 [SoX 编译版](https://sourceforge.net/projects/sox/files/sox/) 并将目录添加到 `PATH`。
-
-### 3. 安装 NeMo 模型 (音频AI节点必须)
+### 2. 安装 NeMo 模型 (音频AI节点必须)
 
 音频处理节点（如说话人日志）依赖 NeMo 模型。
 
@@ -123,6 +107,43 @@ hf download nvidia/nemo-models diar_sortformer_4spk-v1.nemo --local-dir nemo_mod
 # 下载流式模型
 hf download nvidia/nemo-models diar_streaming_sortformer_4spk-v2.1.nemo --local-dir nemo_models
 ```
+
+### 3. 安装 FunASR 模型 (ASR 节点 / 播客防泄漏管线)
+
+ASR 节点使用阿里达摩院的 **FunASR** 框架进行语音识别，支持字级时间戳。模型需手动下载至 `ComfyUI/models/funasr/` 目录。
+
+```text
+ComfyUI/models/funasr/
+├── paraformer-zh/          <-- 中文 ASR (推荐，支持字级时间戳)
+│   ├── model.pt
+│   ├── configuration.json
+│   └── ...
+└── SenseVoiceSmall/        <-- 多语言 ASR (中/英/日/韩/粤，无时间戳)
+    ├── model.pt
+    └── ...
+```
+
+**下载命令**:
+
+```bash
+cd ComfyUI/models
+mkdir -p funasr
+
+# 推荐: Paraformer-zh (中文，支持字级时间戳，~950MB)
+modelscope download --model iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch --local_dir funasr/paraformer-zh
+
+# 可选: SenseVoiceSmall (多语言，无时间戳，~450MB)
+modelscope download --model iic/SenseVoiceSmall --local_dir funasr/SenseVoiceSmall
+```
+
+**Python 依赖**:
+
+```bash
+pip install funasr
+```
+
+> [!NOTE]
+> **Paraformer-zh** 是播客防泄漏管线（Stitcher 节点）的**必需**模型，因为它提供精确的字级时间戳用于音频切分对齐。SenseVoiceSmall 适合通用多语言识别场景，但不输出时间戳。
 
 ### 4. 安装本节点套件
 
@@ -151,7 +172,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 
 ### 2. 视频生成与合成 (Video Generation & Compositing)
 
-#### 2.1 视频合并 (AIIA, 图像或目录)
+#### 视频合并 (AIIA, 图像或目录)
 
 这是一个功能强大且高度可定制的视频合并节点，是您工作流中处理视频生成的终极解决方案。
 
@@ -164,7 +185,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **全面的音频控制**: 支持 `AUDIO` 张量和外部文件，并提供对编解码器和码率的精细控制。
 - **智能自动配置**: `auto` 模式能自动应用格式预设中的音频参数，并能自动检测源文件的码率。
 
-#### 2.2 FLOAT 影片生成 (内存与磁盘模式)
+#### FLOAT 影片生成 (内存与磁盘模式)
 
 这组节点封装了先进的 **FLOAT** 模型，能够根据参考图像和音频生成高质量的口型同步影片。我们提供了两种模式，以应对不同长度的生成需求。
 
@@ -182,7 +203,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **优势**: 在解码过程中，节点以小批量方式处理帧并**逐帧保存到磁盘**，内存占用极低，可以处理任意长度的音频。
 - **工作流**: 此节点的输出目录可以直接作为 **视频合并节点** 的 `frames_directory` 输入，构建一个完整的、内存高效的 talking head 视频生成管线。
 
-#### 2.3 PersonaLive 视频驱动 (AIIA Integrated)
+#### PersonaLive 视频驱动 (AIIA Integrated)
 
 这组节点基于强大的 [PersonaLive](https://github.com/GVCLab/PersonaLive) 模型，专为生成高质量的 Talking Head 视频而设计。我们将原版代码完全重构并集成到 ComfyUI 中，通过特有的分块处理和磁盘流式技术，**彻底解决了长视频生成时的显存和内存溢出 (OOM) 问题**。
 
@@ -203,262 +224,7 @@ git clone https://github.com/havvk/ComfyUI_AIIA.git
 - **输出**: `STRING` (包含生成帧的目录路径) 和 `INT` (帧数)。
 - **最佳实践**: 将此节点的输出目录直接连接到 **AIIA Video Combine** 节点，即可实现从生成到合成的全流程 OOM-Safe。
 
-#### 2.4 EchoMimic V3 (AIIA Integrated)
-
-这组节点集成了最新的 **EchoMimic V3** (1.3B Parameters) 模型，它是目前开源界效果最惊艳的 Talking Head 解决方案之一。
-
-**特点**:
-
-- **多模态驱动**: 支持 **Audio Only** (仅音频驱动) 和 **Audio + Reference Pose** (音频+参考姿态) 驱动。
-- **自然度极高**: 相比 float 等早期模型，V3 在头部运动、表情微表情的自然度上有巨大提升。
-- **ComfyUI 原生**: 我们将其封装为标准的 Loader 和 Sampler 节点，支持流式生成和内存优化。
-
-**1. EchoMimic V3 Loader**
-
-- **用途**: 加载模型权重 (Transformer, VAE, Wav2Vec, etc.)。
-- **参数**:
-  - `model_subfolder`: 模型子目录名 (默认 `Wan2.1-Fun-V1.1-1.3B-InP`)。
-  - `device`: 指定运行设备 (CUDA)。
-
-**2. EchoMimic V3 Sampler**
-
-- **用途**: 执行推理生成。
-- **输入**:
-  - `ref_image`: 参考人物图片 (建议 1:1 比例，如 768x768)。
-  - `ref_audio`: 驱动音频。
-- **参数**:
-  - `cfg`: 视觉引导系数 (默认 4.0)。
-  - `audio_cfg`: 音频引导系数 (默认 2.9)。
-  - `enable_teacache`: **True** (默认)。开启后生成速度提升 1.5 倍以上，且质量无损。
-  - `keep_model_loaded`: **True** (默认)。即使显存占用增加，也强制将模型保留在 GPU 上，显著减少多段视频生成时的加载时间。
-  - `negative_prompt`: 已内置优化过的 **眼部修复 (Eye Correction)** 提示词，有效防止翻白眼和眼神飘忽。
-
-**🚀 性能优化 (Performance)**:
-
-- **Flash Attention 2**: 强烈推荐安装。检测到时会自动启用，大幅提升推理速度。
-- **TeaCache**: 默认启用。通过缓存部分 Transformer 层计算，大幅加速生成。
-- **Full GPU Mode**: 默认启用。适合显存充足 (24GB+) 用户，享受极致流畅的生成体验。
-
-**🛠️ 模型下载指南 (Manual Download Guide)**
-
-由于 EchoMimic V3 模型较大且组件较多，目前**不支持自动下载**，请按以下步骤手动准备模型。
-
-目标目录: `ComfyUI/models/EchoMimicV3/`
-
-**目录结构**:
-
-```text
-ComfyUI/models/EchoMimicV3/
-├── Wan2.1-Fun-V1.1-1.3B-InP/     <-- 主模型目录
-│   ├── transformer/
-│   │   ├── config.json
-│   │   └── diffusion_pytorch_model.safetensors
-│   ├── vae/
-│   │   ├── config.json
-│   │   └── diffusion_pytorch_model.safetensors
-│   ├── text_encoder/
-│   ├── tokenizer/
-│   ├── image_encoder/
-│   └── scheduler/
-└── wav2vec2-base-960h/           <-- 音频编码器 (必需)
-    ├── config.json
-    ├── pytorch_model.bin
-    └── ...
-```
-
-**下载地址**:
-
-1. **主模型 (EchoMimicV3)**:
-
-   - HuggingFace: [BadToBest/EchoMimicV3](https://huggingface.co/BadToBest/EchoMimicV3)
-   - **下载命令 (推荐)**:
-     ```bash
-     hf download BadToBest/EchoMimicV3 --local-dir models/EchoMimicV3/EchoMimicV3
-     ```
-   - *注意：此模型包含 EchoMimic 特有的 Transformer 权重，是生成嘴型的核心。*
-2. **底模 (Wan2.1-Fun-V1.1-1.3B-InP)**:
-
-   - HuggingFace: [alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP](https://huggingface.co/alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP)
-   - **下载命令**:
-     ```bash
-     hf download alibaba-pai/Wan2.1-Fun-V1.1-1.3B-InP --local-dir models/EchoMimicV3/Wan2.1-Fun-V1.1-1.3B-InP
-     ```
-   - *注意：作为 fallback 来源，提供 VAE、Text Encoder 和 Image Encoder权重。*
-3. **音频编码器 (wav2vec2-base-960h)**:
-
-   - HuggingFace: [facebook/wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h)
-   - **下载命令**:
-     ```bash
-     hf download facebook/wav2vec2-base-960h --local-dir models/EchoMimicV3/wav2vec2-base-960h
-     ```
-
-**环境依赖**:
-
-- 请确保安装了 `requirements.txt` 中的依赖，如 `diffusers>=0.30.1`。节点加载时会尝试自动引用，但如果报错缺包，请手动安装。
-
-#### 2.5 Ditto Talking Head (AIIA Integrated)
-
-这组节点集成了 [Ditto](https://github.com/antgroup/ditto-talkinghead) 数字人模型。我们采用了 **PyTorch** 原生实现，避免了复杂的 TensorRT 编译过程，让用户能够“开箱即用”地生成高质量的 Talking Head 视频。
-
-**特点**:
-
-- **PyTorch Native**: 无需安装 TensorRT，兼容性更好。
-- **In-Memory Pipeline**: 针对 ComfyUI 优化的内存内处理流程，无需生成中间视频文件。
-- **自动模型管理**: 支持自动下载模型权重。
-
-**1. AIIA Ditto Loader**
-
-- **用途**: 下载并加载 Ditto 模型 (约 1.2GB)。
-- **参数**:
-  - `model_name`: 模型名称 (默认 `ditto-talkinghead`)。
-  - `device`: 运行设备 (CUDA/CPU)。
-
-**2. AIIA Ditto Sampler**
-
-- **用途**: 执行推理生成。
-- **输入**:
-  - `pipe`: 来自 Loader 的模型管道。
-  - `ref_image`: 参考人物图片 (建议正方形，人脸居中)。
-  - `audio`: 驱动音频。
-  - `fps`: 建议 **25** (Ditto 针对 25FPS 训练)。即使输入其他值，目前内部逻辑也会优先保证 25FPS 的同步率。
-- **输出**: `IMAGE` (视频帧), `AUDIO`。
-- **高级参数 (Advanced Parameters)**:
-  - `seed`: **随机种子 (Random Seed)**。
-    - 控制扩散模型的噪声生成。
-    - **关键作用**: 在长语音生成中，当触发“静音重置”时，种子会被重置，从而确保每一句话的生成条件都与第一句话完全一致，彻底消除“长语音嘴型漂移”和“对口型不准”的问题。
-  - `crop_scale`: (默认 2.3) **面部工作区视野 (Face Context Scale)**。
-    - **注意**: 此参数**不会改变输出视频的分辨率**，它决定了模型“看”到了多少人脸周围的内容。
-    - **数值越大 (如 2.5)**: **广角视野**。模型能覆盖更多头发、脖子和背景。
-      - ✅ 优点：适合头部运动幅度大的场景，不容易出框。
-      - ❌ 缺点：在固定的推理画布中，人脸占比变小，生成的五官细节（如牙齿、眼神）可能会变糊。
-    - **数值越小 (如 2.0)**: **特写视野**。模型聚焦于面部核心区域。
-      - ✅ 优点：人脸占比大，五官细节极其清晰锐利。
-      - ❌ 缺点：容易裁掉下巴或额头，头部大幅运动时可能会出现“断头”或伪影。
-    - **推荐值**:
-      - 标准场景: **2.3**
-      - 大动态/全身/半身: **2.5** (牺牲细节换稳定性)
-      - 大头照/证件照: **2.0** (追求极致细节)
-  - `emo`: (默认 Neutral) 表情控制。可选 Angry, Happy, Sad 等。
-  - `drive_eye`: (默认 True) 是否驱动眼睛。关闭后眼睛将保持参考图状态(或微动)，适合原图眼神较好的情况。
-  - `chk_eye_blink`: (已废弃，请使用 `blink_mode`)。
-  - `blink_mode`: (默认 Natural) **眨眼模式控制**。
-    - `Natural`: **拟人化随机眨眼**。
-      - 基础频率：90-150帧/次 (约 3.6s - 6.0s)。
-    - `Slow`: 慢速沉稳眨眼 (120-200帧/次)。
-    - `Fast`: 快速频繁眨眼 (10-40帧/次)。
-    - `None`: **彻底关闭眨眼**。
-  - `blink_amp`: (v1.9.1 New) **眨眼幅度控制**。
-    - **1.0 (默认)**: 标准闭眼幅度。
-    - **< 1.0 (推荐 0.8)**: 适合**男性角色**或眼睛较小的人物，避免“用力挤眼”的感觉。
-    - **> 1.0**: 加深闭眼力度。
-  - `mouth_amp`: (v1.9.1 New) **嘴型幅度控制**。
-    - **1.0 (默认)**: 标准嘴部开合幅度。
-    - **> 1.0 (推荐 1.1-1.2)**: 适合**大声说话**或需要更夸张表情的场景，增强口型辨识度。
-    - **< 1.0**: 适合轻声细语。
-  - `relax_on_silence`: (默认 True) **静音归位 (Relax Face on Silence)**。
-    - 结合下方的 `silence_release` 参数，针对静音片段进行**平滑过渡**（慢速闭合），避免“紧绷抿嘴”。
-    - **智能预测 (Predictive Logic)**: 自动识别短停顿（如逗号）与长静音（如句号）。短停顿不触发闭嘴动画，由模型自由发挥；长静音则触发优雅的慢速闭合。
-    - **防止累积误差 (Drift Correction)**:
-      - **精密网格对齐 (Exact Onset Alignment)**: 将模型的时间步长精确对齐到语音的开始（Onset），而不是固定的处理块。
-      - **状态重置 (State & RNG Reset)**: 在长静音后，强制重置模型状态和**随机种子**，确保每一句话的生成质量一致，彻底消除“长语音嘴型漂移”。
-  - `silence_release`: (v1.9.2 New) **静音闭嘴速度 (Adsr Release Control)**。
-    - **Natural (0.8s) [默认]**:
-      - 自然平衡模式。适合大多数常速对话。
-      - 触发阈值: >0.88s。
-    - **Fast (0.5s)**:
-      - 快速响应模式。适合语速极快、充满激情的演讲。
-      - 触发阈值: >0.56s。
-    - **Deep (1.3s)**:
-      - 深沉模式。适合朗诵、讲故事或情感类内容。超长尾韵，极度平滑。
-      - 触发阈值: >1.4s。
-  - `ref_threshold`: (默认 0.005) **静音检测相对阈值 (Relative Silence Threshold)**。
-    - 现在的阈值是基于**全段音频峰值音量**的比例 (例如 0.005 = 0.5% 的峰值音量)。
-    - 这意味着无论音频整体是大声还是小声，系统都能自动适应，准确捕捉微弱的语音片段。
-    - 只有低于此比例的音量才会被视为静音。
-  - `smo_k_d`: (默认 3) 运动平滑系数。数值越大动作越柔和，可抑制面部抖动。
-  - `hd_rot_p` / `y` / `r`: 头部旋转微调 (Pitch/Yaw/Roll)。
-  - `speech_pitch`: (v1.10.0 New) **说话时俯仰角补偿 (Speech Pitch Offset)**。
-    - 用于修正"说话时头抬得太高"或"需要低头说话"的场景。此偏移量仅在说话期间生效，并随语音强度平滑切入切出。
-    - **正值 (+) = 低头 (Look Down)**。例如 `5.0` 表示说话时微微低头。
-    - **负值 (-) = 抬头 (Look Up)**。
-  - `mouth_smoothing`: (v1.9.5 New) **嘴型惯性平滑 (Mouth Motion Inertia)**。
-    - 防止模型输出的嘴型瞬间开合（如爆破音时），增加物理惯性感。
-    - **`None (Raw)`**: 无平滑，模型原始输出。追求极致对口型，容忍偶尔快速开合。
-    - **`Light`** (0.3): 轻微平滑，**推荐快语速使用**。
-    - **`Normal`** (0.5) [默认]: 适中平滑，常规对话推荐。
-    - **`Heavy`** (0.7): 强力平滑，适合低质量音频或模型输出抖动严重的情况。
-  - `save_to_disk`: (v1.9.24 New) **OOM 安全模式 (OOM-Safe Mode)**。
-    - **`Memory (Default)`**: 传统模式，所有帧保存在内存中。适合短视频（<1000帧）。
-    - **`Disk (OOM-Safe)`**: **长视频推荐**。边生成边保存到磁盘，无 OOM 风险。
-    - 选择 Disk 模式时，`frames_dir` 输出会包含帧保存路径，可直接连接 **AIIA Video Combine** 节点的 `frames_directory` 输入。
-    - ⚠️ Disk 模式下 `images` 输出为占位符，请使用 `frames_dir` 连接后续节点。
-- **输出**:
-  - `images`: 生成的视频帧序列（Memory 模式）或占位符（Disk 模式）。
-  - `audio`: 透传的音频。
-  - `frames_dir`: (v1.9.24 New) Disk 模式下的帧保存路径。Memory 模式下为空字符串。
-
-**🛠️ 模型下载指南 (Manual Download Guide)**
-
-如果自动下载失败，请手动下载模型并放入 `ComfyUI/models/ditto/` 目录。
-
-**目标目录结构**:
-
-```text
-ComfyUI/models/ditto/
-├── ditto_pytorch/
-│   ├── audio2motion.pth
-│   ├── ...
-└── ditto_cfg/
-    ├── v0.4_hubert_cfg_pytorch.pkl
-    ├── ...
-```
-
-**下载地址**:
-
-- HuggingFace: [digital-avatar/ditto-talkinghead](https://huggingface.co/digital-avatar/ditto-talkinghead)
-
-**下载命令**:
-
-```bash
-# 进入 models 目录
-cd ComfyUI/models
-
-# 下载模型 (直接下载到 ditto 目录，避免多层嵌套)
-hf download digital-avatar/ditto-talkinghead --local-dir ditto
-```
-
-#### 2.6 身体微动后处理 (Body Sway Post-Processing)
-
-这个轻量级后处理节点可以为 Ditto 等 Talking Head 模型的输出添加**模拟的身体晃动效果**，让人物看起来更加自然、有呼吸感。
-
-**工作原理**:
-*   通过**裁切平移 + 轻微旋转**模拟人体站立或坐着时的自然重心漂移和呼吸起伏。
-*   使用多频正弦波叠加（基于黄金比例）生成平滑、有机的运动轨迹。
-*   **纯裁切**方式，不放大图像，保持原始画质。
-
-**AIIA Body Sway 节点**
-
-- **输入**: 
-  - `images` (可选): 来自 Ditto 等节点的视频帧张量 (Memory 模式)
-  - `frames_directory` (可选, v1.9.25 New): 帧目录路径 (Disk 模式，连接 Ditto 的 `frames_dir` 输出)
-- **参数**:
-  - `crop_ratio`: (默认 0.99) 输出尺寸占输入的比例。
-    - 0.99 = 保留 99%，晃动幅度较小 (推荐)
-    - 0.98 = 保留 98%，晃动幅度中等
-    - 支持三位小数 (如 0.995)
-  - `rotation_amplitude`: (默认 0.1) 最大旋转角度 (度)。
-  - `smoothness`: (默认 0.02) Perlin 噪声平滑度。数值越小，运动越缓慢。
-  - `seed`: 控制随机轨迹。
-- **输出**: 
-  - `images`: 应用了微动效果的帧 (Memory 模式) 或占位符 (Disk 模式)。
-  - `output_frames_dir` (v1.9.25 New): Disk 模式下处理后的帧保存路径。
-
-> [!NOTE]
-> v1.9.17 改进：使用 **Perlin 噪声** 替代正弦波，运动更有机自然。**已移除垂直方向位移**，减少叠加 Ditto 头部运动时的"晕船"感。
-
-> [!TIP]
-> **OOM-Safe 工作流** (v1.9.24+): Ditto (`Disk`) → BodySway (`frames_directory`) → VideoCombine (`frames_directory`)，全流程无 OOM 风险。
-> **性能无损** (v1.9.28+): 采用并行 I/O 和零压缩策略，**Disk 模式生成速度与 Memory 模式完全一致** (~30fps+)，且极大降低 RAM 占用。强烈推荐长视频生成使用！
+---
 
 ### 3. 音频智能处理 (Intelligent Audio Processing)
 
@@ -839,7 +605,7 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 #### 1. 🗣️ VibeVoice TTS (Standard)
 
 - **适用模型**: `VibeVoice-1.5B`, `VibeVoice-7B`
-- **参考音频 (Reference Audio)**: 可选 (`optional`)。如果不连接，将自动使用内置的高品质女声种子 (Fallback Seed) 进行生成。
+- **必选参数**: `reference_audio` (参考音频) - **必须连接**。
 - **功能**: 支持零样本音色克隆 (Zero-shot Cloning)。输入任何音频，它都会模仿该音色。
 - **不支持**: `voice_preset` (预设)。
 
@@ -964,136 +730,18 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
 
 经过深度测试，我们在三个主流模型中整理了以下对比，助您选择最适合的引擎：
 
-| 维度                                     | **VoxCPM 1.5** (800M)                                                                                                                                                    | **CosyVoice 3.0** (0.5B/1.5B)                                          | **VibeVoice** (1.5B/7B)                                   |
-| :--------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------- | :-------------------------------------------------------------- |
-| **音质 (Fidelity)**                | **44.1kHz 格式** `<br>`虽然物理格式为 44.1k，但因采用 **Neural Upsampling** (神经升频) 技术，听感上会有**含混 (Muffled)** 或**金属感**，且伴有底噪。 | **优秀** `<br>`听感最自然，但采样率稍低 (22/24kHz)，有时需 AI 增强。 | **良好** `<br>`主要强在语气自然度，纯音质略逊。         |
-| **推理速度 (Speed)**               | **🚀 冠军 (RTF ~0.17)**`<br>`得益于 Tokenizer-free，极其高效。                                                                                                         | **极快** `<br>`流式响应仅 150ms，且支持 TensorRT 加速。              | **一般/较慢** `<br>`7B 版本较重，更适合离线生成。       |
-| **克隆能力 (Cloning)**             | **SOTA** (Zero-Shot)`<br>`只需 3-10秒，对**音色质感**还原极高。                                                                                                  | **SOTA** (稳定性)`<br>`对**说话韵律/口音**的捕捉最准。         | **良好** `<br>`适合克隆特定语气，而非纯粹音色。         |
-| **多语言/方言**                    | **中/英** (双语优化)                                                                                                                                                     | **👑 霸主** (9种语言 + 18种方言)                                       | **中/英**                                                 |
-| **语音转换 (VC)** (Audio-to-Audio) | ❌**不支持** `<br>`仅支持 TTS (Text-to-Speech)。无法改变已有音频的音色。                                                                                               | ✅**支持** `<br>`可以将任意音频转换为任意音色 (保留语调/停顿)。      | ❌**不支持** `<br>`纯 TTS 模型。仅支持 Text-to-Speech。 |
-| **Qwen3-TTS** (1.7B/0.6B)           | ✅**支持** `<br>`支持 Presets (内置音色) 和 VoiceDesign (描述)。                                                                                                         | ✅**支持** `<br>`支持 3秒极速 Clone (克隆) 模型。                               | ✅**支持** `<br>`支持 10 种语言。                         |
-
-#### 3.13 Qwen3-TTS (New! 🔥)
-
-- **用途**: 阿里巴巴 Qwen 团队推出的最新旗舰级 TTS 模型，支持 10 种主要语言及多种方言，具备极高的稳定性和表现力。
-- **核心能力**:
-  - **Base (Clone)**: 核心能力为 **3秒极速音色克隆**。支持 X-Vector 模式提升稳定性。
-  - **CustomVoice (Presets)**: 阿里巴巴官方提供的 **9 种高品质内置音色** (如 Vivian, Zack 等)，支持极强的情感和方言控制。
-  - **VoiceDesign**: 通过自然语言描述（如“活泼的少女音，带点羞涩”）从零设计音色。
-- **环境要求**:
-  - **qwen-tts**: `pip install qwen-tts` (插件会自动尝试安装)。
-  - **Flash Attention 2**: 强烈推荐以获得最佳推理性能。
-- **节点**:
-  - `🤖 Qwen3-TTS Loader`: 加载模型。支持 `Base (Clone)`、`CustomVoice (Presets)` 和 `VoiceDesign` 模型。
-  - `🗣️ Qwen3-TTS Synthesis`: 执行合成。支持单模型连接或通过 Router 连接的 Bundle。
-  - `🔌 Qwen3-Model Router (Bundle)`: **[新]** 路由节点。将多个分立的 Qwen 模型捆绑成一个，供对话节点自动调用。
-  - `🎙️ Qwen3-TTS Dialogue (Specialist)`: **[旗帜级]** 专为 Qwen3 设计的对话节点。单输入设计，支持通过 Router 实现混合克隆/捏人。
-- **模型列表**:
-  - `Qwen/Qwen3-TTS-12Hz-1.7B-Base` (或 0.6B-Base)
-  - `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` (或 0.6B-CustomVoice)
-  - `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign`
-
-#### 📊 模型功能映射表 (Model Capability Mapping)
-
-| 模型版本 | **音色克隆 (Clone)** | **情感控制 (Emotion)** | **文字捏人 (Design)** | **方言支持 (Dialect)** |
-| :--- | :---: | :---: | :---: | :---: |
-| **Base** (1.7B/0.6B) | **👑 最强** | ❌ 仅限录音自带 | ❌ 不支持 | ⚠️ 仅限录音自带 |
-| **CustomVoice** (1.7B) | ⚠️ 效果极差 | ✅ 支持 | ⚠️ 指令干扰严重 | ⚠️ 效果一般 |
-| **VoiceDesign** (1.7B) | ❌ 不支持 | **👑 专家** | **👑 专家** | **👑 完美支持** |
-| **CustomVoice** (0.6B) | ⚠️ 效果极差 | ✅ 支持 | ✅ 表现优异 | ✅ 表现优异 |
-
-> [!TIP]
-> **关于 UI 简化**：
-> 现在的对话节点只有一个 `qwen_model` 输入槽。
-> - 如果你只需要一种模型，直接连上即可。
-> - 如果你想实现“Speaker A 克隆，Speaker B 捏人”的混合效果，请使用 `🔌 Qwen3-Model Router` 节点进行打包连接。
-
-> [!IMPORTANT]
-> **结论**：
-> 1. 做 **3秒音色克隆**：必须连 `Base` 模型。
-> 2. 说 **方言** 或 **文字定制音色**：优先连 `VoiceDesign`（1.7B）或 `CustomVoice`（0.6B）。
-> 3. 使用 **Vivian/Zack 内置音色**：连接 `CustomVoice` 模型。
-
-**🛠️ 手工下载指南 (Manual Download Guide)**:
-
-如果节点无法自动下载，或您需要在离线环境使用，请手动从 HuggingFace 或 ModelScope 下载模型文件夹，并放入以下目录（文件夹建议保留原名）：
-
-```text
-ComfyUI/models/qwen_tts/Qwen/
-├── Qwen3-TTS-12Hz-1.7B-Base/          <-- 对应 1.7B Base (Clone)
-├── Qwen3-TTS-12Hz-1.7B-CustomVoice/   <-- 对应 1.7B CustomVoice
-├── Qwen3-TTS-12Hz-1.7B-VoiceDesign/   <-- 对应 1.7B VoiceDesign
-├── Qwen3-TTS-12Hz-0.6B-Base/          <-- 对应 0.6B Base (Clone)
-└── Qwen3-TTS-12Hz-0.6B-CustomVoice/   <-- 对应 0.6B CustomVoice/VoiceDesign
-```
-
-**下载命令 (HuggingFace CLI)**:
-
-```bash
-mkdir -p models/qwen_tts/Qwen
-
-# 1.7B 系列
-hf download Qwen/Qwen3-TTS-12Hz-1.7B-Base --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-1.7B-Base
-hf download Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
-hf download Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
-
-# 0.6B 系列
-hf download Qwen/Qwen3-TTS-12Hz-0.6B-Base --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-0.6B-Base
-hf download Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --local-dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
-```
-
-**ModelScope 下载 (国内推荐)**:
-
-```bash
-# 0.6B 示例
-pip install modelscope
-modelscope download --model qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice --local_dir models/qwen_tts/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
-```
-
-> [!NOTE]
-> 对于 **0.6B** 系列，官方目前将 `CustomVoice` 和 `VoiceDesign`（文字设计）能力集成在同一个模型中。因此在设计模式下，加载 `0.6B-CustomVoice` 即可获得极佳效果。
-
-#### 🎭 掌握指令控制 (Instruct Control)
-
-Qwen3-TTS 最强大的特性之一是其**自然语言指令驱动**的能力。与传统的“固定标签”不同，你可以直接在 `instruct` 输入框中用一段描述来控制声音的表现。
-
-**1. 情感与语气控制 (Emotion & Tone)**
-虽然官方没有强制的固定标签列表，但以下描述词被证明效果极佳（支持中文或英文）：
-- **基础情感**: "开心" (Happy), "悲伤" (Sad), "生气" (Angry), "兴奋" (Excited), "温柔" (Gentle), "严肃" (Serious)。
-- **微表情控制 (New!)**: 在 Specialist 节点中，你可以叠加更细腻的语气，如 "带点羞涩的" (With a hint of shyness), "语气充满诱惑力" (Seductive tone), "语气带着哭腔" (Crying tone), "语气充满笑意" (Cheerful tone) 等。
-- **提示**: 这些指令可以组合，例如 `生气且激动的。` 或 `Very happy and excited.`
-
-**2. 语速与节奏 (Prosody)**
-虽然节点有专门的 `speed` 滑块，但通过 `instruct` 可以实现更自然的节奏控制：
-- "语速极快" (Very fast speaking rate), "缓慢且深情地" (Slow and soulful), "中间有明显的停顿" (Dramatic pauses)。
-
-**3. 音色设计 (Voice Design)**
-在加载 **VoiceDesign** 模型时，指令框即为你的“捏人”引擎：
-- **特征描述**: "沙哑的男低音" (Raspy deep male voice), "甜美的少女音" (Sweet young girl's voice), "充满磁性的中年女性" (Magnetic middle-aged female)。
-- **示例**: `A young woman with a clear, bright voice, speaking with great confidence.`
-
-- **示例**: `A young woman with a clear, bright voice, speaking with great confidence.`
-- **方言与口音 (Dialect & Accent)**:
-    - 虽然官方称全系列支持，但实测发现不同模型遵循度不同：
-    - **VoiceDesign (1.7B/0.6B-Custom)**: **👑 效果最强**。因为没有固定身份限制，能完美呈现粤语、上海话等方言的韵律。
-    - **CustomVoice (Presets)**: 效果一般。由于 Vivian 等音色有固定的标准语设定，方言指令常会被弱化以维持音色一致性。
-    - **Base (Clone)**: 效果最弱。主要取决于你的参考音频本身是什么口音。
-
-**4. 使用技巧**:
-- **句尾符号**: 指令末尾建议加一个句号（如 `开心地。`），这有助于模型更稳定地理解指令边界。
-- **对话剧本**: 在 `🎙️ Qwen3-TTS Dialogue (Specialist)` 节点中，如果某位 Speaker 处于 `Preset` 或 `Design` 模式，系统会自动将剧本中的情感标签（如 `[开心]`）转换为对应的 `instruct` 指令。
-
----
-
----
-
-#### 💡 用户实测与选型指南 (Model Comparison & Selection)
+| 维度                                     | **VoxCPM 1.5** (800M)                                                                                                                                                   | **CosyVoice 3.0** (0.5B/1.5B)                                         | **VibeVoice** (1.5B/7B)                                  |
+| :--------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------- | :------------------------------------------------------------- |
+| **音质 (Fidelity)**                | **44.1kHz 格式**`<br>`虽然物理格式为 44.1k，但因采用 **Neural Upsampling** (神经升频) 技术，听感上会有**含混 (Muffled)** 或**金属感**，且伴有底噪。 | **优秀**`<br>`听感最自然，但采样率稍低 (22/24kHz)，有时需 AI 增强。 | **良好**`<br>`主要强在语气自然度，纯音质略逊。         |
+| **推理速度 (Speed)**               | **🚀 冠军 (RTF ~0.17)**`<br>`得益于 Tokenizer-free，极其高效。                                                                                                        | **极快**`<br>`流式响应仅 150ms，且支持 TensorRT 加速。              | **一般/较慢**`<br>`7B 版本较重，更适合离线生成。       |
+| **克隆能力 (Cloning)**             | **SOTA** (Zero-Shot)`<br>`只需 3-10秒，对**音色质感**还原极高。                                                                                                 | **SOTA** (稳定性)`<br>`对**说话韵律/口音**的捕捉最准。        | **良好**`<br>`适合克隆特定语气，而非纯粹音色。         |
+| **多语言/方言**                    | **中/英** (双语优化)                                                                                                                                                    | **👑 霸主** (9种语言 + 18种方言)                                      | **中/英**                                                |
+| **语音转换 (VC)** (Audio-to-Audio) | ❌**不支持**`<br>`仅支持 TTS (Text-to-Speech)。无法改变已有音频的音色。                                                                                               | ✅**支持**`<br>`可以将任意音频转换为任意音色 (保留语调/停顿)。      | ❌**不支持**`<br>`纯 TTS 模型。仅支持 Text-to-Speech。 |
 
 **选型建议**:
 
 - **追求“听起来最像真人” (音质+音色)**: 选 **VoxCPM 1.5**。它的 Tokenizer-free 架构带来了质的飞跃。
 - **追求“方言/多语言/稳定性”**: 选 **CosyVoice 3.0**。目前依然是生产环境最稳的选择。
-- **追求“多样化音色设计/最新 Qwen 生态/长语音流畅度”**: 选 **Qwen3-TTS**。其 VoiceDesign 功能能让你用描述语“捏”出从未听过的声音。
 - **要做“长篇广播剧/播客”**: 选 **VibeVoice**。它的长窗口上下文优势依然不可替代。
 
 ### 4. 播客与对话生成 (Podcast & Dialogue Generation)
@@ -1122,71 +770,29 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 
 - **TTS Engine**: 后端引擎选择。
   - **CosyVoice**: 精准控制型。
-  - **Qwen3-TTS**: 万能旗舰型。支持混合模式：通过连接多个 Qwen 模型，可实现在一个对话中同时使用克隆和内置音色。
-- **Qwen Model Pins (Multi-Routing)**:
-  - `qwen_model`: 默认主模型。
-  - `qwen_base_model` (可选): 连接 `Base` 模型，专门处理有参考音频 (Clone) 的角色。
-  - `qwen_custom_model` (可选): 连接 `Custom` 模型，专门处理使用内置 ID (Presets) 的角色。
-  - `qwen_design_model` (可选): 连接 `VoiceDesign` 模型，专门处理复杂描述的角色。
+  - **VibeVoice**: 自然演绎型。
+- **Speaker A/B/C**:
   - **Ref Audio**: 参考音频 (用于 Zero-Shot 克隆)。
   - **ID**: 内置音色 ID (如 CosyVoice 的 `Chinese Female`)。
 - **Batch Mode**: 生成模式控制。
   - `Natural (Hybrid)`: 混合批处理。仅在 `(Pause)` 处断开。语流最自然，但可能发生音色泄漏。
   - `Strict (Per-Speaker)`: 严格模式。每句话都会强制断开重置。彻底杜绝音色泄漏，但对话流畅度略低。
   - `Whole (Single Batch)`: 全量模式。无视所有暂停，一次性生成整本剧本。连贯性最强，但无法控制停顿时间。
-- **Batching Parameters**:
-  - `max_batch_char` (Default 1500): 单次批处理的最大字符上限。增加此值可大幅提升 Qwen3 的对话连贯性和情感一致性。最高支持模型上限 **32,768**。
-- **Emotion Safeguard (New!)**:
-  - **智能检测**: 系统会自动嗅探加载模型的元数据。如果你使用 CosyVoice SFT/Base 或 VibeVoice 等不支持 `Instruct` 功能的模型，系统将自动跳过 `[Emotion]` 标签插入，防止模型读出方括号。
 
-#### 4.6 AIIA Qwen Dialogue TTS (Qwen 旗舰对话节点)
-
-**[v1.11.0 New]** 深度集成 Qwen3-TTS 的多模式特性，支持复杂的混合角色场景。
-
-- **Parameters**: 
-  - `seed`: 随机种子。
-  - `speed`: 语速调节。
-  - `cfg_scale`: 指令遵循强度 (Classifier-Free Guidance)。建议值 1.5 - 7.0。
-  - `emotion`: **[v1.11.1 New]** 选中预设情感（开心、悲伤、幽默、愤怒等系统预置微调）。
-  - `dialect`: **[v1.11.1 New]** 选中预设方言（粤语、上海话、东北话、四川话等）。
-  - `temperature`: 采样温度。
-  - `max_batch_char`: 单次批处理上限（最高 32,768）。
-- **Speaker A/B/C Configuration**:
-  - **Mode**: 选择 `Clone` (音色克隆)、`Preset` (官方预设) 或 `Design` (文字设计)。
-  - **ID**: 当模式为 Preset 时，输入预设音色名 (如 `Vivian`, `Serena`, `Uncle_Fu`, `Dylan`, `Eric`, `Ryan`, `Aiden`, `Ono_Anna`, `Sohee`)。
-  - **Expression**: (New!) 为当前角色选择专属微表情描述。
-  - **Dialect**: **[v1.11.1 New]** 为当前角色选择方言/口音（支持粤语、上海话、四川话、东北话等）。
-  - **Design Description**: 当模式为 Design 时，输入对音色的详细自然语言描述。
-  - **Ref Audio**: 当模式为 Clone 时，连接参考音频。
-- **特点**: 相对于通用对话节点，此节点能根据每个人的模式自动路由到最合适的 Qwen 引擎，且支持在 UI 直接输入设计描述。
-
-#### 4.7 AIIA Subtitle Gen (字幕生成器)
+#### 4.3 AIIA Subtitle Gen (字幕生成器)
 
 **[v1.7.0 New]** 无需 STT，直接从生成过程中提取精准时间轴。
 
 - **Input**:
-  - `segments_info`: 来自 `AIIA Dialogue TTS` 或 `AIIA Generate Segments` 的输出。
-  - `calibration_info` (可选): **[v1.10.2 新增]** 接入 `AIIA Generate Speaker Segments` 的输出。用于将估算的时间轴自动“吸附”到真实的 VAD 语音活动区间，解决 VibeVoice 等批处理引擎的时间轴偏移问题。
+  - `segments_info`: 来自 `AIIA Dialogue TTS` 的输出。
 - **Output**:
   - `SRT`: 通用字幕格式。
   - `ASS`: 高级排版字幕格式 (自动区分角色颜色)。
 - **原理**:
   - **CosyVoice**: 使用生成时的精确时长。
   - **VibeVoice**: 使用**智能插值算法 (Smart Interpolation)**，根据字符长度自动计算长音频段内的单句时间轴。
-  - **Qwen3-TTS**: 基于生成的音频振幅精准断句，支持多角色时间轴导出。
 
-#### 4.4 AIIA Subtitle to Segments (字幕转分段)
-
-**[v1.10.3 New]** 将现有的 SRT/ASS 字幕文件转换为 `segments_info` 格式，以便进行时间轴重新校准。
-
-- **Input**:
-  - `subtitle_text`: SRT 或 ASS 格式的文本内容。
-  - `subtitle_path` (可选): 字幕文件的本地路径（如果提供，将优先读取文件）。
-- **Output**:
-  - `segments_info`: 标准化的 JSON 字符串，可直接输入到 `AIIA Subtitle Gen`。
-- **用途**: 结合 `Subtitle Gen` 的 `calibration_info` 输入，可以将**旧的、不准的字幕**自动对齐到**新的、精准的音轨**上。
-
-#### 4.5 AIIA Subtitle Preview (字幕预览)
+#### 4.4 AIIA Subtitle Preview (字幕预览)
 
 **[v1.7.1 New]** 实时校验音画同步效果。
 
@@ -1199,31 +805,100 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
 
 #### 4.5 Interactive Teaching (Web Export) (互动式教学导出)
 
+> [!TIP]
+> **音色泄漏问题？** 如果 VibeVoice 在多角色对话中出现音色混串（Speaker Leakage），请使用下方的 **4.6-4.8 防泄漏管线** 代替直接使用 Dialogue TTS 节点。
+
 **[v1.8.1 New]** 将播客升级为视听同步的互动网页。支持“读写分离”的缓存优化，修改 Visual 标签无需重跑 TTS。
 
 - **工作流 (Workflow)**:
-  1. `Script Parser` 输出 `tts_data` (连接到 TTS) 和 `full_script` (连接到 Merge)。
-  2. `AIIA Dialogue TTS` 生成音频和 `segments_info`。
-  3. `AIIA Segment Merge` 将 `full_script` 中的 Visual 标签重新贴回到 `segments_info` 时间轴上。
-  4. `AIIA Web Export` 生成最终 HTML。
+    1.  `Script Parser` 输出 `tts_data` (连接到 TTS) 和 `full_script` (连接到 Merge)。
+    2.  `AIIA Dialogue TTS` 生成音频和 `segments_info`。
+    3.  `AIIA Segment Merge` 将 `full_script` 中的 Visual 标签重新贴回到 `segments_info` 时间轴上。
+    4.  `AIIA Web Export` 生成最终 HTML。
 - **Input**:
-  - `audio`: 音频信号。
-  - `segments_info`: 来自 Merge 节点的包含 Visual 信息的 JSON。
-  - `template`: `Split Screen` (适合宽屏) 或 `Presentation` (适合演示)。
+    - `audio`: 音频信号。
+    - `segments_info`: 来自 Merge 节点的包含 Visual 信息的 JSON。
+    - `template`: `Split Screen` (适合宽屏) 或 `Presentation` (适合演示)。
 - **Visual Tag 语法**:
-  - 在剧本中插入 `(Visual: url)`。
-  - 支持绝对 URL: `(Visual: https://example.com)`
-  - 支持相对路径: `(Visual: ./slides/01.jpg)` (相对于导出 HTML 的位置)
+    - 在剧本中插入 `(Visual: url)`。
+    - 支持绝对 URL: `(Visual: https://example.com)`
+    - 支持相对路径: `(Visual: ./slides/01.jpg)` (相对于导出 HTML 的位置)
+
+#### 4.6 🎙️ AIIA ASR (通用语音识别)
+
+**[v1.9.0 New]** 基于 FunASR 的通用语音识别节点，提供**字级时间戳**，是防泄漏管线的核心组件。
+
+- **Input**:
+  - `audio`: 待识别的音频信号。
+  - `model`: 选择 ASR 模型（自动扫描 `ComfyUI/models/funasr/` 目录）。
+  - `device`: `cuda` 或 `cpu`。
+  - `batch_size_s`: 动态 batch 大小（秒），越大越快但越占显存。
+  - `hotword` (可选): 热词列表，提高特定词汇识别率。
+- **Output**:
+  - `asr_result` (`ASR_RESULT`): 包含 `text`（完整文本）和 `words`（词级时间戳列表 `[{word, start, end}]`，单位：秒）。
+  - `text` (`STRING`): 识别出的纯文本。
+- **支持模型**:
+  | 模型 | 语言 | 时间戳 | 大小 |
+  |------|------|--------|------|
+  | **paraformer-zh** | 中文（含中英混合） | ✅ 字级 | ~950MB |
+  | SenseVoiceSmall | 中/英/日/韩/粤 | ❌ | ~450MB |
+- **特性**:
+  - 🔄 模型缓存：加载一次，后续调用直接复用。
+  - 🎵 自动重采样：非 16kHz 音频自动转换。
+  - 📝 热词增强：提高专业术语识别率（仅 Paraformer）。
+
+#### 4.7 ✂️ AIIA Podcast Splitter (文本拆分)
+
+**[v1.9.0 New]** 将多角色对话脚本按说话人拆分为独立文本段，用于分轨 TTS。
+
+- **Input**:
+  - `dialogue_json`: 来自 `Script Parser` 的 `dialogue_json` 输出。
+- **Output**:
+  - `speaker_A_text`: Speaker A 的所有台词拼接（换行分隔）。
+  - `speaker_B_text`: Speaker B 的所有台词拼接（换行分隔）。
+  - `split_map`: 原始对话顺序映射 JSON（记录每句话的说话人、索引、文本）。
+- **原理**: 解析对话 JSON，按出场顺序将前两个说话人分别归为 A/B，保留 `(Pause)` 暂停信息。
+
+#### 4.8 🧵 AIIA Podcast Stitcher (音频拼接)
+
+**[v1.9.0 New]** 利用 ASR 时间戳精确切分分轨音频，按原始对话顺序重组为最终播客。**彻底消除 VibeVoice 的音色泄漏问题。**
+
+- **Input**:
+  - `split_map`: 来自 Splitter 的顺序映射。
+  - `audio_A` / `audio_B`: 分别为两个说话人独立生成的 TTS 音频。
+  - `asr_A` / `asr_B`: 分别对应的 ASR 识别结果（含字级时间戳）。
+  - `gap_duration`: 说话人交替时插入的静音时长（默认 0.3s）。
+  - `padding`: 每个切片前后保留的余量，保护呼吸声和尾音（默认 0.05s）。
+- **Output**:
+  - `audio`: 最终拼接好的完整播客音频。
+  - `segments_info`: 包含每个语音段时间轴的 JSON（可直接用于字幕生成）。
+- **核心算法**:
+  1. **文本-ASR 字符对齐**: 将 ASR 词级文本与原始句子逐字匹配，精确定位每句话在音频中的起止时间。
+  2. **边界扩展到中点**: 切割点扩展到相邻句间隙的中点，避免截断尾音。
+  3. **模糊匹配回退**: ASR 识别与原文不完全一致时，使用前缀模糊匹配。
+  4. **等分回退**: ASR 完全失败时，按字符数等比例分配时间。
+
+#### 🔗 防泄漏管线连线方式 (Anti-Leakage Pipeline)
+
+```text
+                              ┌─ speaker_A_text → VibeVoice TTS (A) → audio_A → ASR → asr_A ─┐
+Script Parser → Splitter ─────┤                                                               ├→ Stitcher → Final Audio
+                              ├─ speaker_B_text → VibeVoice TTS (B) → audio_B → ASR → asr_B ─┘
+                              └─ split_map ──────────────────────────────────────────────────────→
+```
+
+> [!IMPORTANT]
+> **关键原理**: 每个说话人的音频由独立的 TTS 节点生成（各自使用不同的参考音频），从根本上杜绝了音色泄漏。Stitcher 节点再利用 ASR 时间戳精确地将各段重新交错拼接，还原原始对话节奏。
 
 #### 💡 引擎选型与最佳实践 (Best Practices)
 
-| 特性               | **CosyVoice**                        | **VibeVoice**                                                                              | **Qwen3-TTS**                               |
-| :----------------- | :----------------------------------------- | :----------------------------------------------------------------------------------------------- | :------------------------------------------ |
-| **核心优势** | **精准控制 (Instruction)**           | **自然演绎 (Context-Aware)**                                                               | **万能旗舰 (Voice Design)**                 |
-| **情感控制** | ✅**支持** (使用 `[Happy]` 等标签) | ❌ 不支持显式标签 (依赖上下文)                                                                   | ✅**支持** (通过 `instruct` 或标签) |
-| **生成逻辑** | **逐句生成** (严格遵循每句话的指令)  | **混合批处理** (Hybrid Batching)                                                           | **动态引擎** (支持流式与批处理)             |
-| **最佳场景** | 需要精确指定某句话语气、方言时             | 长篇对话、广播剧、闲聊                                                                           | 音色定制、高质量配音、极速克隆              |
-| **使用建议** | 可以在剧本中详细标注情感。                 | **尽量减少 `(Pause)`**！`<br>`让多句对话连在一起，模型能更好地联系上下文产生自然语气。 | 尝试使用其 Voice Design 进行创意捏人。      |
+| 特性               | **CosyVoice**                        | **VibeVoice**                                                                              |
+| :----------------- | :----------------------------------------- | :----------------------------------------------------------------------------------------------- |
+| **核心优势** | **精准控制 (Instruction)**           | **自然演绎 (Context-Aware)**                                                               |
+| **情感控制** | ✅**支持** (使用 `[Happy]` 等标签) | ❌ 不支持显式标签 (依赖上下文)                                                                   |
+| **生成逻辑** | **逐句生成** (严格遵循每句话的指令)  | **混合批处理** (Hybrid Batching)                                                           |
+| **最佳场景** | 需要精确指定某句话语气、方言时             | 长篇对话、广播剧、闲聊                                                                           |
+| **使用建议** | 可以在剧本中详细标注情感。                 | **尽量减少 `(Pause)`**！`<br>`让多句对话连在一起，模型能更好地联系上下文产生自然语气。 |
 
 #### 📝 综合测试剧本 (Example Script)
 
@@ -1273,38 +948,7 @@ B: 太神奇了！那我们快去生成试试吧！
   - 可自动调整其中一个图像序列的尺寸以匹配另一个，并保持宽高比。
   - 可自定义背景填充颜色。
 - **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
-
-#### AIIA Image Smart Crop (智能图像裁切)
-
-- **用途**: 一个功能全面的智能裁切节点，专为解决人脸比例、视频构图等问题设计。
-- **场景**: 强烈建议在 **Ditto Sampler** 或其他视频生成节点之前使用，以确保输入图像（特别是人脸）处于最佳位置和比例，避免“嘴巴太大”或“五官漂移”等问题。
-- **参数**:
-  - `crop_basis`: 裁切基准。
-    - `fixed_width` / `fixed_height`: 锁定一条边 (使用 width/height 参数)，另一条边自适应。
-    - `fixed_long_side`: **匹配原图长边**。裁切出的长边长度等于原图长边长度 (忽略 width/height 参数)。
-    - `fixed_short_side`: **匹配原图短边**。裁切出的短边长度等于原图短边长度 (忽略 width/height 参数)。适合“最大化裁切”。
-    - `custom_size`: 强制裁切为指定的 `width` x `height`。
-  - `aspect_ratio`: 裁切比例。
-    - 默认为 `original` (保持原图比例或使用 custom_size 的宽高)。
-    - 可选 `1:1`, `16:9`, `custom` 等。
-    - 选择非 original 时，会根据 `crop_basis` 自动计算另一条边的长度。
-  - `custom_aspect_ratio`: 自定义比例值 (例如 2.35)。仅在 `aspect_ratio` 选 `custom` 时生效。
-  - `position`: 锚点位置 (九宫格)。支持 `center`, `top`, `bottom_left` 等。
-  - `offset_x` / `offset_y`: 相对偏移量。用于在自动定位的基础上进行微调 (范围 -1.0 到 1.0)。
-- **输出**: `IMAGE` (裁切后的图像)。
-
----
-
-### 6. 调试与实用工具 (Debug & Utilities)
-
-#### 6.1 文本调试拼接 (Text Debug Splicer)
-
-- **用途**: 方便地将多段文本拼接为一个字符串，支持自定义标题和分隔符，常用于构建和调试复杂的 Prompt 或记录中间结果。
-- **功能**:
-  - **多路输入**: 支持最多 3 路文本输入 (`text_1`~`3`) 和自定义标题 (`title`)。
-  - **灵活分隔**: 内置多种常用分隔符 (换行、分割线等)。
-  - **自动归档**: 支持将拼接结果自动保存为 `.txt` 文件，文件名支持**自定义前缀** (save_prefix)，方便回溯。
-- **输出**: `STRING` (拼接后的文本)。
+- **输出**: `STRING` (包含所有拼接后帧的新目录路径)。
 
 ---
 
@@ -1323,63 +967,14 @@ B: 太神奇了！那我们快去生成试试吧！
 
 ## Changelog
 
-### [1.11.0] - 2026-02-04
+### [1.9.0] - 2026-02-15
 
-- **Qwen3-TTS**: 新增阿里巴巴 **Qwen3-TTS** 全系列支持。
-  - **🤖 Qwen3-TTS Loader**: 支持加载 Base, CustomVoice, VoiceDesign 及其 1.7B/0.6B 版本。
-  - **🗣️ Qwen3-TTS Synthesis**: 实现全功能生成，包括 Zero-shot 克隆、音色设计和内置音色合成。
-- **Podcast Integration**: **AIIA Dialogue TTS** 节点现在正式集成 Qwen3-TTS 引擎。
-  - 支持多角色混合场景下的 Qwen3 驱动，支持使用脚本标签触发 `instruct`。
-- **Auto-Dependency**: 首次运行 Qwen3 节点会自动检测并安装 `qwen-tts` 库。
-
-### [1.10.17] - 2026-02-03
-
-- **Subtitle**: 引入“说话人 ID 为了映射 (Speaker Mapping)”机制。
-  - 在字幕校准过程中，系统会建立脚本角色与 VAD 检测角色的对应关系。这确保了即使在短句重叠（Spillover）的情况下，字幕也能强制匹配到正确的说话人音频，避免被相邻的音量大/时长长的角色“抢走”。
-
-### [1.10.16] - 2026-02-02
-
-- **Subtitle**: 优化了多片段合并逻辑，引入“贪婪说话人占用”原则。
-  - 对于同一说话人的连续音频片段，只要中间没有被其他说话人占用且停顿小于 3s，都会自动合并到当前行字幕中。解决多句/长句被意外截断的问题。
-
-### [1.10.15] - 2026-02-02
-
-- **Subtitle**: 修复了字幕时间校准逻辑中的 Bug。
-  - 增加了说话人一致性检查，防止上一句音频片段（VAD Chunk）被错误地共享给下一个不同说话人的句子，从而导致当前句字幕被截断。
-
-### [1.10.14] - 2026-02-02
-
-- **Ditto Sampler**: 修复了由于 `comfy.model_management` 接口版本差异导致的 `AttributeError`。
-
-### [1.10.13] - 2026-02-02
-
-- **Ditto Sampler**: 修复了采样过程中无法正常响应 ComfyUI 中断/取消信号的问题。
-  - 为所有工作线程增加了超时检测和状态轮询，支持在长任务执行期间即时退出。
-
-### [1.10.12] - 2026-02-02
-
-- **Debug & Utilities**: 新增 **Text Debug Splicer** 节点。
-  - 支持多路文本拼接、自定义分隔符和自动文件归档。
-
-### [1.9.0] - 2026-01-20
-
-- **Ditto Talking Head**: 新增 Ditto 模型支持 (PyTorch 版)。
-  - **AIIA Ditto Loader**: 支持自动下载与加载。
-  - **AIIA Ditto Sampler**: 支持内存内流式生成。
-- **EchoMimic V3**: 优化了音频同步逻辑，修复了唇形漂移问题。
-
-### [1.8.4] - 2026-01-19
-
-- **VibeVoice Speed Control**: 实现了基于系统 `sox` 命令的**变速不变调**（Time Stretching）。
-- **稳定性修复**:
-  - 修复了 VibeVoice 在调整速度时由于张量类型不匹配（Half vs Float）导致的崩溃。
-  - 强制所有音频输出为 `float32`，解决了在 `speed=1.0` 且有参考音频时，下游节点（如 Resemble Enhance）报错的问题。
-- **依赖更新**: 新增 `sox` 依赖。Linux 服务器用户请确保安装系统库：`sudo apt-get install libsox-dev sox`。
-
-### [1.8.3] - 2026-01-07
-
-- **VibeVoice TTS (Standard)**: `reference_audio` 变为可选参数。如果不输入，节点会自动加载内置的高品质女声种子，方便快速测试。
-- **Fix**: 修复 GitHub Actions 发布的子模块错误。
+- **防音色泄漏管线 (Anti-Leakage Pipeline)**: 新增 3 个节点，彻底解决 VibeVoice 多角色对话中的音色混串问题。
+  - **🎙️ AIIA ASR**: 通用语音识别节点，基于 FunASR Paraformer，提供字级时间戳。
+  - **✂️ AIIA Podcast Splitter**: 按说话人拆分对话脚本，输出分轨文本和顺序映射。
+  - **🧵 AIIA Podcast Stitcher**: 利用 ASR 时间戳精确切分分轨音频，按原始对话顺序重组。
+- **Speaker Tag 优化**: VibeVoice 的说话人标签从 `Speaker N:` 改为 `[N]:` 格式，减少注意力泄漏。
+- **FunASR 模型支持**: 支持 Paraformer-zh（中文/字级时间戳）和 SenseVoiceSmall（多语言）。
 
 ### [1.8.1] - 2026-01-05
 

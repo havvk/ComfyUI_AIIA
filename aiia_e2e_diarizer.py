@@ -181,36 +181,11 @@ class AIIA_E2E_Speaker_Diarization:
         if not model_path:
             return (self._assign_speakers_to_chunks(whisper_chunks, [{"start":0, "end":0, "speaker":f"error_model_not_found_{backend_model}"}]),)
         
-        if audio is None:
-             print("错误: [AIIA E2E Diarization] 音频数据为 None")
-             return (self._assign_speakers_to_chunks(whisper_chunks, [{"start":0, "end":0, "speaker":"error_no_audio"}]),)
-             
-        # Handle cases where audio might be passed as a single-item list
-        if isinstance(audio, list) and len(audio) > 0:
-            audio = audio[0]
-
-        # Try to treat as a dictionary or object with waveform/sample_rate
-        try:
-            waveform = audio["waveform"]
-            sample_rate = audio["sample_rate"]
-        except (KeyError, TypeError):
-             try:
-                 waveform = getattr(audio, "waveform", None)
-                 sample_rate = getattr(audio, "sample_rate", None)
-             except:
-                 waveform, sample_rate = None, None
-
-        if waveform is None or sample_rate is None:
-            print(f"错误: [AIIA E2E Diarization] 音频数据格式错误: 无法获取 waveform 或 sample_rate (输入类型: {type(audio)})")
-            return (self._assign_speakers_to_chunks(whisper_chunks, [{"start":0, "end":0, "speaker":"error_no_audio"}]),)
-
-        # Ensure waveform is a tensor and sample_rate is a number
-        if not isinstance(waveform, torch.Tensor) or not isinstance(sample_rate, (int, float)):
-             print(f"错误: [AIIA E2E Diarization] 音频数据类型错误: waveform={type(waveform)}, sample_rate={type(sample_rate)}")
-             return (self._assign_speakers_to_chunks(whisper_chunks, [{"start":0, "end":0, "speaker":"error_no_audio"}]),)
-
-        if waveform.ndim < 1:
-            print("错误: [AIIA E2E Diarization] 音频波形维度不足")
+        if audio is None or not isinstance(audio, dict) or \
+           "waveform" not in audio or not isinstance(audio["waveform"], torch.Tensor) or \
+           "sample_rate" not in audio or not isinstance(audio["sample_rate"], int) or \
+           audio["waveform"].ndim < 1:
+            print("错误: [AIIA E2E Diarization] 音频数据缺失、格式不正确或无效。")
             return (self._assign_speakers_to_chunks(whisper_chunks, [{"start":0, "end":0, "speaker":"error_no_audio"}]),)
         
         if not isinstance(whisper_chunks, dict) or not isinstance(whisper_chunks.get("chunks"), list) :

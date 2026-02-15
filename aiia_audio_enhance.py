@@ -624,13 +624,6 @@ class AIIA_Audio_Enhance:
                  new_splice_info["sample_rate"] = result_sr
                  new_splice_info["scale_factor"] = scale
 
-        # Cleanup: Move global enhancer to CPU
-        try:
-             if _cached_enhancer is not None:
-                 _cached_enhancer.to("cpu")
-             torch.cuda.empty_cache()
-        except: pass
-
         return ({"waveform": processed_wav, "sample_rate": result_sr}, new_splice_info)
 
 NODE_CLASS_MAPPINGS = {

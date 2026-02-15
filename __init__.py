@@ -53,9 +53,13 @@ else:
                 NODE_DISPLAY_NAME_MAPPINGS.update(module_object.NODE_DISPLAY_NAME_MAPPINGS)
                 
         except ImportError as e_import:
+            import traceback
             print(f"错误: 导入 {module_alias_for_log} ({module_name_relative}) 失败: {e_import}")
+            traceback.print_exc()
         except Exception as e_generic:
+            import traceback
             print(f"错误: 在 {module_alias_for_log} ({module_name_relative}) 导入或处理过程中发生错误: {e_generic}")
+            traceback.print_exc()
 
 
     # 1. 处理 aiia_float_nodes.py
@@ -124,20 +128,29 @@ else:
     # 21. 处理 aiia_web_export_nodes.py (新增网页导出)
     _load_nodes_from_module(".aiia_web_export_nodes", "aiia_web_export_nodes")
 
-    # 22. 处理 aiia_echomimic_nodes.py (新增 EchoMimic V3)
-    _load_nodes_from_module(".aiia_echomimic_nodes", "aiia_echomimic_nodes")
-
-    # 23. 处理 aiia_ditto_nodes.py (新增 Ditto)
-    _load_nodes_from_module(".aiia_ditto_nodes", "aiia_ditto_nodes")
-
-    # 24. 处理 aiia_image_nodes.py (新增 Smart Crop)
-    _load_nodes_from_module(".aiia_image_nodes", "aiia_image_nodes")
-
-    # 25. 处理 aiia_debug_nodes.py (新增调试节点)
+    # 22. 处理 aiia_debug_nodes.py
     _load_nodes_from_module(".aiia_debug_nodes", "aiia_debug_nodes")
 
-    # 26. 处理 aiia_qwen_nodes.py (新增 Qwen3-TTS)
+    # 23. 处理 aiia_ditto_nodes.py (Ditto TTS)
+    _load_nodes_from_module(".aiia_ditto_nodes", "aiia_ditto_nodes")
+
+    # 24. 处理 aiia_echomimic_nodes.py (EchoMimic)
+    _load_nodes_from_module(".aiia_echomimic_nodes", "aiia_echomimic_nodes")
+
+    # 25. 处理 aiia_image_nodes.py (图像工具)
+    _load_nodes_from_module(".aiia_image_nodes", "aiia_image_nodes")
+
+    # 26. 处理 aiia_qwen_nodes.py (Qwen 模型)
     _load_nodes_from_module(".aiia_qwen_nodes", "aiia_qwen_nodes")
+
+    # 27. 处理 aiia_asr_nodes.py (ASR 语音识别)
+    _load_nodes_from_module(".aiia_asr_nodes", "aiia_asr_nodes")
+
+    # 23. 处理 aiia_podcast_splitter.py (播客文本拆分)
+    _load_nodes_from_module(".aiia_podcast_splitter", "aiia_podcast_splitter")
+
+    # 24. 处理 aiia_podcast_stitcher.py (播客音频拼接)
+    _load_nodes_from_module(".aiia_podcast_stitcher", "aiia_podcast_stitcher")
 
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
