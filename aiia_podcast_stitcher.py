@@ -818,6 +818,7 @@ class AIIA_Podcast_Stitcher:
                         iou_vad_energy = self._compute_iou(vad_start, vad_end, energy_start, energy_end)
                         
                         print(f"{log} 🔬 {speaker}[{sent_local_idx}] "
+                              f"✂️ USED=[{cut_start:.3f},{cut_end:.3f}] "
                               f"FA=[{fa_start:.3f},{fa_end:.3f}] "
                               f"VAD=[{vad_start:.3f},{vad_end:.3f}] "
                               f"Energy=[{energy_start:.3f},{energy_end:.3f}] | "
