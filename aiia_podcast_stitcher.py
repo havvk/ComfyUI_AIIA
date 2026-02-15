@@ -35,6 +35,10 @@ class AIIA_Podcast_Stitcher:
                     "default": 30, "min": 5, "max": 100, "step": 5,
                     "tooltip": "切片首尾的余弦淡入淡出时长（毫秒），越长越平滑"
                 }),
+                "use_vad": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "启用 Silero VAD 模型精确检测语音边界（首次使用自动下载 ~2MB 模型）"
+                }),
             }
         }
 
@@ -310,6 +314,98 @@ class AIIA_Podcast_Stitcher:
 
         return filled
 
+    # ========== Silero VAD ==========
+    _vad_model = None
+    _vad_utils = None
+
+    @classmethod
+    def _load_vad_model(cls):
+        """懒加载 Silero VAD 模型（类级单例，只下载一次）。"""
+        if cls._vad_model is not None:
+            return cls._vad_model, cls._vad_utils
+        try:
+            model, utils = torch.hub.load(
+                repo_or_dir='snakers4/silero-vad',
+                model='silero_vad',
+                force_reload=False,
+                onnx=False
+            )
+            cls._vad_model = model
+            cls._vad_utils = utils
+            print(f"[{cls.__name__}] Silero VAD 模型加载成功")
+            return model, utils
+        except Exception as e:
+            print(f"[{cls.__name__}] Silero VAD 加载失败: {e}")
+            return None, None
+
+    def _get_vad_timestamps(self, wav_np, sr, vad_model, vad_utils):
+        """
+        对完整音频运行 Silero VAD，返回语音区间列表 [{start: float, end: float}, ...]（单位：秒）。
+        """
+        get_speech_timestamps = vad_utils[0]
+        
+        # Silero VAD 要求 16kHz
+        vad_sr = 16000
+        wav_tensor = torch.from_numpy(wav_np).float()
+        if sr != vad_sr:
+            import torchaudio
+            wav_tensor = torchaudio.functional.resample(wav_tensor, sr, vad_sr)
+        
+        # 运行 VAD
+        timestamps = get_speech_timestamps(
+            wav_tensor, vad_model,
+            sampling_rate=vad_sr,
+            threshold=0.3,              # 灵敏度（TTS 干净音频可以略低）
+            min_speech_duration_ms=100,  # 最短语音段 100ms
+            min_silence_duration_ms=50,  # 最短静音段 50ms
+            speech_pad_ms=20,            # 语音两侧填充 20ms
+            return_seconds=True
+        )
+        
+        return timestamps  # [{start: float, end: float}, ...]
+
+    def _refine_with_vad(self, cut_start, cut_end, vad_timestamps, search_margin=0.2):
+        """
+        用 VAD 区间精修 cut_start/cut_end。
+        
+        策略：找到与 [cut_start, cut_end] 重叠最大的 VAD 语音区间，
+        用该区间的起止替代 ASR+扩展 得到的粗边界。
+        """
+        if not vad_timestamps:
+            return cut_start, cut_end
+        
+        # 查找与当前切片重叠的 VAD 区间
+        best_overlap = 0
+        best_vad = None
+        
+        for vad in vad_timestamps:
+            # 计算重叠
+            overlap_start = max(cut_start - search_margin, vad['start'])
+            overlap_end = min(cut_end + search_margin, vad['end'])
+            overlap = max(0, overlap_end - overlap_start)
+            
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_vad = vad
+        
+        if best_vad is None:
+            return cut_start, cut_end
+        
+        # 如果 VAD 区间的边界在 ASR 边界附近，使用 VAD 的精确边界
+        vad_start = best_vad['start']
+        vad_end = best_vad['end']
+        
+        # cut_start: 取 VAD start 但不能比原始 cut_start 晚太多（避免切掉气口）
+        if abs(vad_start - cut_start) < search_margin:
+            cut_start = vad_start
+        
+        # cut_end: 取 VAD end 但不能比原始 cut_end 远太多（避免吃下一句）
+        if abs(vad_end - cut_end) < search_margin:
+            cut_end = vad_end
+        
+        return cut_start, cut_end
+
+    # ========== 能量检测（Fallback） ==========
     def _refine_cut_point(self, wav, sr, time_s, search_radius=0.15, direction="both"):
         """
         在 time_s 附近找到能量最低的"静音山谷"作为切割位置。
@@ -397,7 +493,7 @@ class AIIA_Podcast_Stitcher:
         return boundaries
 
     def stitch(self, split_map, audio_A, audio_B, asr_A, asr_B,
-               gap_duration=0.25, padding=0.10, fade_ms=30):
+               gap_duration=0.25, padding=0.10, fade_ms=30, use_vad=False):
         log = f"[{self.NODE_NAME}]"
 
         # 解析 split_map
@@ -417,6 +513,20 @@ class AIIA_Podcast_Stitcher:
         sr = sr_A
         if sr_A != sr_B:
             print(f"{log} 警告: sr_A={sr_A} != sr_B={sr_B}, 使用 sr_A")
+
+        # VAD 模式：提前对每个说话人的完整音频运行 VAD
+        vad_timestamps_A = None
+        vad_timestamps_B = None
+        if use_vad:
+            vad_model, vad_utils = self._load_vad_model()
+            if vad_model is not None:
+                print(f"{log} 使用 Silero VAD 精确边界检测...")
+                vad_timestamps_A = self._get_vad_timestamps(wav_A, sr_A, vad_model, vad_utils)
+                vad_timestamps_B = self._get_vad_timestamps(wav_B, sr_B, vad_model, vad_utils)
+                print(f"{log} VAD 检测到 A={len(vad_timestamps_A)} 段语音, B={len(vad_timestamps_B)} 段语音")
+            else:
+                print(f"{log} VAD 加载失败，回退到能量检测")
+                use_vad = False
 
         print(f"{log} Audio A: {duration_A:.2f}s, Audio B: {duration_B:.2f}s, SR: {sr}")
 
@@ -493,9 +603,13 @@ class AIIA_Podcast_Stitcher:
             cut_start = boundary.get("cut_start", boundary["start"])
             cut_end = boundary.get("cut_end", boundary["end"])
 
-            # 基于能量的边界微调（平滑能量包络 + 方向性搜索）
-            cut_start = self._refine_cut_point(wav, sr, cut_start, search_radius=0.15, direction="before")
-            cut_end = self._refine_cut_point(wav, sr, cut_end, search_radius=0.10, direction="both")
+            # 边界微调：VAD 或能量检测
+            if use_vad:
+                vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
+                cut_start, cut_end = self._refine_with_vad(cut_start, cut_end, vad_ts)
+            else:
+                cut_start = self._refine_cut_point(wav, sr, cut_start, search_radius=0.15, direction="before")
+                cut_end = self._refine_cut_point(wav, sr, cut_end, search_radius=0.10, direction="both")
 
             # 应用 padding：cut_start 全额保留起音余量，cut_end 少量保留尾音衰减
             cut_start = max(0, cut_start - padding)
