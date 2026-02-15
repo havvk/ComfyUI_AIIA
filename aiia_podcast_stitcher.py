@@ -1,4 +1,7 @@
 import json
+import os
+import re
+import warnings
 import torch
 import numpy as np
 
@@ -38,6 +41,10 @@ class AIIA_Podcast_Stitcher:
                 "use_vad": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "启用 Silero VAD 模型精确检测语音边界（首次使用自动下载 ~2MB 模型）"
+                }),
+                "use_forced_align": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "启用 MMS Forced Alignment 字级强制对齐（需要 ~1.2GB 模型，精度最高）"
                 }),
             }
         }
@@ -314,6 +321,154 @@ class AIIA_Podcast_Stitcher:
 
         return filled
 
+    # ========== Forced Alignment (MMS_FA) ==========
+    _fa_model = None
+    _fa_tokenizer = None
+    _fa_aligner = None
+
+    @classmethod
+    def _load_fa_model(cls):
+        """懒加载 MMS_FA 模型（类级单例）。优先从 models/mms_fa/ 读取本地权重。"""
+        if cls._fa_model is not None:
+            return cls._fa_model, cls._fa_tokenizer, cls._fa_aligner
+        try:
+            from torchaudio.pipelines import MMS_FA as bundle
+
+            # 确保本地模型文件在 hub cache 中（symlink）
+            import folder_paths
+            local_model = os.path.join(folder_paths.models_dir, "mms_fa", "model.pt")
+            hub_cache = os.path.join(os.path.expanduser("~"), ".cache", "torch", "hub", "checkpoints", "model.pt")
+            if os.path.exists(local_model) and not os.path.exists(hub_cache):
+                os.makedirs(os.path.dirname(hub_cache), exist_ok=True)
+                os.symlink(local_model, hub_cache)
+                print(f"[{cls.__name__}] 已链接本地模型: {local_model} -> {hub_cache}")
+
+            warnings.filterwarnings('ignore', message='.*forced_align has been deprecated.*')
+            model = bundle.get_model().to('cuda' if torch.cuda.is_available() else 'cpu')
+            tokenizer = bundle.get_tokenizer()
+            aligner = bundle.get_aligner()
+            cls._fa_model = model
+            cls._fa_tokenizer = tokenizer
+            cls._fa_aligner = aligner
+            print(f"[{cls.__name__}] MMS Forced Alignment 模型加载成功")
+            return model, tokenizer, aligner
+        except Exception as e:
+            print(f"[{cls.__name__}] MMS FA 加载失败: {e}")
+            return None, None, None
+
+    @staticmethod
+    def _chinese_to_pinyin(text):
+        """将中文文本转为拼音字符串（MMS_FA 只接受拉丁字符）。"""
+        from pypinyin import lazy_pinyin, Style
+        # 去除标点和特殊字符
+        clean = re.sub(r'[^\u4e00-\u9fff\w\s]', '', text)
+        if not clean.strip():
+            return text.lower()
+        # 检测是否包含中文
+        if re.search(r'[\u4e00-\u9fff]', clean):
+            return ' '.join(lazy_pinyin(clean, style=Style.NORMAL))
+        return clean.lower()
+
+    def _forced_align_sentences(self, wav_np, sr, sentences):
+        """
+        对完整音频做 MMS Forced Alignment，返回每句的精确 {start, end} 时间。
+        
+        工作流程：
+        1. 将所有句子拼为完整 pinyin 转录
+        2. MMS_FA 模型生成 emission
+        3. aligner 做 CTC 强制对齐，得到每个 word 的 token_spans
+        4. 根据句子→word 映射还原每句的 start/end
+        """
+        model, tokenizer, aligner = self._fa_model, self._fa_tokenizer, self._fa_aligner
+        if model is None:
+            return None
+        
+        log = f"[{self.NODE_NAME}]"
+        
+        # 1. 准备 pinyin 转录（以 word 为单位，用空格分隔）
+        all_words = []       # pinyin words 列表
+        sentence_word_ranges = []  # 每句对应的 [start_word_idx, end_word_idx)
+        
+        for sent in sentences:
+            pinyin_str = self._chinese_to_pinyin(sent)
+            words = pinyin_str.split()
+            if not words:
+                words = ['a']  # 占位符，避免空句子
+            start_idx = len(all_words)
+            all_words.extend(words)
+            sentence_word_ranges.append((start_idx, len(all_words)))
+        
+        if not all_words:
+            return None
+            
+        # 2. 音频重采样到 16kHz（MMS_FA 要求）
+        import torchaudio
+        FA_SR = 16000
+        wav_tensor = torch.from_numpy(wav_np).float().unsqueeze(0)  # [1, T]
+        if sr != FA_SR:
+            wav_tensor = torchaudio.functional.resample(wav_tensor, sr, FA_SR)
+        
+        device = next(model.parameters()).device
+        wav_tensor = wav_tensor.to(device)
+        
+        # 3. 模型推理
+        try:
+            with torch.inference_mode():
+                emission, _ = model(wav_tensor)
+            
+            token_spans = aligner(emission[0], tokenizer(all_words))
+        except Exception as e:
+            print(f"{log} FA 对齐失败: {e}")
+            return None
+        
+        # 4. 将 token_spans 映射回每句的时间范围
+        num_frames = emission.size(1)
+        ratio = wav_tensor.size(1) / num_frames / FA_SR  # frame → 秒
+        
+        results = []
+        for sent_idx, (w_start, w_end) in enumerate(sentence_word_ranges):
+            if w_start >= len(token_spans) or w_end > len(token_spans):
+                # 回退：无对齐结果
+                results.append(None)
+                continue
+            
+            # 句子的第一个 word 的第一个 token → start
+            # 句子的最后一个 word 的最后一个 token → end
+            first_spans = token_spans[w_start]
+            last_spans = token_spans[w_end - 1]
+            
+            if not first_spans or not last_spans:
+                results.append(None)
+                continue
+            
+            t_start = first_spans[0].start * ratio
+            t_end = last_spans[-1].end * ratio
+            
+            # 计算对齐置信度
+            all_span_scores = []
+            for wi in range(w_start, w_end):
+                for s in token_spans[wi]:
+                    all_span_scores.append(s.score)
+            avg_score = sum(all_span_scores) / len(all_span_scores) if all_span_scores else 0
+            
+            results.append({
+                'start': round(t_start, 4),
+                'end': round(t_end, 4),
+                'score': round(avg_score, 3)
+            })
+            print(f"{log} FA 句子 {sent_idx}: [{t_start:.3f}s - {t_end:.3f}s] score={avg_score:.3f} '{sentences[sent_idx][:20]}'")
+        
+        return results
+
+    @staticmethod
+    def _compute_iou(start1, end1, start2, end2):
+        """计算两个时间区间的 IoU（Intersection over Union）。"""
+        inter_start = max(start1, start2)
+        inter_end = min(end1, end2)
+        intersection = max(0, inter_end - inter_start)
+        union = max(end1, end2) - min(start1, start2)
+        return round(intersection / union, 3) if union > 0 else 0.0
+
     # ========== Silero VAD ==========
     _vad_model = None
     _vad_utils = None
@@ -493,7 +648,7 @@ class AIIA_Podcast_Stitcher:
         return boundaries
 
     def stitch(self, split_map, audio_A, audio_B, asr_A, asr_B,
-               gap_duration=0.25, padding=0.10, fade_ms=30, use_vad=False):
+               gap_duration=0.25, padding=0.10, fade_ms=30, use_vad=False, use_forced_align=False):
         log = f"[{self.NODE_NAME}]"
 
         # 解析 split_map
@@ -514,10 +669,22 @@ class AIIA_Podcast_Stitcher:
         if sr_A != sr_B:
             print(f"{log} 警告: sr_A={sr_A} != sr_B={sr_B}, 使用 sr_A")
 
+        # Forced Alignment 模式：对每个说话人做字级强制对齐
+        fa_results_A = None
+        fa_results_B = None
+        if use_forced_align:
+            fa_model, fa_tokenizer, fa_aligner = self._load_fa_model()
+            if fa_model is not None:
+                print(f"{log} 使用 MMS Forced Alignment 字级对齐...")
+            else:
+                print(f"{log} FA 模型加载失败，回退")
+                use_forced_align = False
+
         # VAD 模式：提前对每个说话人的完整音频运行 VAD
+        # 当 FA 启用时，如果 VAD 也启用则同时运行用于交叉验证
         vad_timestamps_A = None
         vad_timestamps_B = None
-        if use_vad:
+        if use_vad or (use_forced_align and use_vad):
             vad_model, vad_utils = self._load_vad_model()
             if vad_model is not None:
                 print(f"{log} 使用 Silero VAD 精确边界检测...")
@@ -525,8 +692,9 @@ class AIIA_Podcast_Stitcher:
                 vad_timestamps_B = self._get_vad_timestamps(wav_B, sr_B, vad_model, vad_utils)
                 print(f"{log} VAD 检测到 A={len(vad_timestamps_A)} 段语音, B={len(vad_timestamps_B)} 段语音")
             else:
-                print(f"{log} VAD 加载失败，回退到能量检测")
-                use_vad = False
+                print(f"{log} VAD 加载失败")
+                if not use_forced_align:
+                    use_vad = False
 
         print(f"{log} Audio A: {duration_A:.2f}s, Audio B: {duration_B:.2f}s, SR: {sr}")
 
@@ -546,6 +714,13 @@ class AIIA_Podcast_Stitcher:
         boundaries_B = self._find_sentence_boundaries(words_B, sentences_B, duration_B)
 
         print(f"{log} 边界数 - A: {len(boundaries_A)}, B: {len(boundaries_B)}")
+
+        # FA 对齐（在 ASR 边界之后，用于替代/验证 ASR 边界）
+        if use_forced_align:
+            print(f"{log} --- Speaker A FA ---")
+            fa_results_A = self._forced_align_sentences(wav_A, sr_A, sentences_A)
+            print(f"{log} --- Speaker B FA ---")
+            fa_results_B = self._forced_align_sentences(wav_B, sr_B, sentences_B)
 
         # 按 split_map 顺序拼接
         audio_segments = []
@@ -603,8 +778,52 @@ class AIIA_Podcast_Stitcher:
             cut_start = boundary.get("cut_start", boundary["start"])
             cut_end = boundary.get("cut_end", boundary["end"])
 
-            # 边界微调：VAD 或能量检测
-            if use_vad:
+            # 获取当前句子在说话人内的索引
+            sent_local_idx = (idx_A - 1) if speaker == "A" else (idx_B - 1)
+
+            # 边界微调：FA > VAD > Energy
+            if use_forced_align:
+                fa_results = fa_results_A if speaker == "A" else fa_results_B
+                fa_entry = None
+                if fa_results and sent_local_idx < len(fa_results):
+                    fa_entry = fa_results[sent_local_idx]
+                
+                if fa_entry:
+                    fa_start, fa_end = fa_entry['start'], fa_entry['end']
+                    cut_start, cut_end = fa_start, fa_end
+                    
+                    # 交叉验证：同时计算 VAD 和 Energy 的结果做对比
+                    if use_vad and vad_timestamps_A is not None:
+                        vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
+                        vad_start, vad_end = self._refine_with_vad(
+                            boundary.get("cut_start", boundary["start"]),
+                            boundary.get("cut_end", boundary["end"]),
+                            vad_ts)
+                        energy_start = self._refine_cut_point(wav, sr,
+                            boundary.get("cut_start", boundary["start"]),
+                            search_radius=0.15, direction="before")
+                        energy_end = self._refine_cut_point(wav, sr,
+                            boundary.get("cut_end", boundary["end"]),
+                            search_radius=0.10, direction="both")
+                        
+                        iou_fa_vad = self._compute_iou(fa_start, fa_end, vad_start, vad_end)
+                        iou_fa_energy = self._compute_iou(fa_start, fa_end, energy_start, energy_end)
+                        iou_vad_energy = self._compute_iou(vad_start, vad_end, energy_start, energy_end)
+                        
+                        print(f"{log} 🔬 {speaker}[{sent_local_idx}] "
+                              f"FA=[{fa_start:.3f},{fa_end:.3f}] "
+                              f"VAD=[{vad_start:.3f},{vad_end:.3f}] "
+                              f"Energy=[{energy_start:.3f},{energy_end:.3f}] | "
+                              f"FA-VAD={iou_fa_vad:.3f} FA-Energy={iou_fa_energy:.3f} VAD-Energy={iou_vad_energy:.3f}")
+                else:
+                    # FA 结果缺失，回退到 VAD 或 Energy
+                    if use_vad and vad_timestamps_A is not None:
+                        vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
+                        cut_start, cut_end = self._refine_with_vad(cut_start, cut_end, vad_ts)
+                    else:
+                        cut_start = self._refine_cut_point(wav, sr, cut_start, search_radius=0.15, direction="before")
+                        cut_end = self._refine_cut_point(wav, sr, cut_end, search_radius=0.10, direction="both")
+            elif use_vad and vad_timestamps_A is not None:
                 vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
                 cut_start, cut_end = self._refine_with_vad(cut_start, cut_end, vad_ts)
             else:

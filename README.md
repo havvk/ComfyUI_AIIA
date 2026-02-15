@@ -1259,6 +1259,10 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
     - 开启后，使用 Silero VAD 神经网络模型（~2MB，首次自动下载）替代基于能量的边界检测。
     - VAD 能精确识别语音起止点，彻底解决清辅音误切、尾音截断等能量检测的固有缺陷。
     - 关闭时使用内置的**平滑能量包络检测**（20ms 窗口 + 5-point 滑动平均），已能应对大部分场景。
+  - `use_forced_align` (Default False): **🎯 启用 MMS Forced Alignment 字级强制对齐**。
+    - 使用 Facebook MMS 声学模型（~1.2GB）对文本和音频进行字级强制对齐，精度最高。
+    - 中文文本自动转换为拼音（pypinyin）后送入模型。
+    - 当与 `use_vad` 同时启用时，三种方法（FA/VAD/Energy）全部运行，输出 IoU 匹配度用于质量评估。
 - **Output**: 拼接后的完整 `AUDIO` + `segments_info` (JSON)。
 
 #### 💡 引擎选型与最佳实践 (Best Practices)
