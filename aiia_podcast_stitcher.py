@@ -794,7 +794,10 @@ class AIIA_Podcast_Stitcher:
                 
                 if fa_entry:
                     fa_start, fa_end = fa_entry['start'], fa_entry['end']
-                    cut_start, cut_end = fa_start, fa_end
+                    # 混合策略：FA 精确起点 + 能量检测自然收尾
+                    cut_start = fa_start
+                    cut_end = self._refine_cut_point(wav, sr, fa_end,
+                        search_radius=0.15, direction="after")
                     
                     # 交叉验证：同时计算 VAD 和 Energy 的结果做对比
                     if use_vad and vad_timestamps_A is not None:
