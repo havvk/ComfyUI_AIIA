@@ -101,6 +101,11 @@ class AIIA_Emotion_Annotator:
                     "default": "",
                     "tooltip": "自定义模型名（覆盖下拉选择），用于 Ollama/vLLM 本地模型"
                 }),
+                "proxy_url": ("STRING", {
+                    "default": "",
+                    "tooltip": "HTTP/SOCKS5 代理。留空则使用环境变量 HTTPS_PROXY。\n"
+                               "示例: http://127.0.0.1:8118 或 socks5://127.0.0.1:1080"
+                }),
             }
         }
 
@@ -110,26 +115,12 @@ class AIIA_Emotion_Annotator:
     CATEGORY = "AIIA/Podcast"
 
     def _get_api_key(self, api_key_override=""):
-        """获取 API Key：优先使用 override，否则读取环境变量"""
+        """获取 API Key：优先使用 override，否则读取环境变量 GROQ_API_KEY"""
         if api_key_override and api_key_override.strip():
             return api_key_override.strip()
-        key = os.environ.get("GROQ_API_KEY", "")
-        if not key:
-            # 尝试从 ~/run.sh 读取（兼容服务器环境）
-            run_sh = os.path.expanduser("~/run.sh")
-            if os.path.exists(run_sh):
-                try:
-                    with open(run_sh, 'r') as f:
-                        for line in f:
-                            line = line.strip()
-                            if line.startswith("export GROQ_API_KEY="):
-                                key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                                break
-                except Exception:
-                    pass
-        return key
+        return os.environ.get("GROQ_API_KEY", "")
 
-    def _call_llm(self, api_base_url, api_key, model, prompt):
+    def _call_llm(self, api_base_url, api_key, model, prompt, proxy=""):
         """调用 OpenAI-compatible API"""
         log = f"[{self.NODE_NAME}]"
         url = f"{api_base_url.rstrip('/')}/chat/completions"
@@ -157,15 +148,11 @@ class AIIA_Emotion_Annotator:
             ctx.verify_mode = ssl.CERT_NONE
 
         try:
-            # 读取代理设置（从环境变量或 ~/run.sh）
-            proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or os.environ.get("ALL_PROXY") or os.environ.get("all_proxy")
-            if not proxy_url:
-                proxy_url = self._read_proxy_from_runsh()
-            if proxy_url and "localhost" not in api_base_url and "127.0.0.1" not in api_base_url:
-                print(f"{log} 使用代理: {proxy_url}")
+            if proxy and "localhost" not in api_base_url and "127.0.0.1" not in api_base_url:
+                print(f"{log} 使用代理: {proxy}")
                 proxy_handler = urllib.request.ProxyHandler({
-                    "https": proxy_url,
-                    "http": proxy_url
+                    "https": proxy,
+                    "http": proxy
                 })
                 opener = urllib.request.build_opener(
                     proxy_handler,
@@ -185,23 +172,6 @@ class AIIA_Emotion_Annotator:
             return None, f"HTTP {e.code}: {err_body[:200]}"
         except Exception as e:
             return None, f"{type(e).__name__}: {e}"
-
-    def _read_proxy_from_runsh(self):
-        """从 ~/run.sh 读取代理设置"""
-        run_sh = os.path.expanduser("~/run.sh")
-        if not os.path.exists(run_sh):
-            return None
-        try:
-            with open(run_sh, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("export https_proxy=") or line.startswith("export HTTPS_PROXY="):
-                        return line.split("=", 1)[1].strip().strip('"').strip("'")
-                    if line.startswith("export http_proxy=") or line.startswith("export HTTP_PROXY="):
-                        return line.split("=", 1)[1].strip().strip('"').strip("'")
-        except Exception:
-            pass
-        return None
 
     def _parse_llm_response(self, raw_text, line_count):
         """从 LLM 响应中提取 JSON 数组"""
@@ -254,7 +224,7 @@ class AIIA_Emotion_Annotator:
 
     def annotate(self, dialogue_json, model, override_mode,
                  api_base_url="https://api.groq.com/openai/v1",
-                 api_key_override="", custom_model=""):
+                 api_key_override="", custom_model="", proxy_url=""):
         log = f"[{self.NODE_NAME}]"
         logs = []
 
@@ -317,7 +287,12 @@ class AIIA_Emotion_Annotator:
         print(f"{log} 正在调用 LLM ({actual_model}) 标注 {len(speech_items)} 句情感...")
 
         # 调用 LLM
-        raw_response, api_error = self._call_llm(actual_base, api_key, actual_model, prompt)
+        # 代理优先级: 节点参数 > 环境变量
+        proxy = proxy_url.strip() if proxy_url else ""
+        if not proxy:
+            proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or os.environ.get("ALL_PROXY") or ""
+
+        raw_response, api_error = self._call_llm(actual_base, api_key, actual_model, prompt, proxy)
 
         if api_error:
             error_msg = f"{log} API 调用失败: {api_error}"
