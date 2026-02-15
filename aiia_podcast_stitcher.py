@@ -358,16 +358,20 @@ class AIIA_Podcast_Stitcher:
 
     @staticmethod
     def _chinese_to_pinyin(text):
-        """将中文文本转为拼音字符串（MMS_FA 只接受拉丁字符）。"""
+        """将中文文本转为拼音字符串（MMS_FA 只接受小写拉丁字符）。"""
         from pypinyin import lazy_pinyin, Style
-        # 去除标点和特殊字符
+        # 去除标点和特殊字符，保留中文、字母、数字、空格
         clean = re.sub(r'[^\u4e00-\u9fff\w\s]', '', text)
         if not clean.strip():
             return text.lower()
-        # 检测是否包含中文
-        if re.search(r'[\u4e00-\u9fff]', clean):
-            return ' '.join(lazy_pinyin(clean, style=Style.NORMAL))
-        return clean.lower()
+        # lazy_pinyin 会把中文转拼音，非中文字符原样保留
+        result = ' '.join(lazy_pinyin(clean, style=Style.NORMAL))
+        # 全部小写 + 只保留 MMS_FA tokenizer 支持的字符 [a-z, space, ', -]
+        result = result.lower()
+        result = re.sub(r"[^a-z\s'\-]", '', result)
+        # 合并多余空格
+        result = re.sub(r'\s+', ' ', result).strip()
+        return result if result else 'a'
 
     def _forced_align_sentences(self, wav_np, sr, sentences):
         """
