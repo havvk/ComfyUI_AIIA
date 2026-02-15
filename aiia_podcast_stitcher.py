@@ -24,12 +24,16 @@ class AIIA_Podcast_Stitcher:
             },
             "optional": {
                 "gap_duration": ("FLOAT", {
-                    "default": 0.3, "min": 0.0, "max": 2.0, "step": 0.05,
-                    "tooltip": "说话人交替时插入的静音时长（秒）"
+                    "default": 0.25, "min": 0.0, "max": 2.0, "step": 0.05,
+                    "tooltip": "说话人交替时插入的过渡时长（秒）"
                 }),
                 "padding": ("FLOAT", {
-                    "default": 0.05, "min": 0.0, "max": 0.5, "step": 0.01,
+                    "default": 0.10, "min": 0.0, "max": 0.5, "step": 0.01,
                     "tooltip": "每个切片前后保留的呼吸/尾音余量（秒）"
+                }),
+                "fade_ms": ("INT", {
+                    "default": 30, "min": 5, "max": 100, "step": 5,
+                    "tooltip": "切片首尾的余弦淡入淡出时长（毫秒），越长越平滑"
                 }),
             }
         }
@@ -374,7 +378,7 @@ class AIIA_Podcast_Stitcher:
         return boundaries
 
     def stitch(self, split_map, audio_A, audio_B, asr_A, asr_B,
-               gap_duration=0.3, padding=0.10):
+               gap_duration=0.25, padding=0.10, fade_ms=30):
         log = f"[{self.NODE_NAME}]"
 
         # 解析 split_map
@@ -436,10 +440,12 @@ class AIIA_Podcast_Stitcher:
 
             speaker = item["speaker"]
             
-            # 说话人切换时插入间隙
+            # 说话人切换时插入过渡间隙（带低频噪声底噪，避免死寂）
             if prev_speaker is not None and speaker != prev_speaker:
                 gap_samples = int(gap_duration * sr)
-                audio_segments.append(np.zeros(gap_samples, dtype=np.float32))
+                # 生成极低音量的粉噪声代替纯静音，听感更自然
+                noise = np.random.randn(gap_samples).astype(np.float32) * 0.0003
+                audio_segments.append(noise)
                 current_time += gap_duration
 
             # 获取对应的边界和音频
@@ -486,11 +492,13 @@ class AIIA_Podcast_Stitcher:
 
             seg_duration = len(segment) / sr
 
-            # 对片段首尾施加短淡入淡出，消除拼接爆音
-            fade_samples = min(int(0.005 * sr), len(segment) // 4)  # 5ms fade, 不超过片段长度 1/4
+            # 对片段首尾施加余弦淡入淡出，使拼接过渡平滑自然
+            fade_seconds = fade_ms / 1000.0
+            fade_samples = min(int(fade_seconds * sr), len(segment) // 4)
             if fade_samples > 1:
-                fade_in = np.linspace(0.0, 1.0, fade_samples, dtype=np.float32)
-                fade_out = np.linspace(1.0, 0.0, fade_samples, dtype=np.float32)
+                # 余弦淡入淡出比线性更平滑——能量变化曲线更接近自然衰减
+                fade_in = (0.5 * (1 - np.cos(np.linspace(0, np.pi, fade_samples)))).astype(np.float32)
+                fade_out = (0.5 * (1 + np.cos(np.linspace(0, np.pi, fade_samples)))).astype(np.float32)
                 segment = segment.copy()
                 segment[:fade_samples] *= fade_in
                 segment[-fade_samples:] *= fade_out
