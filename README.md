@@ -1263,6 +1263,18 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
     - 使用 Facebook MMS 声学模型（~1.2GB）对文本和音频进行字级强制对齐，精度最高。
     - 中文文本自动转换为拼音（pypinyin）后送入模型。
     - 当与 `use_vad` 同时启用时，三种方法（FA/VAD/Energy）全部运行，输出 IoU 匹配度用于质量评估。
+    - 模型首次使用时自动下载，成功后会自动复制到 `models/mms_fa/model.pt` 以便后续直接加载。
+    - **手动下载**（适用于网络受限环境）：
+      ```bash
+      # 方法 1：直接下载 torchaudio 官方权重
+      mkdir -p ComfyUI/models/mms_fa
+      wget -O ComfyUI/models/mms_fa/model.pt \
+        "https://dl.fbaipublicfiles.com/mms/torchaudio/ctc_alignment_mling_uroman/model.pt"
+
+      # 方法 2：从 HuggingFace 镜像下载
+      pip install huggingface_hub
+      huggingface-cli download facebook/mms-fa --local-dir ComfyUI/models/mms_fa
+      ```
 - **Output**: 拼接后的完整 `AUDIO` + `segments_info` (JSON)。
 
 #### 💡 引擎选型与最佳实践 (Best Practices)
