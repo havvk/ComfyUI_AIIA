@@ -312,12 +312,13 @@ class AIIA_Podcast_Stitcher:
 
     def _refine_cut_point(self, wav, sr, time_s, search_radius=0.15, direction="both"):
         """
-        在 time_s 附近找到能量最低的点作为切割位置。
+        在 time_s 附近找到能量最低的"静音山谷"作为切割位置。
+        使用 20ms 窗口 + 滑动平均平滑，避免被瞬时低能量（清辅音等）欺骗。
         
         direction:
-            "before" — 只在 [time_s - radius, time_s] 搜索（用于 cut_start，远离语音）
-            "after"  — 只在 [time_s, time_s + radius] 搜索（用于 cut_end，远离语音）
-            "both"   — 在 ±radius 搜索（向后兼容）
+            "before" — 只在 [time_s - radius, time_s] 搜索（用于 cut_start）
+            "after"  — 只在 [time_s, time_s + radius] 搜索
+            "both"   — 在 ±radius 搜索（用于 cut_end，寻找最近的静音谷）
         """
         center = int(time_s * sr)
         radius = int(search_radius * sr)
@@ -332,30 +333,43 @@ class AIIA_Podcast_Stitcher:
             start = max(0, center - radius)
             end = min(len(wav), center + radius)
 
-        if end - start < 2:
+        # 搜索区间太短（<50ms）则不微调
+        if end - start < int(sr * 0.05):
             return time_s
         
-        # 计算短时能量（10ms 窗口）
-        window_size = max(1, int(0.01 * sr))
         segment = wav[start:end]
-        n_windows = len(segment) // window_size
+        
+        # 20ms 窗口，10ms 步长（跨越大部分短暂闭气停顿）
+        window_size = max(1, int(0.02 * sr))
+        step_size = max(1, int(0.01 * sr))
+        
+        n_windows = (len(segment) - window_size) // step_size + 1
         if n_windows < 2:
             return time_s
         
         energies = []
+        positions = []
         for i in range(n_windows):
-            w = segment[i * window_size:(i + 1) * window_size]
+            w = segment[i * step_size : i * step_size + window_size]
             energies.append(np.sqrt(np.mean(w ** 2)))
+            positions.append(start + i * step_size + window_size // 2)
         
-        # 找能量最低的窗口
-        min_idx = np.argmin(energies)
-        best_sample = start + min_idx * window_size + window_size // 2
-        return best_sample / sr
+        # 5-point 滑动平均平滑（把锯齿状毛刺抹平，寻找宽阔的静音带）
+        kernel_size = min(5, len(energies))
+        kernel = np.ones(kernel_size) / kernel_size
+        smoothed = np.convolve(energies, kernel, mode='same')
+        
+        if len(smoothed) == 0:
+            return time_s
+        
+        # 找平滑后的能量最低点
+        min_idx = np.argmin(smoothed)
+        return positions[min_idx] / sr
 
     def _expand_to_midpoints(self, boundaries: list, total_duration: float) -> list:
         """将切割点扩展到相邻句子间隙中，但限制最大扩展量以避免吃进下一句。"""
         MAX_EXPAND_START = 0.15  # cut_start 向前扩展：最多 150ms（保留吸气/起音余量）
-        MAX_EXPAND_END = 0.05    # cut_end 向后扩展：最多 50ms（保守，避免吃到下一句）
+        MAX_EXPAND_END = 0.10    # cut_end 向后扩展：最多 100ms（补偿 ASR 尾部时间戳早退）
 
         if len(boundaries) <= 1:
             if boundaries:
@@ -479,13 +493,13 @@ class AIIA_Podcast_Stitcher:
             cut_start = boundary.get("cut_start", boundary["start"])
             cut_end = boundary.get("cut_end", boundary["end"])
 
-            # 基于能量的边界微调：找到语音实际结束/开始位置
-            cut_start = self._refine_cut_point(wav, sr, cut_start, direction="before")
-            cut_end = self._refine_cut_point(wav, sr, cut_end, direction="before")
+            # 基于能量的边界微调（平滑能量包络 + 方向性搜索）
+            cut_start = self._refine_cut_point(wav, sr, cut_start, search_radius=0.15, direction="before")
+            cut_end = self._refine_cut_point(wav, sr, cut_end, search_radius=0.10, direction="both")
 
-            # 应用 padding（仅对 cut_start，给吸气/起音留余量；cut_end 不加 padding 避免吃下一句）
+            # 应用 padding：cut_start 全额保留起音余量，cut_end 少量保留尾音衰减
             cut_start = max(0, cut_start - padding)
-            cut_end = min(len(wav) / sr, cut_end)
+            cut_end = min(len(wav) / sr, cut_end + padding * 0.3)
 
             # 防重叠：确保 cut_start 不早于同一说话人上一个片段的 cut_end
             if cut_start < prev_cut_end[speaker]:
