@@ -491,7 +491,7 @@ class AIIA_DittoSampler:
                 "ref_image": ("IMAGE",),
                 "audio": ("AUDIO",),
                 "sampling_steps": ("INT", {"default": 50, "min": 1, "max": 100}),
-                "fps": ("INT", {"default": 25, "min": 15, "max": 60}),
+                "fps": ("FLOAT", {"default": 25.0, "min": 15.0, "max": 60.0, "step": 0.001}),
                 "crop_scale": ("FLOAT", {"default": 2.3, "min": 1.0, "max": 5.0, "step": 0.1}),
                 "emo": (["Neutral", "Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Contempt"], {"default": "Neutral"}),
                 "drive_eye": ("BOOLEAN", {"default": True}),

@@ -306,6 +306,32 @@ class AIIA_Podcast_Stitcher:
 
         return filled
 
+    def _refine_cut_point(self, wav, sr, time_s, search_radius=0.15):
+        """在 time_s 附近 ±search_radius 范围内，找到能量最低的点作为切割位置。"""
+        center = int(time_s * sr)
+        radius = int(search_radius * sr)
+        start = max(0, center - radius)
+        end = min(len(wav), center + radius)
+        if end - start < 2:
+            return time_s
+        
+        # 计算短时能量（10ms 窗口）
+        window_size = max(1, int(0.01 * sr))
+        segment = wav[start:end]
+        n_windows = len(segment) // window_size
+        if n_windows < 2:
+            return time_s
+        
+        energies = []
+        for i in range(n_windows):
+            w = segment[i * window_size:(i + 1) * window_size]
+            energies.append(np.sqrt(np.mean(w ** 2)))
+        
+        # 找能量最低的窗口
+        min_idx = np.argmin(energies)
+        best_sample = start + min_idx * window_size + window_size // 2
+        return best_sample / sr
+
     def _expand_to_midpoints(self, boundaries: list, total_duration: float) -> list:
         """将切割点扩展到相邻句子间隙的中点，避免截断尾音/吸气声。"""
         if len(boundaries) <= 1:
@@ -423,6 +449,10 @@ class AIIA_Podcast_Stitcher:
             # 切割音频片段（使用 cut_start/cut_end，带 padding）
             cut_start = boundary.get("cut_start", boundary["start"])
             cut_end = boundary.get("cut_end", boundary["end"])
+
+            # 基于能量的边界微调：在 cut_start/cut_end 附近找到真正的静音点
+            cut_start = self._refine_cut_point(wav, sr, cut_start)
+            cut_end = self._refine_cut_point(wav, sr, cut_end)
 
             # 应用 padding
             cut_start = max(0, cut_start - padding)

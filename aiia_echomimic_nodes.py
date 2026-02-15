@@ -292,7 +292,7 @@ class AIIA_EchoMimicSampler:
                 "steps": ("INT", {"default": 25, "min": 1, "max": 100}),
                 "cfg": ("FLOAT", {"default": 4.0, "min": 1.0, "max": 20.0}),
                 "audio_cfg": ("FLOAT", {"default": 2.9, "min": 1.0, "max": 20.0}),
-                "fps": ("INT", {"default": 25, "min": 1, "max": 60}),
+                "fps": ("FLOAT", {"default": 25.0, "min": 1.0, "max": 60.0, "step": 0.001}),
             },
             "optional": {
                 "width": ("INT", {"default": 768}),
