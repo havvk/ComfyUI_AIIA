@@ -425,6 +425,8 @@ class AIIA_Podcast_Stitcher:
         idx_A = 0
         idx_B = 0
         prev_speaker = None
+        # 跟踪每个说话人上一个片段的实际 cut_end，防止 padding 导致重叠
+        prev_cut_end = {"A": 0.0, "B": 0.0}
 
         for item in map_items:
             if item.get("type") == "pause":
@@ -479,6 +481,11 @@ class AIIA_Podcast_Stitcher:
             # 应用 padding
             cut_start = max(0, cut_start - padding)
             cut_end = min(len(wav) / sr, cut_end + padding)
+
+            # 防重叠：确保 cut_start 不早于同一说话人上一个片段的 cut_end
+            if cut_start < prev_cut_end[speaker]:
+                cut_start = prev_cut_end[speaker]
+            prev_cut_end[speaker] = cut_end
 
             start_sample = int(cut_start * sr)
             end_sample = int(cut_end * sr)
