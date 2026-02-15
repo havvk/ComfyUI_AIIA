@@ -478,13 +478,20 @@ class AIIA_Dialogue_TTS:
                     
                     # VibeVoice does not support emotion macro text tags.
                     # We send only pure text to prevent the model from reading tags aloud.
+                    
+                    # 确保每句以句末标点结尾，否则 TTS 语调不会自然收束
+                    text_stripped = text.rstrip() if text else ""
+                    if text_stripped and text_stripped[-1] not in '。！？!?.…':
+                        text = text_stripped + '。'
+                    
                     char_len = len(text) if text else 1
                     total_char_len += char_len
                     item_lengths.append(char_len)
 
                     final_text_lines.append(f"[{internal_id + 1}]: {text}")
                 
-                full_text = "\n".join(final_text_lines)
+                # 用双换行分隔，强制 TTS 在句间产生自然停顿
+                full_text = "\n\n".join(final_text_lines)
                 print(f"  [Batch Process] Processing {len(batch_items)} segments using {len(unique_speakers)} speakers.")
                 
                 try:
