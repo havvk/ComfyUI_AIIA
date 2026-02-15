@@ -140,6 +140,7 @@ class AIIA_Emotion_Annotator:
 
         headers = {
             "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (compatible; ComfyUI/1.0)",
         }
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
