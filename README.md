@@ -1120,6 +1120,72 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
   - 格式: `原剧本角色名=A`, `原剧本角色名=B`
   - 示例: `Teacher=A`, `Student=B`
 
+#### 4.1.1 AIIA Emotion Annotator (LLM 情感标注)
+
+**[v1.13.0 New]** 使用 LLM 自动为对话剧本中的每句台词标注情感，无需手工逐句添加 `[Happy]` 等标签。
+
+##### 定位与流程
+
+插入在 **Script Parser → TTS** 之间，作为可选的中间处理环节：
+
+```
+Script Parser → Emotion Annotator → Dialogue TTS / Qwen Dialogue TTS
+                     ↓                        ↓
+              写入 emotion 字段          读取 emotion 字段
+              "Happy" / "Calm"          → CosyVoice: [Happy]文本
+              null (neutral)            → 原文直读
+```
+
+> **无侵入设计**：如果不连接此节点，工作流行为与之前完全一致。连接后自动生效，对下游 TTS 透明。
+
+##### 参数说明
+
+| 参数 | 说明 |
+|------|------|
+| `dialogue_json` | 来自 Script Parser 的对话 JSON（连线输入） |
+| `model` | LLM 模型选择：`llama-3.1-8b-instant` (默认/最快)、`llama-3.3-70b-versatile`、`qwen-qwq-32b`、`deepseek-r1-distill-llama-70b`、`gemma2-9b-it` |
+| `override_mode` | `skip_existing`：保留剧本中已有的手工标签，只标注未标注的句子；`overwrite_all`：覆盖所有标签 |
+| `api_base_url` | API 端点，默认 `https://api.groq.com/openai/v1`。支持任何 OpenAI-compatible API（Ollama、vLLM 等） |
+| `api_key_override` | API Key。留空则自动读取环境变量 `GROQ_API_KEY` |
+| `custom_model` | 自定义模型名（覆盖下拉选择，用于 Ollama 等自建服务） |
+| `proxy_url` | HTTP/SOCKS5 代理地址。留空则使用环境变量 `HTTPS_PROXY` |
+
+##### 工作原理
+
+1. **收集台词**：从 `dialogue_json` 中提取所有 `type: "speech"` 的条目
+2. **构造 Prompt**：将台词编号后发送给 LLM，附上 24 种预定义情感标签，要求 LLM 从中选择
+3. **解析响应**：将 LLM 返回的 JSON 数组解析为 `{行号: 情感}` 映射
+4. **写回标签**：将情感标签（如 `"Happy"`、`"Calm"`）写入每条台词的 `emotion` 字段
+5. `neutral` 的句子不注入标签（`emotion: null`），TTS 以自然语调朗读
+
+##### 支持的 24 种情感标签
+
+`neutral` · `happy` · `sad` · `angry` · `excited` · `gentle` · `fearful` · `surprised` · `disappointed` · `serious` · `calm` · `romantic` · `sarcastic` · `proud` · `confused` · `anxious` · `disgusted` · `nostalgic` · `mysterious` · `enthusiastic` · `lazy` · `gossip` · `innocent` · `nervous`
+
+##### 下游兼容性
+
+| TTS 引擎 | 消费方式 | 效果 |
+|----------|---------|------|
+| **CosyVoice** | `[Happy] 文本...` 格式注入 | ✅ 精准情感控制 |
+| **Qwen3-TTS** | 合并到 `instruct` 指令（按情感自动拆批） | ✅ 自动按情感分批生成 |
+| **VibeVoice** | 安全忽略 `emotion` 字段 | ✅ 无影响 |
+
+> **Qwen3 智能分批**：当使用 Qwen3 Dialogue TTS 时，连续相同情感的句子会自动合并为一个批次，情感变化时自动拆分为新批次，确保每个批次的 `instruct` 只包含单一情感，语义准确。
+
+##### 典型工作流
+
+**基础流程**（适合大多数场景）：
+```
+Script Parser → Emotion Annotator → Dialogue TTS → Video Combine
+```
+
+**高级拆分流程**（多引擎混合）：
+```
+Script Parser → Emotion Annotator → Podcast Splitter → TTS_A (CosyVoice)
+                                                      → TTS_B (VibeVoice)
+                                                      → Podcast Stitcher
+```
+
 #### 4.2 AIIA Dialogue TTS (对话生成引擎)
 
 核心调度与生成节点，支持自动角色切换和长音频拼接。
@@ -1264,17 +1330,17 @@ https://github.com/user-attachments/assets/9a5502c5-79e3-4fc8-8a2d-2cbdbdbbc860
     - 中文文本自动转换为拼音（pypinyin）后送入模型。
     - 当与 `use_vad` 同时启用时，三种方法（FA/VAD/Energy）全部运行，输出 IoU 匹配度用于质量评估。
     - 模型首次使用时自动下载，成功后会自动复制到 `models/mms_fa/model.pt` 以便后续直接加载。
-    - **手动下载**（适用于网络受限环境）：
-      ```bash
-      # 方法 1：直接下载 torchaudio 官方权重
-      mkdir -p ComfyUI/models/mms_fa
-      wget -O ComfyUI/models/mms_fa/model.pt \
-        "https://dl.fbaipublicfiles.com/mms/torchaudio/ctc_alignment_mling_uroman/model.pt"
+- **手动下载**（适用于网络受限环境）：
+    ```bash
+    # 方法 1：直接下载 torchaudio 官方权重
+    mkdir -p ComfyUI/models/mms_fa
+    wget -O ComfyUI/models/mms_fa/model.pt \
+      "https://dl.fbaipublicfiles.com/mms/torchaudio/ctc_alignment_mling_uroman/model.pt"
 
-      # 方法 2：从 HuggingFace 镜像下载
-      pip install huggingface_hub
-      huggingface-cli download facebook/mms-fa --local-dir ComfyUI/models/mms_fa
-      ```
+    # 方法 2：从 HuggingFace 镜像下载
+    pip install huggingface_hub
+    huggingface-cli download facebook/mms-fa --local-dir ComfyUI/models/mms_fa
+    ```
 - **Output**: 拼接后的完整 `AUDIO` + `segments_info` (JSON)。
 
 #### 💡 引擎选型与最佳实践 (Best Practices)
