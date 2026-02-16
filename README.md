@@ -1179,9 +1179,14 @@ Script Parser → Emotion Annotator → Dialogue TTS / Qwen Dialogue TTS
 
 ##### 典型工作流
 
-**基础流程**（适合大多数场景）：
+**对话流程**（适合大多数场景）：
 ```
 Script Parser → Emotion Annotator → Dialogue TTS → Video Combine
+```
+
+**单人旁白流程**（配合 Text Splitter）：
+```
+长文本 → Text Splitter → Emotion Annotator → Qwen3 TTS / CosyVoice
 ```
 
 **高级拆分流程**（多引擎混合）：
@@ -1191,7 +1196,33 @@ Script Parser → Emotion Annotator → Podcast Splitter → TTS_A (CosyVoice)
                                                       → Podcast Stitcher
 ```
 
-#### 4.3 AIIA Dialogue TTS (对话生成引擎)
+#### 4.3 AIIA Text Splitter (文本拆分器)
+
+**[v1.13.0 New]** 将单人长文本按标点拆分为标准 `dialogue_json`，使其可直接接入 Emotion Annotator → TTS 管线。
+
+##### 参数说明
+
+| 参数 | 说明 |
+|------|------|
+| `text` | 待拆分文本（多行/长段落） |
+| `speaker_name` | 说话人名称，默认 `Narrator` |
+| `split_mode` | `auto`：智能拆分（句末标点 + 短句合并 + 长句再拆）；`by_sentence`：仅按句号/问号/感叹号拆分；`by_line`：按换行拆分 |
+| `min_chars` | 最小字符数，短于此的句子合并到前一句。默认 `4` |
+| `max_chars` | 最大字符数，超长句子在逗号/分号处强制拆分。默认 `100` |
+
+##### 拆分行为 (`auto` 模式)
+
+1. **按换行分段** → 保留段落结构
+2. **段内按句末标点拆分** → `。！？!?…` 和省略号 `……` / `...`
+3. **短句合并** → 短于 `min_chars` 的句子追加到前一句
+4. **长句拆分** → 超过 `max_chars` 的句子在逗号/分号处再切
+
+##### 输出
+
+- `dialogue_json`：标准格式，与 Script Parser 输出兼容，可直接接入 Emotion Annotator / Dialogue TTS
+- `sentence_count`：拆分后的句子数
+
+#### 4.4 AIIA Dialogue TTS (对话生成引擎)
 
 核心调度与生成节点，支持自动角色切换和长音频拼接。
 
@@ -1214,7 +1245,7 @@ Script Parser → Emotion Annotator → Podcast Splitter → TTS_A (CosyVoice)
 - **Emotion Safeguard (New!)**:
   - **智能检测**: 系统会自动嗅探加载模型的元数据。如果你使用 CosyVoice SFT/Base 或 VibeVoice 等不支持 `Instruct` 功能的模型，系统将自动跳过 `[Emotion]` 标签插入，防止模型读出方括号。
 
-#### 4.4 AIIA Qwen Dialogue TTS (Qwen 旗舰对话节点)
+#### 4.5 AIIA Qwen Dialogue TTS (Qwen 旗舰对话节点)
 
 **[v1.11.0 New]** 深度集成 Qwen3-TTS 的多模式特性，支持复杂的混合角色场景。
 
@@ -1235,7 +1266,7 @@ Script Parser → Emotion Annotator → Podcast Splitter → TTS_A (CosyVoice)
   - **Ref Audio**: 当模式为 Clone 时，连接参考音频。
 - **特点**: 相对于通用对话节点，此节点能根据每个人的模式自动路由到最合适的 Qwen 引擎，且支持在 UI 直接输入设计描述。
 
-#### 4.5 AIIA Subtitle Gen (字幕生成器)
+#### 4.6 AIIA Subtitle Gen (字幕生成器)
 
 **[v1.7.0 New]** 无需 STT，直接从生成过程中提取精准时间轴。
 
@@ -1250,7 +1281,7 @@ Script Parser → Emotion Annotator → Podcast Splitter → TTS_A (CosyVoice)
   - **VibeVoice**: 使用**智能插值算法 (Smart Interpolation)**，根据字符长度自动计算长音频段内的单句时间轴。
   - **Qwen3-TTS**: 基于生成的音频振幅精准断句，支持多角色时间轴导出。
 
-#### 4.6 AIIA Subtitle to Segments (字幕转分段)
+#### 4.7 AIIA Subtitle to Segments (字幕转分段)
 
 **[v1.10.3 New]** 将现有的 SRT/ASS 字幕文件转换为 `segments_info` 格式，以便进行时间轴重新校准。
 
@@ -1261,7 +1292,7 @@ Script Parser → Emotion Annotator → Podcast Splitter → TTS_A (CosyVoice)
   - `segments_info`: 标准化的 JSON 字符串，可直接输入到 `AIIA Subtitle Gen`。
 - **用途**: 结合 `Subtitle Gen` 的 `calibration_info` 输入，可以将**旧的、不准的字幕**自动对齐到**新的、精准的音轨**上。
 
-#### 4.7 AIIA Subtitle Preview (字幕预览)
+#### 4.8 AIIA Subtitle Preview (字幕预览)
 
 **[v1.7.1 New]** 实时校验音画同步效果。
 
@@ -1272,7 +1303,7 @@ Script Parser → Emotion Annotator → Podcast Splitter → TTS_A (CosyVoice)
   - **交互式界面**: 提供 Web 播放器，按时间轴滚动显示字幕。
   - **ASS 样式渲染**: 尝试还原 ASS 字幕的字体颜色、大小和描边效果。
 
-#### 4.8 Interactive Teaching (Web Export) (互动式教学导出)
+#### 4.9 Interactive Teaching (Web Export) (互动式教学导出)
 
 **[v1.8.1 New]** 将播客升级为视听同步的互动网页。支持“读写分离”的缓存优化，修改 Visual 标签无需重跑 TTS。
 
@@ -1290,7 +1321,7 @@ Script Parser → Emotion Annotator → Podcast Splitter → TTS_A (CosyVoice)
   - 支持绝对 URL: `(Visual: https://example.com)`
   - 支持相对路径: `(Visual: ./slides/01.jpg)` (相对于导出 HTML 的位置)
 
-#### 4.9 AIIA Podcast Splitter (对话拆分器)
+#### 4.10 AIIA Podcast Splitter (对话拆分器)
 
 **[v1.12.0 New]** 将对话 JSON 按说话人拆分为独立文本列表，用于"**拆分→生成→拼接**"的高级流程。
 
@@ -1301,7 +1332,7 @@ Script Parser → Emotion Annotator → Podcast Splitter → TTS_A (CosyVoice)
   - `text_A`, `text_B`: 分别为说话人 A、B 的纯文本列表（每行一句），可直接送入各自的 TTS 节点独立生成。
 - **用途**: 实现对不同说话人使用不同 TTS 引擎/参数生成音频，再通过 Stitcher 精确拼接的高级工作流。
 
-#### 4.10 AIIA ASR Node (语音识别)
+#### 4.11 AIIA ASR Node (语音识别)
 
 **[v1.12.0 New]** 基于 FunASR 的语音识别节点，输出带词级时间戳的识别结果，为 Stitcher 提供精确对齐依据。
 
@@ -1309,7 +1340,7 @@ Script Parser → Emotion Annotator → Podcast Splitter → TTS_A (CosyVoice)
 - **Output**: `ASR_RESULT`（包含词级时间戳的识别结果）。
 - **依赖**: 需要安装 `funasr` 库。模型首次运行时自动下载。
 
-#### 4.11 AIIA Podcast Stitcher (精确拼接器)
+#### 4.12 AIIA Podcast Stitcher (精确拼接器)
 
 **[v1.12.0 New]** 将分轨生成的多角色音频按原始对话顺序精确拼接，还原自然对话节奏。
 
