@@ -341,6 +341,14 @@ class AIIA_VibeVoice_TTS:
         if normalize_text:
             text = re.sub(r'(\d+年)\s*[-—–]\s*(\d+年)', r'\1至\2', text)
             text = text.replace('"', '').replace("'", '')
+
+        # [AIIA v1.13.0] Strip emotion tags like [Happy], [Calm] etc.
+        # These come from Emotion Annotator via Splitter; VibeVoice doesn't support them
+        # and would read them aloud as literal text.
+        text = re.sub(r'\[(?:neutral|happy|sad|angry|excited|gentle|fearful|surprised|'
+                       r'disappointed|serious|calm|romantic|sarcastic|proud|confused|'
+                       r'anxious|disgusted|nostalgic|mysterious|enthusiastic|lazy|'
+                       r'gossip|innocent|nervous)\]\s*', '', text, flags=re.IGNORECASE)
         
         # [AIIA v1.10.8] Auto-Normalize Roles (e.g. "Host A:" -> "Speaker 1:")
         text, role_map = self._normalize_roles(text)
