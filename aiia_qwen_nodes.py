@@ -277,6 +277,7 @@ class AIIA_Qwen_TTS:
 
         # 3. [v1.13.0] Extract inline [Emotion] tags from text (e.g. from Splitter output)
         #    Convert them to instruct and strip from text to prevent reading aloud
+        #    If user already chose emotion via UI dropdown, just strip tags (UI takes priority)
         import re
         _EMOTION_RE = re.compile(
             r'\[(?:neutral|happy|sad|angry|excited|gentle|fearful|surprised|'
@@ -285,14 +286,15 @@ class AIIA_Qwen_TTS:
             r'gossip|innocent|nervous)\]', re.IGNORECASE)
         inline_emotions = _EMOTION_RE.findall(text)
         if inline_emotions:
-            # Extract the label from the first tag (e.g. "[Happy]" -> "Happy")
-            inline_label = inline_emotions[0].strip("[]")
-            if inline_label.lower() != "neutral" and inline_label not in (final_instruct or ""):
-                if not final_instruct:
-                    final_instruct = f"{inline_label}。"
-                else:
-                    final_instruct = f"{final_instruct}{inline_label}。"
-            # Strip all emotion tags from text
+            # Only merge into instruct if user didn't explicitly set emotion via UI
+            if not (emotion and emotion != "None"):
+                inline_label = inline_emotions[0].strip("[]")
+                if inline_label.lower() != "neutral" and inline_label not in (final_instruct or ""):
+                    if not final_instruct:
+                        final_instruct = f"{inline_label}。"
+                    else:
+                        final_instruct = f"{final_instruct}{inline_label}。"
+            # Always strip tags from text regardless
             text = _EMOTION_RE.sub('', text).strip()
 
         wavs = None
