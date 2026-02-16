@@ -1168,9 +1168,11 @@ Script Parser → Emotion Annotator → Dialogue TTS / Qwen Dialogue TTS
 |----------|---------|------|
 | **CosyVoice** | `[Happy] 文本...` 格式注入 | ✅ 精准情感控制 |
 | **Qwen3-TTS** | 合并到 `instruct` 指令（按情感自动拆批） | ✅ 自动按情感分批生成 |
-| **VibeVoice** | 安全忽略 `emotion` 字段 | ✅ 无影响 |
+| **VibeVoice** | 自动清洗 `[Emotion]` 标签后生成 | ✅ 无影响，不会朗读标签 |
 
 > **Qwen3 智能分批**：当使用 Qwen3 Dialogue TTS 时，连续相同情感的句子会自动合并为一个批次，情感变化时自动拆分为新批次，确保每个批次的 `instruct` 只包含单一情感，语义准确。
+
+> **VibeVoice 安全保障**：VibeVoice Standard / Realtime 节点在文本预处理阶段会自动清洗所有 24 种情感标签（如 `[Happy]`、`[Calm]`），因此即使通过 Podcast Splitter 传递了嵌标签的文本，VibeVoice 也不会将其作为普通文字朗读。
 
 ##### 典型工作流
 
