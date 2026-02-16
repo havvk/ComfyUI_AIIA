@@ -311,11 +311,14 @@ class AIIA_Qwen_TTS:
                     **gen_kwargs
                 )
             elif m_type == "VoiceDesign":
-                print(f"[AIIA] Qwen3-TTS VoiceDesign: {final_instruct}")
+                # VoiceDesign: UI design description takes priority; emotion instruct as fallback
+                design_instruct = instruct.strip() if instruct else ""
+                vd_instruct = design_instruct if design_instruct else final_instruct
+                print(f"[AIIA] Qwen3-TTS VoiceDesign: {vd_instruct}")
                 wavs, sr = model.generate_voice_design(
                     text=text,
                     language=lang_param,
-                    instruct=final_instruct, # For Design, instruct IS the design
+                    instruct=vd_instruct,
                     **gen_kwargs
                 )
             else: # Base / Clone
