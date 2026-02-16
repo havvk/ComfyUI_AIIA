@@ -600,7 +600,7 @@ class AIIA_Dialogue_TTS:
                     return {
                         "tm": tm, "tx": tx, "sid": sid, "ref": ref, "ins": ins, "me": me, "sk": sk,
                         "dialect": dia,
-                        "h": (id(tm), dia), # Gouping key
+                        "h": (id(tm), dia, ins), # Grouping key – includes emotion instruct
                         "original_speaker": it["speaker"],
                         "original_item": it # Keep original item for visual tag
                     }
