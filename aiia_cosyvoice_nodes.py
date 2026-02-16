@@ -218,10 +218,14 @@ class AIIA_CosyVoice_ModelLoader:
         print(f"[AIIA] Loader Debug: use_rl_model_raw={use_rl_model} (type: {type(use_rl_model)}) -> effective_rl={is_rl_requested}")
         print(f"[AIIA] Loader Debug: llm_rl exists: {os.path.exists(llm_rl)}")
         
-        target_source = llm_rl if is_rl_requested and os.path.exists(llm_rl) else llm_orig
+        llm_base = os.path.join(model_dir, "llm.base.pt")
+        
+        # Determine the non-RL fallback: prefer llm.orig.pt, then llm.base.pt
+        non_rl_target = llm_orig if os.path.exists(llm_orig) else (llm_base if os.path.exists(llm_base) else None)
+        target_source = llm_rl if is_rl_requested and os.path.exists(llm_rl) else non_rl_target
         
         # 3. Aggressively Manage Symlink
-        if os.path.exists(target_source):
+        if target_source and os.path.exists(target_source):
             target_basename = os.path.basename(target_source)
             current_target = None
             
