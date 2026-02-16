@@ -78,6 +78,11 @@ class AIIA_Podcast_Splitter:
 
             text = item["text"]
             speaker = item["speaker"]
+            emotion = item.get("emotion")
+
+            # 如果有情感标签（来自 Emotion Annotator），嵌入到文本中
+            # 格式: [Happy] 台词... (CosyVoice 原生支持此格式)
+            output_text = f"[{emotion}] {text}" if emotion else text
 
             if speaker == speaker_A:
                 split_map.append({
@@ -86,8 +91,9 @@ class AIIA_Podcast_Splitter:
                     "index": len(texts_A),
                     "text": text,
                     "original_speaker": speaker,
+                    "emotion": emotion,
                 })
-                texts_A.append(text)
+                texts_A.append(output_text)
             elif speaker == speaker_B:
                 split_map.append({
                     "type": "speech",
@@ -95,8 +101,9 @@ class AIIA_Podcast_Splitter:
                     "index": len(texts_B),
                     "text": text,
                     "original_speaker": speaker,
+                    "emotion": emotion,
                 })
-                texts_B.append(text)
+                texts_B.append(output_text)
             else:
                 print(f"{log} 跳过第三个说话人 '{speaker}' 的台词: {text[:30]}...")
 
