@@ -645,7 +645,12 @@ class AIIA_CosyVoice_TTS:
 
             final_instruct = combined_custom
             if (is_v3 or is_v2) and combined_custom:
-                if "<|endofprompt|>" not in combined_custom:
+                if is_base:
+                    # V3/V2 Base models (e.g. Fun-CosyVoice3-0.5B) do NOT support instruct.
+                    # Skip instruction formatting; use inference_zero_shot instead.
+                    final_instruct = ""
+                    print(f"[AIIA] V3 Base model detected. Skipping instruct formatting (not supported).")
+                elif "<|endofprompt|>" not in combined_custom:
                     final_instruct = f"You are a helpful assistant. {combined_custom}<|endofprompt|>"
                     print(f"[AIIA] Applied V3 Instruction Formatting: {final_instruct[:80]}...")
             
@@ -752,16 +757,29 @@ class AIIA_CosyVoice_TTS:
                         # CRITICAL FIX: zero_shot_spk_id MUST be an EMPTY STRING ('') to trigger 
                         # the audio prompt path in frontend_zero_shot. Passing None causes KeyError.
                         pass_spk_id = spk_id if spk_id else ""
-                        print(f"[AIIA] CosyVoice V2/V3 Inference (Ref: {os.path.basename(ref_path) if ref_path else 'None'}, Spk: {pass_spk_id or 'Zero-Shot Mode'})")
                         
-                        output = cosyvoice_model.inference_instruct2(
-                            tts_text=tts_text, 
-                            instruct_text=final_instruct, 
-                            prompt_wav=ref_path, 
-                            zero_shot_spk_id=pass_spk_id, 
-                            stream=False, 
-                            speed=speed
-                        )
+                        if is_base or not final_instruct:
+                            # V3/V2 Base models do NOT support instruct → use zero-shot path
+                            print(f"[AIIA] CosyVoice V2/V3 Zero-Shot Inference (Ref: {os.path.basename(ref_path) if ref_path else 'None'}, Spk: {pass_spk_id or 'Zero-Shot Mode'})")
+                            p_text = "希望你以后能够做的比我还好呦。"
+                            output = cosyvoice_model.inference_zero_shot(
+                                tts_text=tts_text,
+                                prompt_text=p_text,
+                                prompt_wav=ref_path,
+                                zero_shot_spk_id=pass_spk_id,
+                                stream=False,
+                                speed=speed
+                            )
+                        else:
+                            print(f"[AIIA] CosyVoice V2/V3 Instruct Inference (Ref: {os.path.basename(ref_path) if ref_path else 'None'}, Spk: {pass_spk_id or 'Zero-Shot Mode'})")
+                            output = cosyvoice_model.inference_instruct2(
+                                tts_text=tts_text, 
+                                instruct_text=final_instruct, 
+                                prompt_wav=ref_path, 
+                                zero_shot_spk_id=pass_spk_id, 
+                                stream=False, 
+                                speed=speed
+                            )
                     else:
                         # --- V1 (300M) Native Path Selection (Always Zero-Shot for Audio Path) ---
                         p_text = "希望你以后能够做的比我还好呦。"
@@ -788,15 +806,25 @@ class AIIA_CosyVoice_TTS:
             # 2. SFT (Fixed Speaker ID, No Reference Audio)
             else:
                 if is_v3 or is_v2:
-                    print(f"[AIIA] CosyVoice: V2/V3 Identity Path. Speaker: {spk_id}")
-                    output = cosyvoice_model.inference_instruct2(
-                        tts_text=tts_text, 
-                        instruct_text=final_instruct, 
-                        prompt_wav=None, 
-                        zero_shot_spk_id=spk_id, 
-                        stream=False, 
-                        speed=speed
-                    )
+                    if is_base or not final_instruct:
+                        # V3/V2 Base: use SFT path with speaker ID
+                        print(f"[AIIA] CosyVoice: V2/V3 SFT Path (Base). Speaker: {spk_id}")
+                        output = cosyvoice_model.inference_sft(
+                            tts_text=tts_text,
+                            spk_id=spk_id,
+                            stream=False,
+                            speed=speed
+                        )
+                    else:
+                        print(f"[AIIA] CosyVoice: V2/V3 Identity Path. Speaker: {spk_id}")
+                        output = cosyvoice_model.inference_instruct2(
+                            tts_text=tts_text, 
+                            instruct_text=final_instruct, 
+                            prompt_wav=None, 
+                            zero_shot_spk_id=spk_id, 
+                            stream=False, 
+                            speed=speed
+                        )
                 elif is_instruct and final_instruct:
                     # --- V1 (300M) Surgical Instruct Path (Identity Preservation) ---
                     # We manually call tts to ensure llm_embedding doesn't get stripped.
