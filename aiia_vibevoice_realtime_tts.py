@@ -69,6 +69,13 @@ class AIIA_VibeVoice_Realtime_TTS:
         if normalize_text:
             text = re.sub(r'(\d+年)\s*[-—–]\s*(\d+年)', r'\1至\2', text)
             text = text.replace('"', '').replace("'", '')
+
+        # [AIIA v1.13.0] Strip emotion tags like [Happy], [Calm] etc.
+        # These come from Emotion Annotator via Splitter; VibeVoice doesn't support them
+        text = re.sub(r'\[(?:neutral|happy|sad|angry|excited|gentle|fearful|surprised|'
+                       r'disappointed|serious|calm|romantic|sarcastic|proud|confused|'
+                       r'anxious|disgusted|nostalgic|mysterious|enthusiastic|lazy|'
+                       r'gossip|innocent|nervous)\]\s*', '', text, flags=re.IGNORECASE)
         
         try:
             # 设置随机种子以确保可复现性
