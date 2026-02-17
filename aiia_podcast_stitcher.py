@@ -802,10 +802,17 @@ class AIIA_Podcast_Stitcher:
                 
                 if fa_entry:
                     fa_start, fa_end = fa_entry['start'], fa_entry['end']
-                    # 混合策略：FA 精确起点 + 能量检测自然收尾
+                    # FA 精确起点 + 能量检测自然收尾（受 VAD 约束）
                     cut_start = fa_start
                     cut_end = self._refine_cut_point(wav, sr, fa_end,
                         search_radius=0.15, direction="after")
+                    # 用 VAD 约束尾部：cut_end 不应超过 VAD 检测到的实际语音结束
+                    if use_vad:
+                        vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
+                        if vad_ts:
+                            _, vad_offset = self._refine_with_vad(fa_start, fa_end, vad_ts, search_margin=0.3)
+                            # 取能量谷和 VAD 终点中更早的（避免切入静音区）
+                            cut_end = min(cut_end, vad_offset)
                     
                     # 防止尾部扩展吃进下一句的 FA 起点
                     if fa_results and sent_local_idx + 1 < len(fa_results):
