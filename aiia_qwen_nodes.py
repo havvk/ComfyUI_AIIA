@@ -401,8 +401,26 @@ class AIIA_Qwen_TTS:
                 sr_final = seg_result[0]["sample_rate"]
                 all_segment_wavs.append(seg_wav.squeeze(0))  # [C, T]
 
-            # Concatenate all segments
-            combined = torch.cat(all_segment_wavs, dim=-1)  # [C, T_total]
+            # Stitch segments: fade-out + silence gap + fade-in (same as CosyVoice)
+            XFADE_MS, SILENCE_MS = 50, 100
+            xfade_samples = int(sr_final * XFADE_MS / 1000)
+            silence_samples = int(sr_final * SILENCE_MS / 1000)
+            combined = all_segment_wavs[0]
+            for _si in range(1, len(all_segment_wavs)):
+                _curr = all_segment_wavs[_si]
+                # Fade out tail
+                fo_len = min(xfade_samples, combined.shape[-1])
+                if fo_len >= 2:
+                    t_fo = torch.linspace(0, np.pi, fo_len, device=combined.device)
+                    combined = torch.cat([combined[..., :-fo_len], combined[..., -fo_len:] * (0.5 * (1.0 + torch.cos(t_fo)))], dim=-1)
+                # Silence gap
+                silence = torch.zeros(combined.shape[0], silence_samples, device=combined.device)
+                # Fade in head
+                fi_len = min(xfade_samples, _curr.shape[-1])
+                if fi_len >= 2:
+                    t_fi = torch.linspace(0, np.pi, fi_len, device=_curr.device)
+                    _curr = torch.cat([_curr[..., :fi_len] * (1.0 - 0.5 * (1.0 + torch.cos(t_fi))), _curr[..., fi_len:]], dim=-1)
+                combined = torch.cat([combined, silence, _curr], dim=-1)
             return ({"waveform": combined.unsqueeze(0), "sample_rate": sr_final},)
 
         # --- Single segment path (original logic) ---

@@ -586,41 +586,48 @@ class AIIA_CosyVoice_TTS:
         return segments
 
     @staticmethod
-    def _crossfade_segments(waveforms, sample_rate, crossfade_ms=50):
+    def _crossfade_segments(waveforms, sample_rate, crossfade_ms=50, silence_ms=100):
         """
-        Join waveform segments with a cosine crossfade to eliminate clicks/pops.
-        Each waveform is (1, N) or (C, N). crossfade_ms is the overlap duration.
-        Uses the same cosine fade approach as the Voice Conversion stitcher.
+        Join waveform segments with cosine fade-out / silence gap / fade-in.
+        Each waveform is (1, N) or (C, N).
+        - crossfade_ms: cosine fade duration applied to each segment's edge.
+        - silence_ms:   silence gap inserted between segments for easy splitting.
         """
         if not waveforms or len(waveforms) == 1:
             return torch.cat(waveforms, dim=-1) if waveforms else torch.zeros(1, 0)
 
         xfade_samples = int(sample_rate * crossfade_ms / 1000)
-
-        # Pre-compute fade curves (cosine)
-        t = torch.linspace(0, np.pi, xfade_samples, device=waveforms[0].device)
-        fade_out = 0.5 * (1.0 + torch.cos(t))  # 1 -> 0
-        fade_in  = 1.0 - fade_out               # 0 -> 1
+        silence_samples = int(sample_rate * silence_ms / 1000)
 
         result = waveforms[0]
         for i in range(1, len(waveforms)):
             curr = waveforms[i]
-            actual_xfade = min(xfade_samples, result.shape[-1], curr.shape[-1])
-            if actual_xfade < 2:
-                # Too short for crossfade, just concatenate
-                result = torch.cat([result, curr], dim=-1)
-                continue
 
-            # Trim fade curves to actual overlap
-            fo = fade_out[:actual_xfade]
-            fi = fade_in[:actual_xfade]
+            # --- Fade out the tail of previous segment ---
+            fo_len = min(xfade_samples, result.shape[-1])
+            if fo_len >= 2:
+                t_fo = torch.linspace(0, np.pi, fo_len, device=result.device)
+                fade_out = 0.5 * (1.0 + torch.cos(t_fo))  # 1 -> 0
+                result = torch.cat([
+                    result[..., :-fo_len],
+                    result[..., -fo_len:] * fade_out,
+                ], dim=-1)
 
-            overlap = result[..., -actual_xfade:] * fo + curr[..., :actual_xfade] * fi
-            result = torch.cat([
-                result[..., :-actual_xfade],
-                overlap,
-                curr[..., actual_xfade:],
-            ], dim=-1)
+            # --- Insert silence gap ---
+            channels = result.shape[0] if result.dim() >= 2 else 1
+            silence = torch.zeros(channels, silence_samples, device=result.device)
+
+            # --- Fade in the head of next segment ---
+            fi_len = min(xfade_samples, curr.shape[-1])
+            if fi_len >= 2:
+                t_fi = torch.linspace(0, np.pi, fi_len, device=curr.device)
+                fade_in = 1.0 - 0.5 * (1.0 + torch.cos(t_fi))  # 0 -> 1
+                curr = torch.cat([
+                    curr[..., :fi_len] * fade_in,
+                    curr[..., fi_len:],
+                ], dim=-1)
+
+            result = torch.cat([result, silence, curr], dim=-1)
 
         return result
 
