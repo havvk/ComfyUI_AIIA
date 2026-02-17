@@ -1483,6 +1483,39 @@ B: 太神奇了！那我们快去生成试试吧！
   - **自动归档**: 支持将拼接结果自动保存为 `.txt` 文件，文件名支持**自定义前缀** (save_prefix)，方便回溯。
 - **输出**: `STRING` (拼接后的文本)。
 
+#### 6.2 JSON 提取器 (AIIA JSON Extractor 🔑)
+
+- **用途**: 从 `STRING` 类型的 JSON 字符串中，按 key 路径提取指定字段的值。无需依赖第三方 JSON 节点，完全基于 `STRING` 类型，兼容所有上下游节点。
+- **功能**:
+  - **嵌套路径**: 支持 dot 路径 + 数组索引，例如 `data.items[0].name`、`[2].speaker`。
+  - **多类型输出**: 同时输出 `STRING`、`INT`、`FLOAT`、`BOOLEAN`，自动安全转换。
+  - **鲁棒容错**: JSON 格式错误、key 不存在、类型不匹配等情况**不会崩溃**，统一返回 `fallback` 默认值。
+  - **自动清理**: 自动处理 BOM、首尾空白等常见 JSON 字符串问题。
+- **输入**:
+  - `json_string` (STRING, forceInput) — 待解析的 JSON 字符串
+  - `key_path` (STRING) — 提取路径，例: `name`, `data.items[0].text`, `[2].speaker`
+  - `fallback` (STRING, 可选) — 解析失败时的默认值
+- **输出**: `value` (STRING), `value_int` (INT), `value_float` (FLOAT), `found` (BOOLEAN)
+
+**路径语法示例:**
+
+| 路径 | JSON 示例 | 提取结果 |
+|---|---|---|
+| `name` | `{"name": "Alice"}` | `Alice` |
+| `data.count` | `{"data": {"count": 42}}` | `42` |
+| `items[0].text` | `{"items": [{"text": "Hello"}]}` | `Hello` |
+| `[2].speaker` | `[{}, {}, {"speaker": "B"}]` | `B` |
+| *(空)* | `{"a": 1}` | 返回整个 JSON |
+
+#### 6.3 JSON 构建器 (AIIA JSON Builder 🏗️)
+
+- **用途**: 将多组 key-value 组装为 JSON 对象字符串，方便下游节点消费。
+- **功能**:
+  - 支持最多 **4 对** key-value 输入。
+  - 值如果是合法 JSON（数组、对象、数字、布尔），会自动解析为对应类型而非字符串。
+- **输入**: `key_1` + `value_1` (必填), `key_2`~`key_4` + `value_2`~`value_4` (可选)
+- **输出**: `json_string` (STRING)
+
 ---
 
 ## ❓ 故障排查
@@ -1499,6 +1532,18 @@ B: 太神奇了！那我们快去生成试试吧！
 ---
 
 ## Changelog
+
+### [1.14.2] - 2026-02-17
+
+- **NeMo Diarization 兼容性修复**: 修复 PyTorch 2.10+ 环境下 NeMo 说话人分割(`diarize()`)因 lhotse 1.32 不兼容报 `object.__init__() takes exactly one argument` 的崩溃。
+  - 自动检测 PyTorch 版本，仅在 >= 2.10 时 monkey-patch `CutSampler.__init__`，移除已废弃的 `data_source` 参数。
+- **JSON Extractor 节点** (New): 从 `STRING` 类型的 JSON 字符串中按 key 路径提取值，支持嵌套路径和数组索引（如 `data.items[0].name`）。
+  - 多类型输出：`STRING`、`INT`、`FLOAT`、`BOOLEAN`。
+  - 鲁棒容错：JSON 格式错误、key 不存在时返回 `fallback` 默认值，不会崩溃。
+- **JSON Builder 节点** (New): 将多组 key-value 组装为 JSON 对象字符串，支持最多 4 对输入。
+- **Qwen3-TTS Voice Preset**: 新增 `voice_preset` 下拉框（Female_HQ/Male_HQ/Female/Male），无需手动接入参考音频即可使用内置音色，自动启用 Zero-Shot 模式。
+- **Qwen3-TTS 鲁棒性**: `reference_text` 为空或字面值 `"None"` 时自动切换到 Zero-Shot 模式，防止意外走入慢速 ICL 模式。
+- **CosyVoice 参考音频限制**: 参考音频超过 30 秒时自动截断，防止 `AssertionError`。
 
 ### [1.12.0] - 2026-02-16
 

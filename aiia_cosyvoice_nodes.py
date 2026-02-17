@@ -836,6 +836,12 @@ class AIIA_CosyVoice_TTS:
                         ref_wav = torchaudio.transforms.Resample(reference_audio["sample_rate"], sample_rate)(ref_wav)
                     
                     if ref_wav.abs().max() > 1.0: ref_wav = ref_wav / ref_wav.abs().max()
+
+                    # Auto-truncate to 30s (CosyVoice _extract_speech_token limit)
+                    max_ref_samples = sample_rate * 30
+                    if ref_wav.shape[-1] > max_ref_samples:
+                        print(f"[AIIA] Reference audio is {ref_wav.shape[-1]/sample_rate:.1f}s, auto-truncating to 30s.")
+                        ref_wav = ref_wav[..., :max_ref_samples]
                     
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_ref:
                         ref_path = tmp_ref.name

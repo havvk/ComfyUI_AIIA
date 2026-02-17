@@ -7,6 +7,47 @@ from omegaconf import OmegaConf, open_dict # open_dict 允许添加新键
 import folder_paths # ComfyUI 的路径管理模块
 from typing import Optional, List, Dict, Union # 确保导入类型提示
 
+# --- Fix: lhotse 1.32 / PyTorch 2.10+ 兼容性补丁 ---
+# PyTorch 2.10 移除了 Sampler.__init__(data_source=...) 参数，
+# 但 lhotse 的 CutSampler 仍然传递它，导致:
+#   TypeError: object.__init__() takes exactly one argument
+# 在这里进行一次性修复，使 NeMo diarization 能正常工作。
+try:
+    from torch.utils.data import Sampler as _TorchSampler
+    # 检测 Sampler 是否已经不接受 data_source (PyTorch >= 2.10)
+    import inspect
+    _sampler_params = inspect.signature(_TorchSampler.__init__).parameters
+    if 'data_source' not in _sampler_params:
+        try:
+            from lhotse.dataset.sampling.base import CutSampler as _LhotseCutSampler
+            _original_init = _LhotseCutSampler.__init__
+
+            def _patched_cut_sampler_init(self, *args, **kwargs):
+                # 绕过 super().__init__(data_source=None)，直接初始化 Sampler
+                _TorchSampler.__init__(self)
+                # 执行 CutSampler 自身的初始化逻辑
+                self.drop_last = kwargs.get('drop_last', False)
+                self.shuffle = kwargs.get('shuffle', False)
+                self.seed = kwargs.get('seed', 0)
+                self.epoch = 0
+                from lhotse.dataset.sampling.base import SamplingDiagnostics, _filter_nothing
+                self._diagnostics = SamplingDiagnostics()
+                self._just_restored_state = False
+                self._maybe_init_distributed(
+                    world_size=kwargs.get('world_size', None),
+                    rank=kwargs.get('rank', None)
+                )
+                from lhotse.cut import Cut
+                self._filter_fn = _filter_nothing()
+                self._transforms = []
+
+            _LhotseCutSampler.__init__ = _patched_cut_sampler_init
+            print("[AIIA] ✅ 已修补 lhotse CutSampler 以兼容 PyTorch 2.10+")
+        except ImportError:
+            pass  # lhotse 未安装，无需修补
+except Exception as _patch_err:
+    print(f"[AIIA] ⚠️ lhotse 兼容性补丁失败: {_patch_err}")
+
 # --- 全局模型路径定义 ---
 _NEMO_MODELS_SUBDIR_STR = "nemo_models" 
 _E2E_MODEL_FILENAME_MAP = { # 支持多种E2E模型

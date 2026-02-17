@@ -154,6 +154,9 @@ else:
     # 31. 处理 aiia_text_splitter.py (单人文本拆分)
     _load_nodes_from_module(".aiia_text_splitter", "aiia_text_splitter")
 
+    # 32. 处理 aiia_json_extractor.py (JSON 提取/构建)
+    _load_nodes_from_module(".aiia_json_extractor", "aiia_json_extractor")
+
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"
 

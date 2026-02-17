@@ -262,6 +262,7 @@ class AIIA_Qwen_TTS:
             },
             "optional": {
                 "speaker": (QWEN_SPEAKER_LIST, {"default": "Vivian"}),
+                "voice_preset": (["None", "Female_HQ", "Male_HQ", "Female", "Male"], {"default": "None", "tooltip": "Built-in voice preset for Base/Clone models. Used when no reference_audio is connected. Auto-enables zero-shot mode."}),
                 "instruct": ("STRING", {"multiline": True, "default": ""}),
                 "reference_audio": ("AUDIO",),
                 "reference_text": ("STRING", {"multiline": True, "default": ""}),
@@ -290,6 +291,7 @@ class AIIA_Qwen_TTS:
         reference_audio = kwargs.get("reference_audio", None)
         reference_text = kwargs.get("reference_text", "")
         zero_shot_mode = kwargs.get("zero_shot_mode", False)
+        voice_preset = kwargs.get("voice_preset", "None")
         emotion = kwargs.get("emotion", "None")
         dialect = kwargs.get("dialect", "None")
         seed = kwargs.get("seed", 42)
@@ -298,6 +300,27 @@ class AIIA_Qwen_TTS:
         temperature = kwargs.get("temperature", 0.8)
         top_k = kwargs.get("top_k", 20)
         top_p = kwargs.get("top_p", 0.95)
+
+        # --- Voice Preset Fallback: auto-load seed audio when no reference_audio ---
+        if reference_audio is None and voice_preset != "None":
+            import torchaudio
+            preset_map = {
+                "Female_HQ": "seed_female_hq.wav",
+                "Male_HQ": "seed_male_hq.wav",
+                "Female": "seed_female.wav",
+                "Male": "seed_male.wav",
+            }
+            assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+            preset_path = os.path.join(assets_dir, preset_map.get(voice_preset, "seed_female_hq.wav"))
+            if os.path.exists(preset_path):
+                wav, sr = torchaudio.load(preset_path)
+                if wav.shape[0] > 1:
+                    wav = torch.mean(wav, dim=0, keepdim=True)
+                reference_audio = {"waveform": wav.unsqueeze(0), "sample_rate": sr}
+                zero_shot_mode = True  # Preset seeds have no matching text
+                print(f"[AIIA] Qwen3-TTS: Using voice preset '{voice_preset}' as reference audio (zero-shot mode).")
+            else:
+                print(f"[AIIA Warning] Voice preset file not found: {preset_path}")
 
         # 0. Handle Bundle Routing
         active_qwen = qwen_model
@@ -485,7 +508,7 @@ class AIIA_Qwen_TTS:
                     
                     ref_audio_data = (ref_wav.squeeze().cpu().numpy(), ref_sr)
                     
-                    ref_text = reference_text if reference_text and reference_text.strip() != "" else None
+                    ref_text = reference_text if reference_text and reference_text.strip() not in ("", "None", "none") else None
                     mode_param = zero_shot_mode
                     
                     # Robustness: Qwen requires ref_text for ICL mode (zero_shot_mode=False)
