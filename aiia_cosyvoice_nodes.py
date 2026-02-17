@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import types
 import os
+import re
 import random
 import tempfile
 import soundfile as sf
@@ -542,6 +543,114 @@ class AIIA_CosyVoice_VoiceConversion:
             if os.path.exists(source_path): os.unlink(source_path)
 
 class AIIA_CosyVoice_TTS:
+    # Match emotion tags injected by Splitter, e.g. [Happy], [Lazy tone]
+    _EMOTION_TAG_RE = re.compile(r'^\[(\w[\w\s]*?)\]\s*', re.MULTILINE)
+
+    @staticmethod
+    def _split_by_emotion_tags(text):
+        """
+        Split text containing inline emotion tags into segments at tag boundaries.
+
+        Input: "[Happy] First sentence\\n\\nSecond sentence\\n\\n[Sad] Third sentence"
+        Output: [("Happy", "First sentence\\n\\nSecond sentence"), ("Sad", "Third sentence")]
+
+        If text has no emotion tags, returns [(None, original_text)].
+        If text has only one tag at the start, returns [(tag, text_without_tag)].
+        """
+        matches = list(AIIA_CosyVoice_TTS._EMOTION_TAG_RE.finditer(text))
+
+        if not matches:
+            return [(None, text)]
+
+        segments = []
+
+        # Text before first tag -> no-emotion segment
+        if matches[0].start() > 0:
+            pre_text = text[:matches[0].start()].strip()
+            if pre_text:
+                segments.append((None, pre_text))
+
+        for i, m in enumerate(matches):
+            emotion_tag = m.group(1)  # e.g. "Happy"
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            seg_text = text[start:end].strip()
+            if seg_text:
+                segments.append((emotion_tag, seg_text))
+
+        # Single segment: return as-is (will go through normal path with tag prepended)
+        if len(segments) <= 1 and matches:
+            clean_text = AIIA_CosyVoice_TTS._EMOTION_TAG_RE.sub('', text).strip()
+            return [(matches[0].group(1), clean_text)]
+
+        return segments
+
+    @staticmethod
+    def _crossfade_segments(waveforms, sample_rate, crossfade_ms=50):
+        """
+        Join waveform segments with a cosine crossfade to eliminate clicks/pops.
+        Each waveform is (1, N) or (C, N). crossfade_ms is the overlap duration.
+        Uses the same cosine fade approach as the Voice Conversion stitcher.
+        """
+        if not waveforms or len(waveforms) == 1:
+            return torch.cat(waveforms, dim=-1) if waveforms else torch.zeros(1, 0)
+
+        xfade_samples = int(sample_rate * crossfade_ms / 1000)
+
+        # Pre-compute fade curves (cosine)
+        t = torch.linspace(0, np.pi, xfade_samples, device=waveforms[0].device)
+        fade_out = 0.5 * (1.0 + torch.cos(t))  # 1 -> 0
+        fade_in  = 1.0 - fade_out               # 0 -> 1
+
+        result = waveforms[0]
+        for i in range(1, len(waveforms)):
+            curr = waveforms[i]
+            actual_xfade = min(xfade_samples, result.shape[-1], curr.shape[-1])
+            if actual_xfade < 2:
+                # Too short for crossfade, just concatenate
+                result = torch.cat([result, curr], dim=-1)
+                continue
+
+            # Trim fade curves to actual overlap
+            fo = fade_out[:actual_xfade]
+            fi = fade_in[:actual_xfade]
+
+            overlap = result[..., -actual_xfade:] * fo + curr[..., :actual_xfade] * fi
+            result = torch.cat([
+                result[..., :-actual_xfade],
+                overlap,
+                curr[..., actual_xfade:],
+            ], dim=-1)
+
+        return result
+
+    @staticmethod
+    def _build_emotion_instruct(base_instruct, emotion_tag):
+        """
+        Merge a per-segment emotion tag into the base instruct_text.
+        CosyVoice V2/V3 reads [Tag] in tts_text as literal text, so emotion
+        must go into instruct_text with proper <|endofprompt|> boundary.
+
+        Without <|endofprompt|>, CosyVoice cannot distinguish the instruction
+        from speech text and will read the instruction aloud.
+        """
+        if not emotion_tag:
+            return base_instruct
+
+        emo_phrase = f"请非常{emotion_tag}地说。"
+        eop = "<|endofprompt|>"
+
+        if not base_instruct:
+            # No existing instruct — build full V3 format from scratch
+            return f"You are a helpful assistant. {emo_phrase}{eop}"
+
+        # Insert emotion before <|endofprompt|> if present
+        if eop in base_instruct:
+            return base_instruct.replace(eop, f" {emo_phrase}{eop}")
+        else:
+            # V1 or missing eop — append and add eop
+            return f"You are a helpful assistant. {base_instruct} {emo_phrase}{eop}"
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -577,6 +686,14 @@ class AIIA_CosyVoice_TTS:
             if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed)
 
         final_waveform = None
+
+        # --- Emotion tag segment detection ---
+        emotion_segments = self._split_by_emotion_tags(tts_text)
+        has_multi_emotion = len(emotion_segments) > 1
+        if has_multi_emotion:
+            print(f"[AIIA] CosyVoice: Detected {len(emotion_segments)} emotion segments, will generate each separately.")
+            for i, (emo, seg) in enumerate(emotion_segments):
+                print(f"  Segment {i}: emotion={emo}, text={seg[:40]}...")
 
         try:
             # Detect Model Type from dictionary if available, else class name
@@ -757,14 +874,40 @@ class AIIA_CosyVoice_TTS:
                         # <|endofprompt|> is REQUIRED by CosyVoice3 in all paths.
                         pass_spk_id = spk_id if spk_id else ""
                         print(f"[AIIA] CosyVoice V2/V3 Inference (Ref: {os.path.basename(ref_path) if ref_path else 'None'}, Spk: {pass_spk_id or 'Zero-Shot Mode'})")
-                        output = cosyvoice_model.inference_instruct2(
-                            tts_text=tts_text, 
-                            instruct_text=final_instruct, 
-                            prompt_wav=ref_path, 
-                            zero_shot_spk_id=pass_spk_id, 
-                            stream=False, 
-                            speed=speed
-                        )
+
+                        if has_multi_emotion:
+                            # --- Multi-emotion segment generation ---
+                            # Emotion goes into instruct_text, NOT tts_text (CosyVoice reads [tag] in tts_text aloud)
+                            all_segment_waveforms = []
+                            for seg_idx, (seg_emotion, seg_text) in enumerate(emotion_segments):
+                                seg_instruct = self._build_emotion_instruct(final_instruct, seg_emotion)
+                                print(f"[AIIA] CosyVoice: Ref segment {seg_idx+1}/{len(emotion_segments)} emotion={seg_emotion}, instruct={seg_instruct[:60]}")
+                                seg_output = cosyvoice_model.inference_instruct2(
+                                    tts_text=seg_text,
+                                    instruct_text=seg_instruct,
+                                    prompt_wav=ref_path,
+                                    zero_shot_spk_id=pass_spk_id,
+                                    stream=False,
+                                    speed=speed
+                                )
+                                seg_speech = [chunk['tts_speech'] for chunk in seg_output]
+                                all_segment_waveforms.append(torch.cat(seg_speech, dim=-1))
+                            final_waveform = self._crossfade_segments(all_segment_waveforms, sample_rate)
+                        else:
+                            # Single segment or no tags — strip tag from text, inject into instruct
+                            seg_emotion = emotion_segments[0][0]
+                            seg_text = emotion_segments[0][1] if seg_emotion else tts_text
+                            seg_instruct = self._build_emotion_instruct(final_instruct, seg_emotion)
+                            output = cosyvoice_model.inference_instruct2(
+                                tts_text=seg_text,
+                                instruct_text=seg_instruct,
+                                prompt_wav=ref_path,
+                                zero_shot_spk_id=pass_spk_id,
+                                stream=False,
+                                speed=speed
+                            )
+                            all_speech = [chunk['tts_speech'] for chunk in output]
+                            final_waveform = torch.cat(all_speech, dim=-1)
                     else:
                         # --- V1 (300M) Native Path Selection (Always Zero-Shot for Audio Path) ---
                         p_text = "希望你以后能够做的比我还好呦。"
@@ -783,8 +926,8 @@ class AIIA_CosyVoice_TTS:
                         print(f"[AIIA] CosyVoice: V1 Zero-Shot Path ({base_gender}).")
                         output = cosyvoice_model.inference_zero_shot(tts_text=tts_text, prompt_text=p_text, prompt_wav=ref_path, stream=False, speed=effective_speed)
                     
-                    all_speech = [chunk['tts_speech'] for chunk in output]
-                    final_waveform = torch.cat(all_speech, dim=-1)
+                        all_speech = [chunk['tts_speech'] for chunk in output]
+                        final_waveform = torch.cat(all_speech, dim=-1)
                 finally:
                     if cleanup_ref and os.path.exists(ref_path): os.unlink(ref_path)
 
@@ -792,20 +935,42 @@ class AIIA_CosyVoice_TTS:
             else:
                 if is_v3 or is_v2:
                     print(f"[AIIA] CosyVoice: V2/V3 Identity Path. Speaker: {spk_id}")
-                    output = cosyvoice_model.inference_instruct2(
-                        tts_text=tts_text, 
-                        instruct_text=final_instruct, 
-                        prompt_wav=None, 
-                        zero_shot_spk_id=spk_id, 
-                        stream=False, 
-                        speed=speed
-                    )
+
+                    if has_multi_emotion:
+                        # --- Multi-emotion segment generation (SFT path) ---
+                        all_segment_waveforms = []
+                        for seg_idx, (seg_emotion, seg_text) in enumerate(emotion_segments):
+                            seg_instruct = self._build_emotion_instruct(final_instruct, seg_emotion)
+                            print(f"[AIIA] CosyVoice: SFT segment {seg_idx+1}/{len(emotion_segments)} emotion={seg_emotion}, instruct={seg_instruct[:60]}")
+                            seg_output = cosyvoice_model.inference_instruct2(
+                                tts_text=seg_text,
+                                instruct_text=seg_instruct,
+                                prompt_wav=None,
+                                zero_shot_spk_id=spk_id,
+                                stream=False,
+                                speed=speed
+                            )
+                            seg_speech = [chunk['tts_speech'] for chunk in seg_output]
+                            all_segment_waveforms.append(torch.cat(seg_speech, dim=-1))
+                        final_waveform = self._crossfade_segments(all_segment_waveforms, sample_rate)
+                    else:
+                        seg_emotion = emotion_segments[0][0]
+                        seg_text = emotion_segments[0][1] if seg_emotion else tts_text
+                        seg_instruct = self._build_emotion_instruct(final_instruct, seg_emotion)
+                        output = cosyvoice_model.inference_instruct2(
+                            tts_text=seg_text,
+                            instruct_text=seg_instruct,
+                            prompt_wav=None,
+                            zero_shot_spk_id=spk_id,
+                            stream=False,
+                            speed=speed
+                        )
+                        all_speech = [chunk['tts_speech'] for chunk in output]
+                        final_waveform = torch.cat(all_speech, dim=-1)
                 elif is_instruct and final_instruct:
                     # --- V1 (300M) Surgical Instruct Path (Identity Preservation) ---
-                    # We manually call tts to ensure llm_embedding doesn't get stripped.
                     print(f"[AIIA] CosyVoice: V1 Surgical Instruct Path. Speaker: {spk_id}")
                     
-                    # For V1 Instruct, we MUST use <|endofprompt|> to separate instruction from text
                     clean_inst = final_instruct.strip()
                     if "<|" in clean_inst:
                         clean_inst = clean_inst.split("<|")[0].strip()
@@ -814,14 +979,14 @@ class AIIA_CosyVoice_TTS:
                     
                     print(f"[AIIA] CosyVoice: V1 Native Instruct Path. Instruction: {clean_inst}")
                     output = cosyvoice_model.inference_instruct(tts_text, spk_id, clean_inst, stream=False, speed=speed)
+                    all_speech = [chunk['tts_speech'] for chunk in output]
+                    final_waveform = torch.cat(all_speech, dim=-1)
                 else:
                     # --- V1 (300M) Regular SFT Mode ---
                     print(f"[AIIA] CosyVoice: SFT Mode. Speaker: {spk_id}")
-                    # Normal SFT path for fixed identities
                     output = cosyvoice_model.inference_sft(tts_text, spk_id, speed=speed)
-                
-                all_speech = [chunk['tts_speech'] for chunk in output]
-                final_waveform = torch.cat(all_speech, dim=-1)
+                    all_speech = [chunk['tts_speech'] for chunk in output]
+                    final_waveform = torch.cat(all_speech, dim=-1)
             
             # --- 3. RMS Normalization ---
             # Maximize volume while maintaining natural energy balance

@@ -232,30 +232,89 @@ class Qwen2Encoder(torch.nn.Module):
         super().__init__()
         self.model = Qwen2ForCausalLM.from_pretrained(pretrain_path)
 
+    def _manual_forward(self, hidden_states, attention_mask, past_key_values=None, use_cache=False):
+        """Manually iterate through Qwen2 layers, bypassing Qwen2Model.forward().
+
+        transformers >=4.57 rewrote Qwen2Model.forward() with new mask creation
+        (create_causal_mask), new position embedding handling, and DynamicCache.
+        CosyVoice was trained with transformers 4.51 whose forward() used
+        _prepare_4d_causal_attention_mask and inline hidden_states collection.
+        This method replicates the OLD forward behavior using APIs still
+        available in 4.57, preserving exact numerical compatibility.
+
+        Returns PRE-norm hidden_states (before the final RMSNorm), matching
+        the old hidden_states[-1] behavior that CosyVoice's llm_decoder was
+        trained on.
+        """
+        qwen = self.model.model  # Qwen2Model
+
+        # --- Compute sequence / cache lengths ---
+        batch_size, seq_length = hidden_states.shape[:2]
+        if past_key_values is not None:
+            if hasattr(past_key_values, 'get_seq_length'):
+                past_length = past_key_values.get_seq_length()
+            else:
+                past_length = past_key_values[0][0].shape[2]
+        else:
+            past_length = 0
+
+        # --- Position IDs ---
+        position_ids = torch.arange(
+            past_length, past_length + seq_length,
+            dtype=torch.long, device=hidden_states.device
+        ).unsqueeze(0)
+
+        # --- Attention mask (old-style, SDPA-compatible) ---
+        from transformers.modeling_attn_mask_utils import (
+            _prepare_4d_causal_attention_mask_for_sdpa,
+        )
+        causal_mask = _prepare_4d_causal_attention_mask_for_sdpa(
+            attention_mask, (batch_size, seq_length),
+            hidden_states, past_length,
+        )
+
+        # --- Position embeddings (RoPE) ---
+        position_embeddings = qwen.rotary_emb(hidden_states, position_ids)
+
+        # --- Ensure we have a proper cache object for 4.57 ---
+        if use_cache and past_key_values is None:
+            from transformers import DynamicCache
+            past_key_values = DynamicCache()
+
+        # --- Forward through each decoder layer ---
+        for layer in qwen.layers:
+            layer_out = layer(
+                hidden_states,
+                attention_mask=causal_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+            )
+            # In 4.57 layers return a single tensor; in old versions a tuple
+            if isinstance(layer_out, tuple):
+                hidden_states = layer_out[0]
+            else:
+                hidden_states = layer_out
+
+        # Apply final RMSNorm — the old hidden_states[-1] was POST-norm because
+        # Qwen2Model.forward() applied self.norm() BEFORE appending to
+        # all_hidden_states. CosyVoice's llm_decoder was trained on POST-norm.
+        hidden_states = qwen.norm(hidden_states)
+        return hidden_states, past_key_values
+
     def forward(self, xs: torch.Tensor, xs_lens: torch.Tensor):
         T = xs.size(1)
         masks = ~make_pad_mask(xs_lens, T)
-        outs = self.model(
-            inputs_embeds=xs,
-            attention_mask=masks,
-            output_hidden_states=True,
-            return_dict=True,
-        )
-        return outs.hidden_states[-1], masks.unsqueeze(1)
+        hidden_states, _ = self._manual_forward(xs, masks, use_cache=False)
+        return hidden_states, masks.unsqueeze(1)
 
     def forward_one_step(self, xs, masks, cache=None):
         input_masks = masks[:, -1, :]
-        outs = self.model(
-            inputs_embeds=xs,
-            attention_mask=input_masks,
-            output_hidden_states=True,
-            return_dict=True,
-            use_cache=True,
-            past_key_values=cache,
+        hidden_states, new_cache = self._manual_forward(
+            xs, input_masks, past_key_values=cache, use_cache=True,
         )
-        xs = outs.hidden_states[-1]
-        new_cache = outs.past_key_values
-        return xs, new_cache
+        return hidden_states, new_cache
 
 
 class Qwen2LM(TransformerLM):

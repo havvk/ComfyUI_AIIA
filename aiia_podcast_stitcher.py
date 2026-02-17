@@ -813,6 +813,11 @@ class AIIA_Podcast_Stitcher:
                         if next_fa and cut_end > next_fa['start']:
                             # 取中点，但保底不低于 FA 原始终点（防止 FA 时间戳微重叠时过度截断）
                             cut_end = max(fa_end, (fa_end + next_fa['start']) / 2)
+                    else:
+                        # 最后一句：硬性上限 = FA 终点 + 0.3s
+                        # 防止 CosyVoice/TTS 在音频末尾重复最后一句被误收
+                        MAX_TAIL_AFTER_FA = 0.3
+                        cut_end = min(cut_end, fa_end + MAX_TAIL_AFTER_FA)
                     
                     # 交叉验证：同时计算 VAD 和 Energy 的结果做对比
                     if use_vad and vad_timestamps_A is not None:

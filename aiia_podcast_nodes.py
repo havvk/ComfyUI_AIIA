@@ -673,7 +673,7 @@ class AIIA_Dialogue_TTS:
                             model=cosyvoice_model,
                             tts_text=text,
                             instruct_text=instruct,
-                            spk_id=spk_id,
+                            spk_id="",
                             speed=speed_global,
                             seed=42+i,
                             dialect=kwargs.get(f"speaker_{spk_key}_dialect", "None (Auto)"),

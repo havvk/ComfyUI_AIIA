@@ -109,8 +109,8 @@ class AIIA_Podcast_Splitter:
 
         # 拼接每个说话人的文本
         # 每句之间用换行分隔（TTS 会在换行处产生自然停顿）
-        speaker_A_text = "\n".join(texts_A)
-        speaker_B_text = "\n".join(texts_B)
+        speaker_A_text = "\n\n".join(texts_A)
+        speaker_B_text = "\n\n".join(texts_B)
 
         split_map_json = json.dumps(split_map, ensure_ascii=False, indent=2)
 

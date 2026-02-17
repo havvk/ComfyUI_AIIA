@@ -536,6 +536,21 @@ hf download digital-avatar/ditto-talkinghead --local-dir ditto
     - `CosyVoice2-0.5B` (CosyVoice 2.0)
     - `CosyVoice-300M` 系列 (SFT, Instruct, TTSFRD)
 - **输出**: `COSYVOICE_MODEL` (专为 AIIA Voice Conversion 节点优化)。
+  - **✅ 依赖版本兼容性 (Dependency Compatibility)**:
+    CosyVoice 对 `transformers` 和 `PyTorch` 版本敏感。AIIA 已内置深度兼容层，**完美支持最新版本的 `transformers`**。
+
+    | 依赖 | 兼容版本 | 备注 |
+    |---|---|---|
+    | **transformers** | **全版本兼容** ✅ | AIIA 内置 Qwen2Encoder 兼容层，自动适配新旧版本 |
+    | **PyTorch** | ≤ 2.8.1 ✅ / ≥ 2.10.0 ✅ | 2.9.x ❌ (PyTorch regression bug) |
+
+    > [!NOTE]
+    > `transformers` > 4.53 重写了 `Qwen2Model.forward()` 的注意力掩码和隐藏状态输出，导致原版 CosyVoice 生成乱码。AIIA 通过手动逐层迭代 + SDPA 专用掩码 + POST-norm 输出还原，完全绕过了不兼容的新接口，确保与原始训练行为 100% 一致。
+
+    如遇到 PyTorch 2.9.x 导致的问题，请升级：
+    ```bash
+    pip install torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu128
+    ```
   - **⚠️ 模型下载问题 (Model Download Issues)**:
     如果遇到自动下载卡顿或失败，请**手工下载**模型文件夹，并将其放入 `ComfyUI/models/cosyvoice/` 目录中。
 
@@ -1086,8 +1101,6 @@ Qwen3-TTS 最强大的特性之一是其**自然语言指令驱动**的能力。
 **4. 使用技巧**:
 - **句尾符号**: 指令末尾建议加一个句号（如 `开心地。`），这有助于模型更稳定地理解指令边界。
 - **对话剧本**: 在 `🎙️ Qwen3-TTS Dialogue (Specialist)` 节点中，如果某位 Speaker 处于 `Preset` 或 `Design` 模式，系统会自动将剧本中的情感标签（如 `[开心]`）转换为对应的 `instruct` 指令。
-
----
 
 ---
 

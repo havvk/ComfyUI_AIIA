@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import torch
 import torchaudio
 import numpy as np
@@ -56,49 +57,97 @@ QWEN_DIALECT_LIST = [
     "Hubei (湖北话)", "Guizhou (贵州话)", "Yunnan (云南话)", "Gansu (甘肃话)", "Ningxia (宁夏话)"
 ]
 
+def _patch_qwen_tts():
+    """Auto-patch qwen_tts package for transformers compatibility.
+
+    qwen_tts uses decorators (@auto_docstring, @check_model_inputs) that are
+    buggy in transformers 4.57.x — @auto_docstring crashes on classes not in
+    AutoMappings, and @check_model_inputs rejects valid kwargs like inputs_embeds.
+    This function scans ALL .py files in qwen_tts and comments them out.
+    """
+    import importlib.util
+    import re as _re
+    spec = importlib.util.find_spec("qwen_tts")
+    if not spec or not spec.origin:
+        return False  # Not installed yet
+
+    qwen_pkg_dir = os.path.dirname(spec.origin)  # .../qwen_tts/
+
+    # Pass 1: Single-line decorators
+    # Matches: @auto_docstring, @auto_docstring(...), @check_model_inputs, @check_model_inputs()
+    single_line_re = _re.compile(
+        r'^(\s*)@(auto_docstring|check_model_inputs)(\([^)]*\))?\s*$',
+        _re.MULTILINE
+    )
+    # Pass 2: Multi-line @auto_docstring(\n  ...\n) blocks
+    multiline_re = _re.compile(
+        r'^(\s*)@(auto_docstring|check_model_inputs)\(\s*\n(.*?)\)',
+        _re.MULTILINE | _re.DOTALL
+    )
+    patched_marker = "# AIIA: patched out"
+
+    patched_files = 0
+    for root, _dirs, files in os.walk(qwen_pkg_dir):
+        for fname in files:
+            if not fname.endswith(".py"):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, "r") as f:
+                    content = f.read()
+                if patched_marker in content:
+                    continue  # Already patched
+                # Pass 1: single-line decorators
+                new_content = single_line_re.sub(
+                    lambda m: f"{m.group(1)}# @{m.group(2)}{m.group(3) or ''}  {patched_marker}",
+                    content
+                )
+                # Pass 2: multi-line decorator blocks
+                new_content = multiline_re.sub(
+                    lambda m: f"{m.group(1)}# @{m.group(2)}(...)  {patched_marker}",
+                    new_content
+                )
+                if new_content != content:
+                    with open(fpath, "w") as f:
+                        f.write(new_content)
+                    patched_files += 1
+            except Exception:
+                pass  # Don't fail on permission/encoding issues
+
+    if patched_files:
+        print(f"[AIIA] Auto-patched qwen-tts decorators in {patched_files} file(s)")
+    return True
+
+
 def _install_qwen_tts_if_needed():
+    # 1. Always try to patch before importing (covers decorator bugs in installed package)
+    _patch_qwen_tts()
+
     try:
         from qwen_tts import Qwen3TTSModel
-        # Check if transformers is at least 4.48.0 and not a broken 5.0.0
+        # Check if transformers is at least 4.48.0
         import transformers
         from packaging import version
         v = version.parse(transformers.__version__)
-        if v.major >= 5 or v < version.parse("4.48.0"):
+        if v < version.parse("4.48.0"):
              print(f"[AIIA] Incompatible transformers version {transformers.__version__} found, fixing...")
-             raise ImportError("Need stable transformers")
+             raise ImportError("Need compatible transformers")
         return
-    except (ImportError, ModuleNotFoundError, TypeError):
-        print("[AIIA] Installing/Fixing Qwen3-TTS dependencies (qwen-tts, transformers)...")
+    except (ImportError, ModuleNotFoundError, TypeError, UnboundLocalError):
+        print("[AIIA] Installing/Fixing Qwen3-TTS dependencies (qwen-tts)...")
         try:
             import subprocess
             import sys
-            import site
-            
-            # Enforce stable transformers version to avoid 'MODELS_TO_PIPELINE' import errors
-            # vllm needs >= 4.56.0, 4.57.x seems to have import issues with qwen-tts
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "transformers==4.56.2", "qwen-tts"])
-            
-            # Surgical patch for qwen-tts @check_model_inputs() bug
-            # Find the qwen_tts installation path
-            import importlib.util
-            spec = importlib.util.find_spec("qwen_tts")
-            if spec and spec.origin:
-                qwen_path = os.path.dirname(os.path.dirname(spec.origin))
-                target_file = os.path.join(qwen_path, "qwen_tts/core/tokenizer_12hz/modeling_qwen3_tts_tokenizer_v2.py")
-                if os.path.exists(target_file):
-                    print(f"[AIIA] Patching qwen-tts decorator bug at {target_file}")
-                    with open(target_file, "r") as f:
-                        content = f.read()
-                    if "@check_model_inputs()" in content:
-                        new_content = content.replace("@check_model_inputs()", "@check_model_inputs")
-                        with open(target_file, "w") as f:
-                            f.write(new_content)
-                        print("[AIIA] Patch applied successfully.")
-            
+
+            # Install qwen-tts (will pull in its required transformers version)
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "qwen-tts"])
+
+            # Re-patch after fresh install
+            _patch_qwen_tts()
+
             print("[AIIA] Dependencies installed and patched successfully.")
         except Exception as e:
             print(f"[AIIA] Failed to install/patch qwen-tts dependencies: {e}")
-            # Don't raise here, we want the subsequent load attempt to show the real error if any
 
 class AIIA_Qwen_Loader:
     @classmethod
@@ -170,6 +219,39 @@ class AIIA_Qwen_Loader:
         return ({"model": model, "type": model_type, "name": path, "device": device},)
 
 class AIIA_Qwen_TTS:
+    # Match emotion tags injected by Splitter, e.g. [Happy], [Lazy tone]
+    _EMOTION_TAG_RE = re.compile(r'^\[(\w[\w\s]*?)\]\s*', re.MULTILINE)
+
+    @staticmethod
+    def _split_by_emotion_tags(text):
+        """
+        Split text containing inline emotion tags into segments at tag boundaries.
+        Returns list of (emotion_tag_or_None, text_segment) tuples.
+        """
+        matches = list(AIIA_Qwen_TTS._EMOTION_TAG_RE.finditer(text))
+        if not matches:
+            return [(None, text)]
+
+        segments = []
+        if matches[0].start() > 0:
+            pre_text = text[:matches[0].start()].strip()
+            if pre_text:
+                segments.append((None, pre_text))
+
+        for i, m in enumerate(matches):
+            emotion_tag = m.group(1)
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            seg_text = text[start:end].strip()
+            if seg_text:
+                segments.append((emotion_tag, seg_text))
+
+        if len(segments) <= 1 and matches:
+            clean_text = AIIA_Qwen_TTS._EMOTION_TAG_RE.sub('', text).strip()
+            return [(matches[0].group(1), clean_text)]
+
+        return segments
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -275,10 +357,56 @@ class AIIA_Qwen_TTS:
                     else:
                         final_instruct = f"{final_instruct}。{emo_label}。"
 
-        # 3. [v1.13.0] Extract inline [Emotion] tags from text (e.g. from Splitter output)
-        #    Convert them to instruct and strip from text to prevent reading aloud
-        #    If user already chose emotion via UI dropdown, just strip tags (UI takes priority)
-        import re
+        # 3. [v1.14.0] Multi-emotion segment splitting
+        #    When text contains multiple inline [Emotion] tags (e.g. from Splitter),
+        #    split into segments and generate each with its own emotion instruct.
+        emotion_segments = self._split_by_emotion_tags(text)
+        has_multi_emotion = len(emotion_segments) > 1
+
+        if has_multi_emotion:
+            print(f"[AIIA] Qwen3-TTS: Detected {len(emotion_segments)} emotion segments, generating each separately.")
+            all_segment_wavs = []
+            sr_final = 24000
+
+            for seg_idx, (seg_emotion, seg_text) in enumerate(emotion_segments):
+                # Build per-segment instruct: start from base instruct (dialect etc.)
+                seg_instruct = final_instruct
+                if seg_emotion and seg_emotion.lower() != "neutral":
+                    if not seg_instruct:
+                        seg_instruct = f"{seg_emotion}。"
+                    elif seg_emotion not in seg_instruct:
+                        seg_instruct = f"{seg_instruct}{seg_emotion}。"
+
+                print(f"  Segment {seg_idx+1}/{len(emotion_segments)}: emotion={seg_emotion}, text={seg_text[:40]}...")
+                # Recursive call for single segment (no multi-emotion recursion since tags are stripped)
+                seg_result = self.generate(
+                    qwen_model=active_qwen,
+                    text=seg_text,
+                    language=language,
+                    speaker=speaker,
+                    instruct=seg_instruct or "",
+                    reference_audio=reference_audio,
+                    reference_text=reference_text,
+                    zero_shot_mode=zero_shot_mode,
+                    emotion="None",  # Already handled via instruct
+                    dialect="None",  # Already in seg_instruct
+                    seed=seed,
+                    speed=speed,
+                    cfg_scale=cfg_scale,
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                )
+                seg_wav = seg_result[0]["waveform"]  # [1, C, T]
+                sr_final = seg_result[0]["sample_rate"]
+                all_segment_wavs.append(seg_wav.squeeze(0))  # [C, T]
+
+            # Concatenate all segments
+            combined = torch.cat(all_segment_wavs, dim=-1)  # [C, T_total]
+            return ({"waveform": combined.unsqueeze(0), "sample_rate": sr_final},)
+
+        # --- Single segment path (original logic) ---
+        # Strip inline emotion tags and merge first tag into instruct
         _EMOTION_RE = re.compile(
             r'\[(?:neutral|happy|sad|angry|excited|gentle|fearful|surprised|'
             r'disappointed|serious|calm|romantic|sarcastic|proud|confused|'
@@ -333,7 +461,6 @@ class AIIA_Qwen_TTS:
                     if ref_wav.shape[0] > 1: ref_wav = torch.mean(ref_wav, dim=0, keepdim=True)
                     
                     # AIIA Fix: Normalize reference audio volume to a standard level (0.8 peak)
-                    # This ensures Qwen's cloning isn't influenced by extremely quiet or loud reference files.
                     ref_peak = ref_wav.abs().max()
                     if ref_peak > 0.01:
                         ref_wav = ref_wav * (0.8 / ref_peak)
@@ -361,9 +488,6 @@ class AIIA_Qwen_TTS:
                     )
                     print(f"  [Debug] Finished model.generate_voice_clone. Wavs count: {len(wavs) if wavs else 0}")
                 else:
-                    # Fallback if no reference provided for Base model
-                    # Typically Base model MUST have reference.
-                    # We might want to provide a default one or error out.
                     raise ValueError("Qwen3-TTS Base model requires 'reference_audio' and 'reference_text' for cloning.")
 
             # Process output
@@ -371,18 +495,15 @@ class AIIA_Qwen_TTS:
                 audio_out = torch.from_numpy(wavs[0]).float()
                 if audio_out.ndim == 1: audio_out = audio_out.unsqueeze(0)
                 
-                # Speed adj (Qwen3-TTS might not have native speed param in generate_* yet, so we use torchaudio if needed)
+                # Speed adj
                 if speed != 1.0:
-                    # Simple speed change via resampling (pitch change) - matches CosyVoice fallback
                     resampler = torchaudio.transforms.Resample(orig_freq=int(sr*speed), new_freq=sr)
                     audio_out = resampler(audio_out)
                 
                 # AIIA Fix: RMS Normalization
-                # This ensures consistent volume across segments and matches CosyVoice output levels.
                 if audio_out.abs().max() > 0:
                     current_rms = torch.sqrt(torch.mean(audio_out**2))
                     if current_rms > 0:
-                        # Target RMS 0.22 matches CosyVoice implementation
                         target_rms = 0.22
                         scale = target_rms / current_rms.item()
                         audio_out = audio_out * scale
