@@ -146,7 +146,7 @@ class AIIA_VibeVoice_Loader:
         # 5. Load Model
         print(f"[AIIA] Loading VibeVoice model variant: {VibeVoiceClass.__name__}")
         config = VibeVoiceConfig.from_pretrained(load_path)
-        model = VibeVoiceClass.from_pretrained(load_path, config=config, torch_dtype=dtype, trust_remote_code=False).to(device)
+        model = VibeVoiceClass.from_pretrained(load_path, config=config, torch_dtype=dtype, device_map="auto", trust_remote_code=False)
         
         # Load Generation Config
         try:
