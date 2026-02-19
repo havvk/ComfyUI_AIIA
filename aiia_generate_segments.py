@@ -240,28 +240,41 @@ class AIIA_GenerateSpeakerSegments:
 
 
         try:
-            import sys, time as _t
+            import sys, time as _t, importlib
             print(f"{node_name_log} [DEBUG] 开始导入 NeMo 类... ({_t.strftime('%H:%M:%S')})", flush=True)
             
-            # Check if modelscope patched from_pretrained
+            # Check from_pretrained state
             import transformers as _tf
-            _fpt = _tf.PreTrainedModel.from_pretrained
-            print(f"{node_name_log} [DEBUG]  from_pretrained type: {type(_fpt)}", flush=True)
-            print(f"{node_name_log} [DEBUG]  from_pretrained module: {getattr(_fpt, '__module__', 'N/A')}", flush=True)
-            print(f"{node_name_log} [DEBUG]  has _from_pretrained_origin: {hasattr(_tf.PreTrainedModel, '_from_pretrained_origin')}", flush=True)
-            ms_mods = [k for k in sys.modules if 'modelscope' in k]
-            print(f"{node_name_log} [DEBUG]  modelscope modules in sys.modules: {len(ms_mods)}", flush=True)
-            if ms_mods:
-                print(f"{node_name_log} [DEBUG]  modelscope mods: {ms_mods[:5]}", flush=True)
+            print(f"{node_name_log} [DEBUG]  modelscope in sys.modules: {'modelscope' in sys.modules}", flush=True)
             
-            sys.stdout.flush()
+            # Install import hook to trace which module hangs
+            _orig_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+            _import_stack = []
+            def _traced_import(name, *args, **kwargs):
+                is_interesting = name.startswith(('nemo.collections.asr.models', 'transformers'))
+                if is_interesting:
+                    indent = '  ' * len(_import_stack)
+                    print(f"{node_name_log} [IMPORT] {indent}-> {name}", flush=True)
+                    _import_stack.append(name)
+                try:
+                    return _orig_import(name, *args, **kwargs)
+                finally:
+                    if is_interesting:
+                        _import_stack.pop()
+                        indent = '  ' * len(_import_stack)
+                        print(f"{node_name_log} [IMPORT] {indent}<- {name} OK", flush=True)
+            
+            import builtins
+            builtins.__import__ = _traced_import
             try:
                 print(f"{node_name_log} [DEBUG]  importing SortformerEncLabelModel from msdd_models...", flush=True)
                 from nemo.collections.asr.models.msdd_models import SortformerEncLabelModel
+                print(f"{node_name_log} [DEBUG]  SortformerEncLabelModel imported OK ({_t.strftime('%H:%M:%S')})", flush=True)
             except ImportError:
                 print(f"{node_name_log} [DEBUG]  msdd_models failed, trying asr.models...", flush=True)
                 from nemo.collections.asr.models import SortformerEncLabelModel
-            print(f"{node_name_log} [DEBUG]  SortformerEncLabelModel imported OK ({_t.strftime('%H:%M:%S')})", flush=True)
+            finally:
+                builtins.__import__ = _orig_import
             
             print(f"{node_name_log} [DEBUG]  importing DiarizeConfig...", flush=True)
             from nemo.collections.asr.parts.mixins.diarization import DiarizeConfig 
