@@ -241,19 +241,40 @@ class AIIA_GenerateSpeakerSegments:
 
         try:
             # --- DIAGNOSTIC START ---
-            import threading, time, traceback, sys
-            print(f"{node_name_log} starting NeMo import watchdog (30s timeout)...")
+            import threading, time, traceback, sys, faulthandler, os
+            
+            # Use stderr for immediate output (unbuffered)
+            def log(msg):
+                try: sys.stderr.write(f"{node_name_log} {msg}\n")
+                except: pass
+                
+            log("Starting strict NeMo import watchdog (30s timeout)...")
+            
+            # 1. Use faulthandler (C-level signal) to dump trace even if GIL is held
+            try:
+                faulthandler.dump_traceback_later(30, repeat=False, file=sys.stderr)
+                log("Enabled faulthandler (will dump to stderr after 30s)")
+            except Exception as e:
+                log(f"Failed to enable faulthandler: {e}")
+
+            # 2. Keep python thread for heartbeats
             def _watchdog():
-                time.sleep(30)
-                # Check if still importing (simple way: set a flag after import, check it here)
-                # But since this thread dies on success (if not daemon), let's just dump.
-                # Actually, let's use a flag.
-                if not getattr(sys.modules[__name__], "_nemo_imported", False):
-                    print(f"\n{node_name_log} [WATCHDOG] Still importing after 30s! Dumping stacks:")
-                    for thread_id, frame in sys._current_frames().items():
-                        print(f"\n=== Thread {thread_id} ===")
-                        traceback.print_stack(frame)
-                    print(f"{node_name_log} [WATCHDOG] End of stack dump.\n")
+                start_t = time.time()
+                while not getattr(sys.modules[__name__], "_nemo_imported", False):
+                    elapsed = time.time() - start_t
+                    if elapsed > 35: # Backup dump if faulthandler fails
+                        log(f"[WATCHDOG] STILL IMPORTING after {elapsed:.1f}s! Force dumping stacks:")
+                        try:
+                            for thread_id, frame in sys._current_frames().items():
+                                log(f"\n=== Thread {thread_id} ===")
+                                traceback.print_stack(frame, file=sys.stderr)
+                            log("[WATCHDOG] End of stack dump.\n")
+                        except:
+                            log("[WATCHDOG] Failed to dump stacks!")
+                        break
+                    if elapsed > 2 and int(elapsed) % 5 == 0:
+                         log(f"[WATCHDOG] still importing... ({int(elapsed)}s)")
+                    time.sleep(1)
 
             sys.modules[__name__]._nemo_imported = False
             _t = threading.Thread(target=_watchdog, daemon=True)
@@ -264,8 +285,12 @@ class AIIA_GenerateSpeakerSegments:
             except ImportError: from nemo.collections.asr.models import SortformerEncLabelModel
             from nemo.collections.asr.parts.mixins.diarization import DiarizeConfig 
             
+            # Disable faulthandler timer
+            try: faulthandler.cancel_dump_traceback_later()
+            except: pass
+            
             sys.modules[__name__]._nemo_imported = True
-            print(f"{node_name_log} 成功导入 NeMo 类。")
+            log("成功导入 NeMo 类。")
         except ImportError as e_import_model:
             return self._create_error_output(f"导入 NeMo 类失败 ({e_import_model})")
 
