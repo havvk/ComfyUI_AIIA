@@ -60,84 +60,78 @@ def _ensure_indextts():
 
 
 
-@contextlib.contextmanager
-def _active_transformers_patches():
+_transformers_patches_applied = False
+
+def _apply_transformers_patches():
     """
-    Context manager that temporarily applies transformers >= 4.57 compatibility patches
-    and reverts them on exit. This prevents breaking other nodes like NeMo that might
-    rely on the original transformers behavior or their own version checks.
-    """
-    _patches_applied = []
+    Apply transformers compatibility patches once (idempotent).
     
-    try:
-        # 1. QuantizedCacheConfig (removed from cache_utils)
-        from transformers import cache_utils
-        if not hasattr(cache_utils, "QuantizedCacheConfig"):
-            class QuantizedCacheConfig:
-                def __init__(self, **kwargs): pass
-            cache_utils.QuantizedCacheConfig = QuantizedCacheConfig
-            _patches_applied.append((cache_utils, "QuantizedCacheConfig"))
-            # print("[AIIA] Applied patch: transformers.cache_utils.QuantizedCacheConfig")
+    These are ADDITIVE shims for attributes removed in newer transformers versions.
+    They never override existing behavior — they only add what's missing.
+    
+    IMPORTANT: These patches must NOT be reverted. Once IndexTTS imports its module
+    chain, those modules cache references to these attributes in sys.modules.
+    Deleting them via delattr would leave stale references, breaking downstream
+    nodes like VibeVoice that use device_map="auto" or other transformers features.
+    """
+    global _transformers_patches_applied
+    if _transformers_patches_applied:
+        return
+    
+    count = 0
 
-        # 2. _crop_past_key_values (removed from candidate_generator)
-        from transformers.generation import candidate_generator as cg
-        if not hasattr(cg, "_crop_past_key_values"):
-            def _crop_past_key_values(model, past_key_values, max_length):
-                return past_key_values
-            cg._crop_past_key_values = _crop_past_key_values
-            _patches_applied.append((cg, "_crop_past_key_values"))
-            # print("[AIIA] Applied patch: transformers.generation.candidate_generator._crop_past_key_values")
+    # 1. QuantizedCacheConfig (removed from cache_utils)
+    from transformers import cache_utils
+    if not hasattr(cache_utils, "QuantizedCacheConfig"):
+        class QuantizedCacheConfig:
+            def __init__(self, **kwargs): pass
+        cache_utils.QuantizedCacheConfig = QuantizedCacheConfig
+        count += 1
 
-        # 3. NEED_SETUP_CACHE_CLASSES_MAPPING & QUANT_BACKEND_CLASSES_MAPPING
-        from transformers.generation import configuration_utils as cu
-        if not hasattr(cu, "NEED_SETUP_CACHE_CLASSES_MAPPING"):
-            cu.NEED_SETUP_CACHE_CLASSES_MAPPING = {}
-            _patches_applied.append((cu, "NEED_SETUP_CACHE_CLASSES_MAPPING"))
-        if not hasattr(cu, "QUANT_BACKEND_CLASSES_MAPPING"):
-            cu.QUANT_BACKEND_CLASSES_MAPPING = {}
-            _patches_applied.append((cu, "QUANT_BACKEND_CLASSES_MAPPING"))
+    # 2. _crop_past_key_values (removed from candidate_generator)
+    from transformers.generation import candidate_generator as cg
+    if not hasattr(cg, "_crop_past_key_values"):
+        def _crop_past_key_values(model, past_key_values, max_length):
+            return past_key_values
+        cg._crop_past_key_values = _crop_past_key_values
+        count += 1
 
-        # 4. SequenceSummary (removed from modeling_utils)
-        import transformers.modeling_utils as mu
-        if not hasattr(mu, "SequenceSummary"):
-            class SequenceSummary(torch.nn.Module):
-                def __init__(self, config):
-                    super().__init__()
-                def forward(self, hidden_states, **kwargs):
-                    return hidden_states[:, -1]
-            mu.SequenceSummary = SequenceSummary
-            _patches_applied.append((mu, "SequenceSummary"))
-            # print("[AIIA] Applied patch: transformers.modeling_utils.SequenceSummary")
+    # 3. NEED_SETUP_CACHE_CLASSES_MAPPING & QUANT_BACKEND_CLASSES_MAPPING
+    from transformers.generation import configuration_utils as cu
+    if not hasattr(cu, "NEED_SETUP_CACHE_CLASSES_MAPPING"):
+        cu.NEED_SETUP_CACHE_CLASSES_MAPPING = {}
+        count += 1
+    if not hasattr(cu, "QUANT_BACKEND_CLASSES_MAPPING"):
+        cu.QUANT_BACKEND_CLASSES_MAPPING = {}
+        count += 1
 
-        # 5. GenerationConfig.forced_decoder_ids (removed in 4.39)
-        from transformers import GenerationConfig
-        if not hasattr(GenerationConfig, "forced_decoder_ids"):
-            setattr(GenerationConfig, "forced_decoder_ids", None)
-            _patches_applied.append((GenerationConfig, "forced_decoder_ids"))
-            # print("[AIIA] Applied patch: transformers.GenerationConfig.forced_decoder_ids")
+    # 4. SequenceSummary (removed from modeling_utils)
+    import transformers.modeling_utils as mu
+    if not hasattr(mu, "SequenceSummary"):
+        class SequenceSummary(torch.nn.Module):
+            def __init__(self, config):
+                super().__init__()
+            def forward(self, hidden_states, **kwargs):
+                return hidden_states[:, -1]
+        mu.SequenceSummary = SequenceSummary
+        count += 1
 
-        # 6. apply_chunking_to_forward (removed in 4.37)
-        if not hasattr(mu, "apply_chunking_to_forward"):
-            def apply_chunking_to_forward(forward_chunk_fn, chunk_size, *input_tensors, **kwargs):
-                # Basic pass-through implementation
-                return forward_chunk_fn(*input_tensors, **kwargs)
-            
-            mu.apply_chunking_to_forward = apply_chunking_to_forward
-            _patches_applied.append((mu, "apply_chunking_to_forward"))
-            # print("[AIIA] Applied patch: transformers.modeling_utils.apply_chunking_to_forward")
-        
-        yield
+    # 5. GenerationConfig.forced_decoder_ids (removed in 4.39)
+    from transformers import GenerationConfig
+    if not hasattr(GenerationConfig, "forced_decoder_ids"):
+        setattr(GenerationConfig, "forced_decoder_ids", None)
+        count += 1
 
-    except Exception as e:
-        print(f"[AIIA] Warning: transformers compat patch failed: {e}")
-        raise
+    # 6. apply_chunking_to_forward (removed in 4.37)
+    if not hasattr(mu, "apply_chunking_to_forward"):
+        def apply_chunking_to_forward(forward_chunk_fn, chunk_size, *input_tensors, **kwargs):
+            return forward_chunk_fn(*input_tensors, **kwargs)
+        mu.apply_chunking_to_forward = apply_chunking_to_forward
+        count += 1
 
-    finally:
-        # Revert patches
-        for target, attr_name in reversed(_patches_applied):
-            if hasattr(target, attr_name):
-                delattr(target, attr_name)
-        # print(f"[AIIA] Reverted {len(_patches_applied)} transformers patches.")
+    _transformers_patches_applied = True
+    if count > 0:
+        print(f"[AIIA] Applied {count} transformers compatibility patches (permanent).")
 
 
 
@@ -333,16 +327,16 @@ class AIIA_IndexTTS2_Loader:
         _orig_from_pretrained = transformers.PreTrainedModel.from_pretrained
 
         try:
-            with _active_transformers_patches():
-                from indextts.infer_v2 import IndexTTS2
-                with _patch_indextts_loading(model_dir):
-                    tts = IndexTTS2(
-                        cfg_path=cfg_path,
-                        model_dir=model_dir,
-                        use_fp16=use_fp16,
-                        use_cuda_kernel=use_cuda_kernel,
-                        use_deepspeed=False,
-                    )
+            _apply_transformers_patches()
+            from indextts.infer_v2 import IndexTTS2
+            with _patch_indextts_loading(model_dir):
+                tts = IndexTTS2(
+                    cfg_path=cfg_path,
+                    model_dir=model_dir,
+                    use_fp16=use_fp16,
+                    use_cuda_kernel=use_cuda_kernel,
+                    use_deepspeed=False,
+                )
         finally:
             # Always restore original from_pretrained, even if loading fails
             transformers.PreTrainedModel.from_pretrained = _orig_from_pretrained
@@ -496,8 +490,9 @@ class AIIA_IndexTTS2_TTS:
             if emo_path:
                 print(f"  Emotion audio: {emo_path}")
 
-            # Run inference (with temporary transformers patches)
-            with _active_transformers_patches(), torch.no_grad():
+            # Run inference (patches already applied permanently)
+            _apply_transformers_patches()
+            with torch.no_grad():
                 tts.infer(
                     spk_audio_prompt=ref_path,
                     text=text,
