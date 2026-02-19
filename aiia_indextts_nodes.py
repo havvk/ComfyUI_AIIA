@@ -130,7 +130,7 @@ def _active_transformers_patches():
 
     except Exception as e:
         print(f"[AIIA] Warning: transformers compat patch failed: {e}")
-        yield
+        raise
 
     finally:
         # Revert patches
@@ -332,19 +332,20 @@ class AIIA_IndexTTS2_Loader:
         import transformers
         _orig_from_pretrained = transformers.PreTrainedModel.from_pretrained
 
-        with _active_transformers_patches():
-            from indextts.infer_v2 import IndexTTS2
-            with _patch_indextts_loading(model_dir):
-                tts = IndexTTS2(
-                    cfg_path=cfg_path,
-                    model_dir=model_dir,
-                    use_fp16=use_fp16,
-                    use_cuda_kernel=use_cuda_kernel,
-                    use_deepspeed=False,
-                )
-
-        # Restore original from_pretrained after modelscope monkey-patched it
-        transformers.PreTrainedModel.from_pretrained = _orig_from_pretrained
+        try:
+            with _active_transformers_patches():
+                from indextts.infer_v2 import IndexTTS2
+                with _patch_indextts_loading(model_dir):
+                    tts = IndexTTS2(
+                        cfg_path=cfg_path,
+                        model_dir=model_dir,
+                        use_fp16=use_fp16,
+                        use_cuda_kernel=use_cuda_kernel,
+                        use_deepspeed=False,
+                    )
+        finally:
+            # Always restore original from_pretrained, even if loading fails
+            transformers.PreTrainedModel.from_pretrained = _orig_from_pretrained
         
         _INDEXTTS_MODEL_CACHE[cache_key] = tts
         print("[AIIA] IndexTTS-2 loaded successfully.")
