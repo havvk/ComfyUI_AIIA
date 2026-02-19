@@ -318,28 +318,16 @@ class AIIA_IndexTTS2_Loader:
         # (infer_v2 → model_v2 → transformers_gpt2 → transformers_generation_utils) does
         # top-level `from transformers.cache_utils import QuantizedCacheConfig` which needs
         # the patch to exist first.
-        #
-        # IMPORTANT: indextts's infer_v2.py does `from modelscope import AutoModelForCausalLM`
-        # at module level, which globally monkey-patches transformers.PreTrainedModel.from_pretrained.
-        # This breaks NeMo's SortformerEncLabelModel.restore_from() (hangs indefinitely).
-        # We save and restore the original method to neutralize modelscope's side-effect.
-        import transformers
-        _orig_from_pretrained = transformers.PreTrainedModel.from_pretrained
-
-        try:
-            _apply_transformers_patches()
-            from indextts.infer_v2 import IndexTTS2
-            with _patch_indextts_loading(model_dir):
-                tts = IndexTTS2(
-                    cfg_path=cfg_path,
-                    model_dir=model_dir,
-                    use_fp16=use_fp16,
-                    use_cuda_kernel=use_cuda_kernel,
-                    use_deepspeed=False,
-                )
-        finally:
-            # Always restore original from_pretrained, even if loading fails
-            transformers.PreTrainedModel.from_pretrained = _orig_from_pretrained
+        _apply_transformers_patches()
+        from indextts.infer_v2 import IndexTTS2
+        with _patch_indextts_loading(model_dir):
+            tts = IndexTTS2(
+                cfg_path=cfg_path,
+                model_dir=model_dir,
+                use_fp16=use_fp16,
+                use_cuda_kernel=use_cuda_kernel,
+                use_deepspeed=False,
+            )
         
         _INDEXTTS_MODEL_CACHE[cache_key] = tts
         print("[AIIA] IndexTTS-2 loaded successfully.")

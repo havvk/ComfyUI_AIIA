@@ -146,44 +146,7 @@ class AIIA_VibeVoice_Loader:
         # 5. Load Model
         print(f"[AIIA] Loading VibeVoice model variant: {VibeVoiceClass.__name__}")
         config = VibeVoiceConfig.from_pretrained(load_path)
-        
-        # --- Diagnostic: intercept dispatch_model to see the device_map ---
-        from accelerate.big_modeling import dispatch_model as _orig_dispatch
-        import accelerate.big_modeling
-        def _debug_dispatch(model, device_map, **kwargs):
-            print(f"[AIIA DEBUG] dispatch_model called with device_map={device_map}")
-            print(f"[AIIA DEBUG] device_map type={type(device_map)}, len={len(device_map)}")
-            print(f"[AIIA DEBUG] model type={type(model).__name__}")
-            named_mods = list(model.named_modules())
-            print(f"[AIIA DEBUG] model has {len(named_mods)} named modules")
-            if len(named_mods) <= 5:
-                print(f"[AIIA DEBUG] modules: {[n for n,_ in named_mods]}")
-            import torch
-            if torch.cuda.is_available():
-                free, total = torch.cuda.mem_get_info(0)
-                print(f"[AIIA DEBUG] GPU mem: free={free/1e9:.2f}GB, total={total/1e9:.2f}GB, used={(total-free)/1e9:.2f}GB")
-            if len(device_map) == 0:
-                print("[AIIA DEBUG] *** EMPTY device_map! Will crash in accelerate. ***")
-                # Print model._no_split_modules
-                nsm = getattr(model, '_no_split_modules', 'NOT SET')
-                print(f"[AIIA DEBUG] model._no_split_modules = {nsm}")
-                # Try to get a working device_map manually
-                from accelerate import infer_auto_device_map
-                try:
-                    manual_map = infer_auto_device_map(model, dtype=dtype)
-                    print(f"[AIIA DEBUG] manual infer_auto_device_map result: {manual_map}")
-                except Exception as e2:
-                    print(f"[AIIA DEBUG] manual infer_auto_device_map failed: {e2}")
-            return _orig_dispatch(model, device_map=device_map, **kwargs)
-        accelerate.big_modeling.dispatch_model = _debug_dispatch
-        # Also patch the import reference in transformers
-        import transformers.modeling_utils as _tmu
-        _tmu.dispatch_model = _debug_dispatch
-        try:
-            model = VibeVoiceClass.from_pretrained(load_path, config=config, torch_dtype=dtype, device_map="auto", trust_remote_code=False)
-        finally:
-            accelerate.big_modeling.dispatch_model = _orig_dispatch
-            _tmu.dispatch_model = _orig_dispatch
+        model = VibeVoiceClass.from_pretrained(load_path, config=config, torch_dtype=dtype, device_map="auto", trust_remote_code=False)
         
         # Load Generation Config
         try:
