@@ -12,6 +12,17 @@ import numpy as np
 import contextlib
 import shutil
 
+# --- Preload kaldifst to prevent hang when used with NeMo Diarization ---
+# IndexTTS-2 seems to put the process (OpenMP/MKL/dlopen lock) in a state
+# that causes kaldifst initialization to hang if imported LATER.
+# By importing it here at startup (before IndexTTS runs), we ensure it
+# initializes safely.
+try:
+    import kaldifst
+except ImportError:
+    pass
+
+
 # ---------------------------------------------------------------------------
 #  Lazy setup: add libs/index-tts to sys.path so `from indextts...` works
 # ---------------------------------------------------------------------------
