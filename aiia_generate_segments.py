@@ -240,10 +240,21 @@ class AIIA_GenerateSpeakerSegments:
 
 
         try:
-            try: from nemo.collections.asr.models.msdd_models import SortformerEncLabelModel
-            except ImportError: from nemo.collections.asr.models import SortformerEncLabelModel
+            import sys, time as _t
+            print(f"{node_name_log} [DEBUG] 开始导入 NeMo 类... ({_t.strftime('%H:%M:%S')})", flush=True)
+            sys.stdout.flush()
+            try:
+                print(f"{node_name_log} [DEBUG]  importing SortformerEncLabelModel from msdd_models...", flush=True)
+                from nemo.collections.asr.models.msdd_models import SortformerEncLabelModel
+            except ImportError:
+                print(f"{node_name_log} [DEBUG]  msdd_models failed, trying asr.models...", flush=True)
+                from nemo.collections.asr.models import SortformerEncLabelModel
+            print(f"{node_name_log} [DEBUG]  SortformerEncLabelModel imported OK ({_t.strftime('%H:%M:%S')})", flush=True)
+            
+            print(f"{node_name_log} [DEBUG]  importing DiarizeConfig...", flush=True)
             from nemo.collections.asr.parts.mixins.diarization import DiarizeConfig 
-            # PostProcessingParams 和 asdict 在此流程中不再直接从 Python 导入和使用
+            print(f"{node_name_log} [DEBUG]  DiarizeConfig imported OK ({_t.strftime('%H:%M:%S')})", flush=True)
+            
             print(f"{node_name_log} 成功导入 NeMo 类。")
         except ImportError as e_import_model:
             return self._create_error_output(f"导入 NeMo 类失败 ({e_import_model})")
