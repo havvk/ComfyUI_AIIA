@@ -240,10 +240,31 @@ class AIIA_GenerateSpeakerSegments:
 
 
         try:
+            # --- DIAGNOSTIC START ---
+            import threading, time, traceback, sys
+            print(f"{node_name_log} starting NeMo import watchdog (30s timeout)...")
+            def _watchdog():
+                time.sleep(30)
+                # Check if still importing (simple way: set a flag after import, check it here)
+                # But since this thread dies on success (if not daemon), let's just dump.
+                # Actually, let's use a flag.
+                if not getattr(sys.modules[__name__], "_nemo_imported", False):
+                    print(f"\n{node_name_log} [WATCHDOG] Still importing after 30s! Dumping stacks:")
+                    for thread_id, frame in sys._current_frames().items():
+                        print(f"\n=== Thread {thread_id} ===")
+                        traceback.print_stack(frame)
+                    print(f"{node_name_log} [WATCHDOG] End of stack dump.\n")
+
+            sys.modules[__name__]._nemo_imported = False
+            _t = threading.Thread(target=_watchdog, daemon=True)
+            _t.start()
+            # --- DIAGNOSTIC END ---
+
             try: from nemo.collections.asr.models.msdd_models import SortformerEncLabelModel
             except ImportError: from nemo.collections.asr.models import SortformerEncLabelModel
             from nemo.collections.asr.parts.mixins.diarization import DiarizeConfig 
-            # PostProcessingParams 和 asdict 在此流程中不再直接从 Python 导入和使用
+            
+            sys.modules[__name__]._nemo_imported = True
             print(f"{node_name_log} 成功导入 NeMo 类。")
         except ImportError as e_import_model:
             return self._create_error_output(f"导入 NeMo 类失败 ({e_import_model})")
