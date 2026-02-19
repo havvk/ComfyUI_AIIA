@@ -17,10 +17,10 @@ import shutil
 # that causes kaldifst initialization to hang if imported LATER.
 # By importing it here at startup (before IndexTTS runs), we ensure it
 # initializes safely.
-try:
-    import kaldifst
-except ImportError:
-    pass
+# try:
+#     import kaldifst
+# except ImportError:
+#     pass
 
 
 # ---------------------------------------------------------------------------
