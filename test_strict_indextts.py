@@ -2,6 +2,7 @@
 import sys
 import os
 import torch
+import contextlib
 
 # Base paths
 COMFY_ROOT = "/app/ComfyUI"
@@ -13,25 +14,11 @@ ASSETS_DIR = os.path.join(AIIA_ROOT, "assets")
 # Add libs to sys.path
 sys.path.insert(0, LIB_PATH)
 
-print(f"--- IndexTTS Strict Test ---")
+print(f"--- IndexTTS Strict Test (Patched) ---")
 print(f"Lib path: {LIB_PATH}")
 print(f"Model dir: {MODEL_DIR}")
 
-# Import
-try:
-    from indextts.infer_v2 import IndexTTS2
-    print("Successfully imported IndexTTS2")
-except ImportError as e:
-    print(f"Failed to import: {e}")
-    sys.exit(1)
-
-# Config
-cfg_path = os.path.join(MODEL_DIR, "config.yaml")
-use_fp16 = True
-device = "cuda:0" if torch.cuda.is_available() else "cpu"
-
 # --- Patches for transformers 4.57+ compatibility ---
-import contextlib
 from transformers import GenerationConfig
 
 @contextlib.contextmanager
@@ -83,10 +70,11 @@ def _transformers_patches():
             delattr(GenerationConfig, "forced_decoder_ids")
 # ----------------------------------------------------
 
-print(f"Initializing IndexTTS2 on {device}...")
-
 # Config
 cfg_path = os.path.join(MODEL_DIR, "config.yaml")
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+print(f"Device: {device}")
 
 # Test both FP16 and FP32
 for use_fp16 in [True, False]:
@@ -95,16 +83,10 @@ for use_fp16 in [True, False]:
     # Initialize with patches applied during import
     try:
         with _transformers_patches():
-            # Import inside patch context because IndexTTS imports transformers at top level
-            # Wait, IndexTTS was already imported above? FAIL.
-            # I must patch BEFORE import.
-            # But script structure has imports at top.
-            # I need to move imports here or reload.
+            # Clear modules to ensure patches apply if imported before (unlikely here but safe)
             if 'indextts.infer_v2' in sys.modules:
                 del sys.modules['indextts.infer_v2']
-            if 'indextts.gpt.model_v2' in sys.modules:
-                 # Recursive reload is hard.
-                 pass
+            
             from indextts.infer_v2 import IndexTTS2
 
             tts = IndexTTS2(
@@ -117,12 +99,14 @@ for use_fp16 in [True, False]:
             )
     except Exception as e:
         print(f"Init failed: {e}")
+        import traceback
+        traceback.print_exc()
         continue
 
     print("Model initialized.")
 
     # Inference
-    text = "你好，这是一段 IndexTTS-2 语音合成测试。"
+    text = f"你好，这是一段 IndexTTS-2 语音合成测试。FP16={use_fp16}"
     ref_audio = os.path.join(ASSETS_DIR, "seed_female_hq.wav")
     suffix = "fp16" if use_fp16 else "fp32"
     output_path = f"test_out_official_{suffix}.wav"
@@ -149,4 +133,3 @@ for use_fp16 in [True, False]:
         traceback.print_exc()
 
 print("--- End Test ---")
-sys.exit(0)
