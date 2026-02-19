@@ -656,21 +656,21 @@ class IndexTTS2:
                     s2mel_time += time.perf_counter() - m_start_time
 
                     m_start_time = time.perf_counter()
-                    wav = self.bigvgan(vc_target.float()).squeeze().unsqueeze(0)
-                    print(wav.shape)
-                    bigvgan_time += time.perf_counter() - m_start_time
-                    wav = wav.squeeze(1)
+                wav = self.bigvgan(vc_target.float()).squeeze().unsqueeze(0)
+                # print(wav.shape)
+                bigvgan_time += time.perf_counter() - m_start_time
+                wav = wav.squeeze(1)
 
-                wav = torch.clamp(32767 * wav, -32767.0, 32767.0)
-                if verbose:
-                    print(f"wav shape: {wav.shape}", "min:", wav.min(), "max:", wav.max())
-                # wavs.append(wav[:, :-512])
-                wavs.append(wav.cpu())  # to cpu before saving
-                if stream_return:
-                    yield wav.cpu()
-                    if silence == None:
-                        silence = self.interval_silence(wavs, sampling_rate=sampling_rate, interval_silence=interval_silence)
-                    yield silence
+            # wav = torch.clamp(32767 * wav, -32767.0, 32767.0)
+            if verbose:
+                print(f"wav shape: {wav.shape}", "min:", wav.min(), "max:", wav.max())
+            # wavs.append(wav[:, :-512])
+            wavs.append(wav.cpu())  # to cpu before saving
+            if stream_return:
+                yield wav.cpu()
+                if silence == None:
+                    silence = self.interval_silence(wavs, sampling_rate=sampling_rate, interval_silence=interval_silence)
+                yield silence
         end_time = time.perf_counter()
 
         self._set_gr_progress(0.9, "saving audio...")
@@ -694,7 +694,7 @@ class IndexTTS2:
                 print(">> remove old wav file:", output_path)
             if os.path.dirname(output_path) != "":
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            torchaudio.save(output_path, wav.type(torch.int16), sampling_rate)
+            torchaudio.save(output_path, wav.float(), sampling_rate)
             print(">> wav file saved to:", output_path)
             if stream_return:
                 return None
@@ -703,7 +703,7 @@ class IndexTTS2:
             if stream_return:
                 return None
             # 返回以符合Gradio的格式要求
-            wav_data = wav.type(torch.int16)
+            wav_data = (wav * 32767).clamp(-32767, 32767).type(torch.int16)
             wav_data = wav_data.numpy().T
             yield (sampling_rate, wav_data)
 
