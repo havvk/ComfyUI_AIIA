@@ -242,6 +242,18 @@ class AIIA_GenerateSpeakerSegments:
         try:
             import sys, time as _t
             print(f"{node_name_log} [DEBUG] 开始导入 NeMo 类... ({_t.strftime('%H:%M:%S')})", flush=True)
+            
+            # Check if modelscope patched from_pretrained
+            import transformers as _tf
+            _fpt = _tf.PreTrainedModel.from_pretrained
+            print(f"{node_name_log} [DEBUG]  from_pretrained type: {type(_fpt)}", flush=True)
+            print(f"{node_name_log} [DEBUG]  from_pretrained module: {getattr(_fpt, '__module__', 'N/A')}", flush=True)
+            print(f"{node_name_log} [DEBUG]  has _from_pretrained_origin: {hasattr(_tf.PreTrainedModel, '_from_pretrained_origin')}", flush=True)
+            ms_mods = [k for k in sys.modules if 'modelscope' in k]
+            print(f"{node_name_log} [DEBUG]  modelscope modules in sys.modules: {len(ms_mods)}", flush=True)
+            if ms_mods:
+                print(f"{node_name_log} [DEBUG]  modelscope mods: {ms_mods[:5]}", flush=True)
+            
             sys.stdout.flush()
             try:
                 print(f"{node_name_log} [DEBUG]  importing SortformerEncLabelModel from msdd_models...", flush=True)
