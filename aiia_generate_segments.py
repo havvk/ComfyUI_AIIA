@@ -243,6 +243,7 @@ class AIIA_GenerateSpeakerSegments:
             try: from nemo.collections.asr.models.msdd_models import SortformerEncLabelModel
             except ImportError: from nemo.collections.asr.models import SortformerEncLabelModel
             from nemo.collections.asr.parts.mixins.diarization import DiarizeConfig 
+            # PostProcessingParams 和 asdict 在此流程中不再直接从 Python 导入和使用
             print(f"{node_name_log} 成功导入 NeMo 类。")
         except ImportError as e_import_model:
             return self._create_error_output(f"导入 NeMo 类失败 ({e_import_model})")
