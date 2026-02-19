@@ -1104,6 +1104,87 @@ Qwen3-TTS 最强大的特性之一是其**自然语言指令驱动**的能力。
 
 ---
 
+#### 3.14 IndexTTS-2 (New! 🔥)
+
+- **用途**: Bilibili 开源的 **零样本语音克隆 + 情感控制** TTS 模型。支持**音色与情感解耦**，调整情感时不会导致音色漂移。
+- **🔥 核心特性**:
+  - **音色/情感解耦 (Voice-Emotion Decoupling)**: 独立控制音色和情感，改变情感不影响声音音色。这解决了其他模型在调整情感时音色漂移的顽疾。
+  - **8 维情感向量控制**: 提供 `happy`, `angry`, `sad`, `afraid`, `disgusted`, `melancholic`, `surprised`, `calm` 八个情感滑块，精细控制输出语音的情感表达。
+  - **情感音频参考**: 支持通过额外的 `emotion_audio` 输入捕获参考音频中的情感特征，并通过 `emo_alpha` 控制混合强度。
+  - **零样本音色克隆**: 输入 `reference_audio` 即可克隆声音。
+- **节点**:
+  - **IndexTTS-2 Loader**: 加载 IndexTTS-2 模型。
+    - `use_fp16`: 半精度推理（降低 VRAM，加速推理）。
+    - `use_cuda_kernel`: 使用 BigVGAN 自定义 CUDA 核心（仅 NVIDIA GPU）。
+    - `model_dir` (可选): 自定义模型目录，留空则使用默认路径 `ComfyUI/models/indextts2/`。
+  - **IndexTTS-2 TTS**: 执行语音合成。
+    - `text`: 待合成的文本（支持中英文混合）。
+    - `reference_audio`: 音色参考音频。
+    - `emotion_audio` (可选): 独立的情感参考音频。
+    - 8 个情感滑块 (`happy` ~ `calm`)：直接控制情感向量。
+    - `emo_alpha`: 情感混合强度 (0=无情感, 1=完全情感)。
+    - `use_random`: 随机采样（开启后降低克隆保真度）。
+    - `seed`: 随机种子，用于可复现生成。
+- **✅ 依赖版本兼容性 (Dependency Compatibility)**:
+  AIIA 已内置深度兼容层，**完美支持 `transformers` 4.57+**。
+
+  > [!NOTE]
+  > IndexTTS-2 的官方代码基于 `transformers 4.52`，与最新版本存在多处 API 不兼容。AIIA 通过预注入 5 个兼容补丁（`QuantizedCacheConfig`、`_crop_past_key_values`、`NEED_SETUP_CACHE_CLASSES_MAPPING`、`QUANT_BACKEND_CLASSES_MAPPING`、`SequenceSummary`），确保在最新环境下正常运行。
+
+- **⚠️ 模型下载 (Model Download)**:
+  IndexTTS-2 除了主模型外，还依赖 **4 个外部子模型**。AIIA 节点支持**全离线加载**，建议将所有模型统一放入 `ComfyUI/models/indextts2/`。
+
+  **目录结构 (Directory Structure)**:
+
+  ```text
+  ComfyUI/models/indextts2/
+  ├── config.yaml
+  ├── gpt.pth                  <-- 主模型
+  ├── s2mel.pth                <-- 主模型
+  ├── bpe.model
+  ├── feat1.pt
+  ├── feat2.pt
+  ├── wav2vec2bert_stats.pt
+  ├── qwen0.6bemo4-merge/      <-- 情感 LLM
+  │
+  ├── semantic_codec/          <-- [外部] MaskGCT
+  │   └── model.safetensors
+  ├── campplus_cn_common.bin   <-- [外部] Campplus
+  ├── bigvgan_v2_22khz_80band_256x/  <-- [外部] BigVGAN
+  └── w2v-bert-2.0/            <-- [外部] W2V-BERT
+  ```
+
+  **一键下载命令 (Download Commands)**:
+
+  > [!TIP]
+  > **国内用户推荐使用 HF Mirror**，下载速度更快且无需代理。
+
+  ```bash
+  cd ComfyUI/models
+
+  # 1. 下载主模型
+  HF_ENDPOINT=https://hf-mirror.com huggingface-cli download IndexTeam/IndexTTS-2 --local-dir indextts2
+
+  # 2. 下载外部子模型 (直接放入 indextts2 目录)
+  cd indextts2
+
+  # MaskGCT (只需 semantic_codec/model.safetensors)
+  HF_ENDPOINT=https://hf-mirror.com huggingface-cli download amphion/MaskGCT semantic_codec/model.safetensors --local-dir .
+
+  # Campplus
+  HF_ENDPOINT=https://hf-mirror.com huggingface-cli download funasr/campplus campplus_cn_common.bin --local-dir .
+
+  # BigVGAN (下载整个文件夹)
+  HF_ENDPOINT=https://hf-mirror.com huggingface-cli download nvidia/bigvgan_v2_22khz_80band_256x --local-dir bigvgan_v2_22khz_80band_256x
+
+  # W2V-BERT 2.0 (下载整个文件夹，排除大文件 checkpointers)
+  HF_ENDPOINT=https://hf-mirror.com huggingface-cli download facebook/w2v-bert-2.0 --local-dir w2v-bert-2.0 --exclude "*.pt"
+  ```
+
+  > [!NOTE]
+  > 如果本地目录中未找到上述子模型，节点会自动尝试从 HuggingFace 在线加载（缓存到 `~/.cache/huggingface`）。
+  > **首次加载**时，WeTextProcessing 库需要编译中文文本正则化的 FST 语法（耗时约 3-5 分钟），后续启动会直接读取缓存。
+
 #### 💡 用户实测与选型指南 (Model Comparison & Selection)
 
 **选型建议**:
@@ -1111,6 +1192,7 @@ Qwen3-TTS 最强大的特性之一是其**自然语言指令驱动**的能力。
 - **追求“听起来最像真人” (音质+音色)**: 选 **VoxCPM 1.5**。它的 Tokenizer-free 架构带来了质的飞跃。
 - **追求“方言/多语言/稳定性”**: 选 **CosyVoice 3.0**。目前依然是生产环境最稳的选择。
 - **追求“多样化音色设计/最新 Qwen 生态/长语音流畅度”**: 选 **Qwen3-TTS**。其 VoiceDesign 功能能让你用描述语“捏”出从未听过的声音。
+- **追求“情感精细控制/音色情感解耦”**: 选 **IndexTTS-2**。独立的 8 维情感控制和情感音频参考是其独有优势。
 - **要做“长篇广播剧/播客”**: 选 **VibeVoice**。它的长窗口上下文优势依然不可替代。
 
 ### 4. 播客与对话生成 (Podcast & Dialogue Generation)

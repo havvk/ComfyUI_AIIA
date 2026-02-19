@@ -59,103 +59,106 @@ else:
 
 
     # 1. 处理 aiia_float_nodes.py
-    _load_nodes_from_module(".aiia_float_nodes", "aiia_float_nodes")
+    # _load_nodes_from_module(".aiia_float_nodes", "aiia_float_nodes")
 
     # 2. 处理 aiia_generate_segments.py
-    _load_nodes_from_module(".aiia_generate_segments", "aiia_generate_segments")
+    # _load_nodes_from_module(".aiia_generate_segments", "aiia_generate_segments")
 
     # 3. 处理 aiia_e2e_diarizer.py 
-    _load_nodes_from_module(".aiia_e2e_diarizer", "aiia_e2e_diarizer")
+    # _load_nodes_from_module(".aiia_e2e_diarizer", "aiia_e2e_diarizer")
 
     # 4. 处理 aiia_utils_nodes.py
-    _load_nodes_from_module(".aiia_utils_nodes", "aiia_utils_nodes")
+    # _load_nodes_from_module(".aiia_utils_nodes", "aiia_utils_nodes")
 
     # 5. 处理 aiia_video_nodes.py (新增部分)
-    _load_nodes_from_module(".aiia_video_nodes", "aiia_video_nodes")
+    # _load_nodes_from_module(".aiia_video_nodes", "aiia_video_nodes")
 
     # 6. 处理 aiia_browser_node.py (新增 - 确保HTTP路由被注册)
-    _load_nodes_from_module(".aiia_browser_node", "aiia_browser_node")
+    # _load_nodes_from_module(".aiia_browser_node", "aiia_browser_node")
 
     # 7. 处理 aiia_personalive_nodes.py
-    _load_nodes_from_module(".aiia_personalive_nodes", "aiia_personalive_nodes")
+    # _load_nodes_from_module(".aiia_personalive_nodes", "aiia_personalive_nodes")
 
     # 8. 处理 aiia_audio_isolator.py
-    _load_nodes_from_module(".aiia_audio_isolator", "aiia_audio_isolator")
+    # _load_nodes_from_module(".aiia_audio_isolator", "aiia_audio_isolator")
 
     # 9. 处理 aiia_audio_merger.py
-    _load_nodes_from_module(".aiia_audio_merger", "aiia_audio_merger")
+    # _load_nodes_from_module(".aiia_audio_merger", "aiia_audio_merger")
 
     # 10. 处理 aiia_cosyvoice_nodes.py
-    _load_nodes_from_module(".aiia_cosyvoice_nodes", "aiia_cosyvoice_nodes")
+    # _load_nodes_from_module(".aiia_cosyvoice_nodes", "aiia_cosyvoice_nodes")
 
     # 11. 处理 aiia_audio_debug.py (新增调试节点)
-    _load_nodes_from_module(".aiia_audio_debug", "aiia_audio_debug")
+    # _load_nodes_from_module(".aiia_audio_debug", "aiia_audio_debug")
 
     # 11. 处理 aiia_audio_processor.py
-    _load_nodes_from_module(".aiia_audio_processor", "aiia_audio_processor")
+    # _load_nodes_from_module(".aiia_audio_processor", "aiia_audio_processor")
 
     # 12. 处理 aiia_audio_denoise.py
-    _load_nodes_from_module(".aiia_audio_denoise", "aiia_audio_denoise")
+    # _load_nodes_from_module(".aiia_audio_denoise", "aiia_audio_denoise")
 
     # 13. 处理 aiia_audio_enhance.py
-    _load_nodes_from_module(".aiia_audio_enhance", "aiia_audio_enhance")
+    # _load_nodes_from_module(".aiia_audio_enhance", "aiia_audio_enhance")
 
     # 14. 处理 aiia_audio_info.py (新增元数据查看)
-    _load_nodes_from_module(".aiia_audio_info", "aiia_audio_info")
+    # _load_nodes_from_module(".aiia_audio_info", "aiia_audio_info")
 
     # 15. 处理 aiia_vibevoice_nodes.py (新增 VibeVoice 支持)
-    _load_nodes_from_module(".aiia_vibevoice_nodes", "aiia_vibevoice_nodes")
+    # _load_nodes_from_module(".aiia_vibevoice_nodes", "aiia_vibevoice_nodes")
 
     # 16. 处理 aiia_vibevoice_realtime_tts.py
-    _load_nodes_from_module(".aiia_vibevoice_realtime_tts", "aiia_vibevoice_realtime_tts")
+    # _load_nodes_from_module(".aiia_vibevoice_realtime_tts", "aiia_vibevoice_realtime_tts")
 
     # 17. 处理 aiia_vibevoice_preset_maker.py
-    _load_nodes_from_module(".aiia_vibevoice_preset_maker", "aiia_vibevoice_preset_maker")
+    # _load_nodes_from_module(".aiia_vibevoice_preset_maker", "aiia_vibevoice_preset_maker")
 
     # 18. 处理 aiia_voxcpm_nodes.py (新增 VoxCPM 1.5)
-    _load_nodes_from_module(".aiia_voxcpm_nodes", "aiia_voxcpm_nodes")
+    # _load_nodes_from_module(".aiia_voxcpm_nodes", "aiia_voxcpm_nodes")
 
     # 19. 处理 aiia_podcast_nodes.py (新增播客节点)
-    _load_nodes_from_module(".aiia_podcast_nodes", "aiia_podcast_nodes")
+    # _load_nodes_from_module(".aiia_podcast_nodes", "aiia_podcast_nodes")
 
     # 20. 处理 aiia_subtitle_nodes.py (新增字幕节点)
-    _load_nodes_from_module(".aiia_subtitle_nodes", "aiia_subtitle_nodes")
+    # _load_nodes_from_module(".aiia_subtitle_nodes", "aiia_subtitle_nodes")
 
     # 21. 处理 aiia_web_export_nodes.py (新增网页导出)
-    _load_nodes_from_module(".aiia_web_export_nodes", "aiia_web_export_nodes")
+    # _load_nodes_from_module(".aiia_web_export_nodes", "aiia_web_export_nodes")
 
     # 22. 处理 aiia_echomimic_nodes.py (新增 EchoMimic V3)
-    _load_nodes_from_module(".aiia_echomimic_nodes", "aiia_echomimic_nodes")
+    # _load_nodes_from_module(".aiia_echomimic_nodes", "aiia_echomimic_nodes")
 
     # 23. 处理 aiia_ditto_nodes.py (新增 Ditto)
-    _load_nodes_from_module(".aiia_ditto_nodes", "aiia_ditto_nodes")
+    # _load_nodes_from_module(".aiia_ditto_nodes", "aiia_ditto_nodes")
 
     # 24. 处理 aiia_image_nodes.py (新增 Smart Crop)
-    _load_nodes_from_module(".aiia_image_nodes", "aiia_image_nodes")
+    # _load_nodes_from_module(".aiia_image_nodes", "aiia_image_nodes")
 
     # 25. 处理 aiia_debug_nodes.py (新增调试节点)
-    _load_nodes_from_module(".aiia_debug_nodes", "aiia_debug_nodes")
+    # _load_nodes_from_module(".aiia_debug_nodes", "aiia_debug_nodes")
 
     # 26. 处理 aiia_qwen_nodes.py (新增 Qwen3-TTS)
-    _load_nodes_from_module(".aiia_qwen_nodes", "aiia_qwen_nodes")
+    # _load_nodes_from_module(".aiia_qwen_nodes", "aiia_qwen_nodes")
 
     # 27. 处理 aiia_asr_nodes.py (ASR 语音识别)
-    _load_nodes_from_module(".aiia_asr_nodes", "aiia_asr_nodes")
+    # _load_nodes_from_module(".aiia_asr_nodes", "aiia_asr_nodes")
 
     # 28. 处理 aiia_podcast_splitter.py (播客文本拆分)
-    _load_nodes_from_module(".aiia_podcast_splitter", "aiia_podcast_splitter")
+    # _load_nodes_from_module(".aiia_podcast_splitter", "aiia_podcast_splitter")
 
     # 29. 处理 aiia_podcast_stitcher.py (播客音频拼接)
-    _load_nodes_from_module(".aiia_podcast_stitcher", "aiia_podcast_stitcher")
+    # _load_nodes_from_module(".aiia_podcast_stitcher", "aiia_podcast_stitcher")
 
     # 30. 处理 aiia_emotion_annotator.py (LLM 情感标注)
-    _load_nodes_from_module(".aiia_emotion_annotator", "aiia_emotion_annotator")
+    # _load_nodes_from_module(".aiia_emotion_annotator", "aiia_emotion_annotator")
 
     # 31. 处理 aiia_text_splitter.py (单人文本拆分)
-    _load_nodes_from_module(".aiia_text_splitter", "aiia_text_splitter")
+    # _load_nodes_from_module(".aiia_text_splitter", "aiia_text_splitter")
 
     # 32. 处理 aiia_json_extractor.py (JSON 提取/构建)
-    _load_nodes_from_module(".aiia_json_extractor", "aiia_json_extractor")
+    # _load_nodes_from_module(".aiia_json_extractor", "aiia_json_extractor")
+
+    # 33. 处理 aiia_indextts_nodes.py (IndexTTS-2 语音合成)
+    _load_nodes_from_module(".aiia_indextts_nodes", "aiia_indextts_nodes")
 
     # 告诉 ComfyUI 这个节点包有一个包含网页资源的 'js' 目录
     WEB_DIRECTORY = "js"

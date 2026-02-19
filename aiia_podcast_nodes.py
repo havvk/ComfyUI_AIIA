@@ -489,10 +489,15 @@ class AIIA_Dialogue_TTS:
                     item_lengths.append(char_len)
 
                     final_text_lines.append(f"[{internal_id + 1}]: {text}")
+                    print(f"    📝 句 {len(final_text_lines)}: speaker='{spk_name}' → key='{spk_key}' → id=[{internal_id + 1}] | '{text[:30]}...'")
                 
                 # 用双换行分隔，强制 TTS 在句间产生自然停顿
                 full_text = "\n\n".join(final_text_lines)
                 print(f"  [Batch Process] Processing {len(batch_items)} segments using {len(unique_speakers)} speakers.")
+                print(f"  [Speaker Map] {unique_speakers}")
+                ref_info = [f"sr={r.get('sample_rate','?')}, shape={r['waveform'].shape}" if r else "None" for r in ref_audio_list]
+                print(f"  [Ref Audio] {len(ref_audio_list)} items: {ref_info}")
+                print(f"  [VibeVoice Input Text]\n{'='*60}\n{full_text}\n{'='*60}")
                 
                 try:
                     res = vibe_gen.generate(
