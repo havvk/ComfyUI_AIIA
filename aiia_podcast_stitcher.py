@@ -676,10 +676,15 @@ class AIIA_Podcast_Stitcher:
         duration_A = len(wav_A) / sr_A
         duration_B = len(wav_B) / sr_B
 
-        # 使用统一采样率
+        # 使用统一采样率：如果 A 和 B 采样率不同，将 B 重采样到 A 的采样率
         sr = sr_A
         if sr_A != sr_B:
-            print(f"{log} 警告: sr_A={sr_A} != sr_B={sr_B}, 使用 sr_A")
+            print(f"{log} 采样率不一致: sr_A={sr_A} != sr_B={sr_B}, 将 B 重采样到 {sr_A}Hz")
+            import torchaudio
+            wav_B_tensor = torch.from_numpy(wav_B).unsqueeze(0)  # (1, samples)
+            wav_B_tensor = torchaudio.transforms.Resample(sr_B, sr_A)(wav_B_tensor)
+            wav_B = wav_B_tensor.squeeze(0).numpy()
+            sr_B = sr_A
 
         # Forced Alignment 模式：对每个说话人做字级强制对齐
         fa_results_A = None

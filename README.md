@@ -1107,24 +1107,85 @@ Qwen3-TTS 最强大的特性之一是其**自然语言指令驱动**的能力。
 #### 3.14 IndexTTS-2 (New! 🔥)
 
 - **用途**: Bilibili 开源的 **零样本语音克隆 + 情感控制** TTS 模型。支持**音色与情感解耦**，调整情感时不会导致音色漂移。
+
 - **🔥 核心特性**:
   - **音色/情感解耦 (Voice-Emotion Decoupling)**: 独立控制音色和情感，改变情感不影响声音音色。这解决了其他模型在调整情感时音色漂移的顽疾。
   - **8 维情感向量控制**: 提供 `happy`, `angry`, `sad`, `afraid`, `disgusted`, `melancholic`, `surprised`, `calm` 八个情感滑块，精细控制输出语音的情感表达。
+  - **🆕 内联情感标签 (Inline Emotion Tags)**: 支持在文本中嵌入 `[Happy]`、`[Sad]` 等标签，**逐句控制不同情感**。节点自动按标签分段生成，再以余弦淡入淡出 + 静音间隔无缝拼接。
   - **情感音频参考**: 支持通过额外的 `emotion_audio` 输入捕获参考音频中的情感特征，并通过 `emo_alpha` 控制混合强度。
+  - **QwenEmotion 自动推断**: 启用 `use_emo_text` 后，内置 Qwen 情感模型自动分析文本语义，推断最合适的情感向量。
   - **零样本音色克隆**: 输入 `reference_audio` 即可克隆声音。
+
 - **节点**:
-  - **IndexTTS-2 Loader**: 加载 IndexTTS-2 模型。
-    - `use_fp16`: 半精度推理（降低 VRAM，加速推理）。
-    - `use_cuda_kernel`: 使用 BigVGAN 自定义 CUDA 核心（仅 NVIDIA GPU）。
-    - `model_dir` (可选): 自定义模型目录，留空则使用默认路径 `ComfyUI/models/indextts2/`。
-  - **IndexTTS-2 TTS**: 执行语音合成。
-    - `text`: 待合成的文本（支持中英文混合）。
-    - `reference_audio`: 音色参考音频。
-    - `emotion_audio` (可选): 独立的情感参考音频。
-    - 8 个情感滑块 (`happy` ~ `calm`)：直接控制情感向量。
-    - `emo_alpha`: 情感混合强度 (0=无情感, 1=完全情感)。
-    - `use_random`: 随机采样（开启后降低克隆保真度）。
-    - `seed`: 随机种子，用于可复现生成。
+
+  **IndexTTS-2 Loader** — 加载 IndexTTS-2 模型
+
+  | 参数 | 默认 | 说明 |
+  |------|------|------|
+  | `use_fp16` | `True` | 半精度推理，降低 VRAM 占用 |
+  | `use_cuda_kernel` | `True` | BigVGAN CUDA 核心加速（仅 NVIDIA GPU，推理更快） |
+  | `model_dir` | 空 | 自定义模型路径，留空使用 `ComfyUI/models/indextts2/` |
+
+  **IndexTTS-2 TTS** — 执行语音合成
+
+  | 参数 | 默认 | 说明 |
+  |------|------|------|
+  | `text` | — | 待合成文本，支持中英文混合及 **内联情感标签** |
+  | `voice_preset` | `Female_HQ` | 内置音色预设（在无 `reference_audio` 时使用） |
+  | `reference_audio` | — | 音色参考音频（零样本克隆，优先于 preset） |
+  | `emotion_audio` | — | 独立的情感参考音频 |
+  | `emo_alpha` | `1.0` | 情感混合强度 (0=无情感, 1=100%情感) |
+  | `happy` ~ `calm` | `0.0` | 8 个情感滑块，直接控制向量 |
+  | `use_emo_text` | `False` | 启用后使用 Qwen 模型自动推断情感 |
+  | `emo_text` | 空 | 自定义情感提示文本（配合 `use_emo_text`） |
+  | `interval_silence` | `200` | 长文本分段间静音时长 (ms) |
+  | `max_text_tokens_per_segment` | `120` | 每段最大 token 数（控制切分粒度） |
+  | `use_random` | `False` | 随机采样（降低克隆保真度） |
+  | `seed` | `0` | 随机种子 (-1=随机) |
+
+- **🆕 内联情感标签 (Inline Emotion Tags)**:
+
+  在文本中嵌入 `[标签名]` 即可逐句控制情感，节点会自动按标签拆分，每段独立生成后拼接。
+
+  **使用示例**：
+  ```text
+  [happy] 今天天气真好，阳光明媚！
+  [sad] 但是我养的小猫走丢了，我好难过。
+  [calm] 不过我相信它一定会自己找到回家的路。
+  ```
+  → 生成 3 段音频，分别带 happy / sad / calm 情感，最终余弦淡入淡出无缝拼接为一段完整音频。
+
+  > [!IMPORTANT]
+  > **控制情感强度**: 内联标签默认映射到全强度的情感向量 (1.0)。如果发现音色失真或情感过于夸张（如嘶吼、破音），请尝试**降低** `emo_alpha` 参数（推荐值 **0.6 ~ 0.8**）。较低的 alpha 值能更好地保留原始音色特征，同时赋予适度的情感色彩。
+
+  **支持的 26 种标签**：
+
+  | 分类 | 标签 |
+  |------|------|
+  | 积极情感 | `happy`, `excited`, `enthusiastic`, `proud`, `romantic`, `innocent` |
+  | 消极情感 | `sad`, `angry`, `afraid`, `fearful`, `disgusted`, `disappointed`, `anxious`, `nervous` |
+  | 复合情感 | `sarcastic`, `nostalgic`, `confused`, `mysterious`, `gossip` |
+  | 中性情感 | `calm`, `neutral`, `gentle`, `serious`, `lazy`, `melancholic`, `surprised` |
+
+  每个标签自动映射到 IndexTTS-2 的 8 维情感向量。**未知标签**（不在上述列表中的）自动回退至 QwenEmotion 模型推断。
+
+  > [!TIP]
+  > 内联标签通常由 **AIIA Emotion Annotator** 节点自动注入到 Splitter 的输出中，无需手写。也可以手动添加来精细控制。
+
+- **🔧 情感控制优先级**:
+
+  当多种情感来源同时存在时，按以下优先级生效：
+
+  | 优先级 | 来源 | 说明 |
+  |:------:|------|------|
+  | 1 (最高) | 内联标签 `[Tag]` | 逐句独立控制，覆盖所有其他设置 |
+  | 2 | 滑块向量 | 8 个滑块全局生效（无标签时） |
+  | 3 | `use_emo_text` | Qwen 自动推断（无标签无滑块时） |
+  | 4 (最低) | `emotion_audio` | 从参考音频提取情感 |
+
+  > [!NOTE]
+  > 如果文本含标签，则标签内的段落使用标签情感；**无标签的段落**继续使用滑块或其他全局设置。
+
 - **✅ 依赖版本兼容性 (Dependency Compatibility)**:
   AIIA 已内置深度兼容层，**完美支持 `transformers` 4.57+**。
 
@@ -1192,7 +1253,7 @@ Qwen3-TTS 最强大的特性之一是其**自然语言指令驱动**的能力。
 - **追求“听起来最像真人” (音质+音色)**: 选 **VoxCPM 1.5**。它的 Tokenizer-free 架构带来了质的飞跃。
 - **追求“方言/多语言/稳定性”**: 选 **CosyVoice 3.0**。目前依然是生产环境最稳的选择。
 - **追求“多样化音色设计/最新 Qwen 生态/长语音流畅度”**: 选 **Qwen3-TTS**。其 VoiceDesign 功能能让你用描述语“捏”出从未听过的声音。
-- **追求“情感精细控制/音色情感解耦”**: 选 **IndexTTS-2**。独立的 8 维情感控制和情感音频参考是其独有优势。
+- **追求“情感精细控制/音色情感解耦”**: 选 **IndexTTS-2**。独立的 8 维情感控制、内联情感标签（逐句不同情感）和情感音频参考是其独有优势。
 - **要做“长篇广播剧/播客”**: 选 **VibeVoice**。它的长窗口上下文优势依然不可替代。
 
 ### 4. 播客与对话生成 (Podcast & Dialogue Generation)

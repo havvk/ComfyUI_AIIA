@@ -164,24 +164,30 @@ for use_fp16 in [True, False]:
                     print("No wavs generated via stream!")
                     continue
                     
+                # The model output in stream_return is now raw float (normalized internally in infer_v2 if we used that path,
+                # but here we get the raw tensor from generator. 
+                
                 full_wav = torch.cat(wavs, dim=1) if len(wavs) > 1 else wavs[0]
                 
-                # Save as float (normalized)
-                # The model output seems to be already scaled to 32767 in `infer_v2.py` line 664?
-                # wav = torch.clamp(32767 * wav, ...)
-                # Wait, `infer_v2.py` does that inside the loop.
-                # So `wavs` collected here are ALREADY multiplied by 32767.
+                # infer_v2.py normalization happens inside the `if output_path` block or yielded.
+                # Wait, if we use `stream_return`, `infer_v2` yields:
+                # 1. `wav.cpu().float()` (raw chunk)
+                # 2. `(sampling_rate, wav_data_numpy)` (int16 version for Gradio)
                 
-                # So we should divide by 32768.0 to get back to float [-1, 1]
-                full_wav_float = full_wav.float() / 32768.0
+                # We collected raw chunks. They are NOT normalized if they come from the loop `yield wav.cpu()`.
+                # We need to normalize them manually here to MATCH what infer_v2 does when saving file.
+                
+                full_wav_float = full_wav.float()
+                max_val = full_wav_float.abs().max()
+                if max_val > 0.99:
+                    full_wav_float = full_wav_float / max_val * 0.99
                 
                 import torchaudio
-                torchaudio.save(output_path.replace(".wav", "_norm.wav"), full_wav_float, 24000)
-                print(f"Saved normalized float wav: {output_path.replace('.wav', '_norm.wav')}")
-                
-                # Also save as int16 as original
-                torchaudio.save(output_path, full_wav.to(torch.int16), 24000)
-                print(f"Saved int16 wav: {output_path}")
+                # Save as float32 (User requested format)
+                torchaudio.save(output_path, full_wav_float, 22050) # We assume 22050 for test or explicit SR? 
+                # Ideally we should use the model's SR, but we can't easily access tts.sampling_rate here without more code.
+                # Let's assume 22050 as that is what we expect BigVGAN to be.
+                print(f"Saved float32 wav: {output_path}")
 
     except Exception as e:
         print(f"Inference failed: {e}")

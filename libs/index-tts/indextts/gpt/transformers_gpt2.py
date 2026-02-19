@@ -32,7 +32,66 @@ import transformers
 
 from indextts.gpt.transformers_generation_utils import GenerationMixin
 from indextts.gpt.transformers_modeling_utils import PreTrainedModel
-from transformers.modeling_utils import SequenceSummary
+
+# SequenceSummary locally implemented as it was removed from transformers > 4.40
+class SequenceSummary(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+
+        self.summary_type = getattr(config, "summary_type", "last")
+        if self.summary_type == "cls_index":
+            self.summary = nn.Identity()
+        elif self.summary_type == "first":
+            self.summary = nn.Identity()
+        elif self.summary_type == "last":
+            self.summary = nn.Identity()
+        elif self.summary_type == "mean":
+            self.summary = nn.Identity()
+        else:
+            self.summary = nn.Identity() # Fallback
+
+        if getattr(config, "summary_use_proj", True):
+            self.summary_proj = nn.Linear(config.hidden_size, config.hidden_size)
+        else:
+            self.summary_proj = nn.Identity()
+
+        if getattr(config, "summary_activation", None) == "tanh":
+            self.activation = nn.Tanh()
+        else:
+            self.activation = nn.Identity()
+
+        self.last_dropout = nn.Dropout(getattr(config, "summary_last_dropout", 0.0))
+
+    def forward(self, hidden_states: torch.FloatTensor, cls_index: Optional[torch.LongTensor] = None) -> torch.FloatTensor:
+        if self.summary_type == "last":
+            output = hidden_states[:, -1, :]
+        elif self.summary_type == "first":
+            output = hidden_states[:, 0, :]
+        elif self.summary_type == "mean":
+            output = hidden_states.mean(dim=1)
+        elif self.summary_type == "cls_index":
+            if cls_index is None:
+                output = hidden_states[:, -1, :]
+            else:
+                # cls_index: [batch_size] or [batch_size, num_choices] (if flattened)
+                if cls_index.dim() > 1:
+                     cls_index = cls_index.flatten()
+                
+                batch_size = hidden_states.shape[0]
+                if cls_index.shape[0] != batch_size:
+                     # Mismatch, fallback to last
+                     output = hidden_states[:, -1, :]
+                else:
+                     output = hidden_states[torch.arange(batch_size, device=hidden_states.device), cls_index]
+        else:
+            output = hidden_states[:, -1, :]
+
+        output = self.summary_proj(output)
+        output = self.activation(output)
+        output = self.last_dropout(output)
+
+        return output
+
 
 from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask_for_sdpa, _prepare_4d_causal_attention_mask_for_sdpa
 from transformers.modeling_outputs import (

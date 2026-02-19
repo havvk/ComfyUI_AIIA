@@ -35,6 +35,25 @@ from transformers import SeamlessM4TFeatureExtractor
 import random
 import torch.nn.functional as F
 
+# --- Patch for transformers > 4.40 ---
+# apply_chunking_to_forward was removed
+import transformers.modeling_utils
+if not hasattr(transformers.modeling_utils, "apply_chunking_to_forward"):
+    def _chunking(forward_fn, chunk_size, *tensors, **kw):
+        return forward_fn(*tensors, **kw)
+    transformers.modeling_utils.apply_chunking_to_forward = _chunking
+
+# GenerationConfig cleanup for newer transformers
+from transformers import GenerationConfig
+# Remove deprecated attributes if they exist to prevent warnings/errors
+if hasattr(GenerationConfig, "forced_decoder_ids"):
+    pass # valid
+# But sometimes we might need to remove it from kwargs if passed inappropriately?
+# The error "forced_decoder_ids is deprecated" usually comes from passing it to __init__
+# We can't easily patch the class __init__, but we can patch where it's used if we find it.
+# For now, the apply_chunking_to_forward is the critical missing piece for compilation/startup.
+# -------------------------------------
+
 class IndexTTS2:
     def __init__(
             self, cfg_path="checkpoints/config.yaml", model_dir="checkpoints", use_fp16=False, device=None,
@@ -164,9 +183,19 @@ class IndexTTS2:
         self.bigvgan = self.bigvgan.to(self.device)
         self.bigvgan.remove_weight_norm()
         self.bigvgan.eval()
-        print(">> bigvgan weights restored from:", bigvgan_name)
+        try:
+            v_cfg = transformers.AutoConfig.from_pretrained(bigvgan_name, trust_remote_code=True)
+            if hasattr(v_cfg, "sampling_rate"):
+                self.sampling_rate = v_cfg.sampling_rate
+            else:
+                self.sampling_rate = 22050
+        except Exception as e:
+            print(f">> Failed to load BigVGAN config for sampling_rate: {e}, using default 22050")
+            self.sampling_rate = 22050
+        print(f"Loaded BigVGAN sampling_rate: {self.sampling_rate}")
 
         self.bpe_path = os.path.join(self.model_dir, self.cfg.dataset["bpe_model"])
+
         self.normalizer = TextNormalizer(enable_glossary=True)
         self.normalizer.load()
         print(">> TextNormalizer loaded")
@@ -325,7 +354,10 @@ class IndexTTS2:
 
     def _load_and_cut_audio(self,audio_path,max_audio_length_seconds,verbose=False,sr=None):
         if not sr:
-            audio, sr = librosa.load(audio_path)
+            # Use native sampling rate! Do not let librosa default to 22050 implicitly.
+            audio, sr = librosa.load(audio_path, sr=None)
+            if verbose:
+                print(f">> Loaded audio {audio_path} at native SR: {sr}Hz")
         else:
             audio, _ = librosa.load(audio_path,sr=sr)
         audio = torch.tensor(audio).unsqueeze(0)
@@ -524,7 +556,7 @@ class IndexTTS2:
         num_beams = generation_kwargs.pop("num_beams", 3)
         repetition_penalty = generation_kwargs.pop("repetition_penalty", 10.0)
         max_mel_tokens = generation_kwargs.pop("max_mel_tokens", 1500)
-        sampling_rate = 22050
+        sampling_rate = self.sampling_rate
 
         wavs = []
         gpt_gen_time = 0
@@ -686,7 +718,15 @@ class IndexTTS2:
         print(f">> RTF: {(end_time - start_time) / wav_length:.4f}")
 
         # save audio
-        wav = wav.cpu()  # to cpu
+        wav = wav.cpu().float()  # ensure cpu float
+        
+        # Normalize to prevent clipping (fixes distortion)
+        # User requested Float32 to avoid precision loss.
+        max_val = wav.abs().max()
+        if max_val > 0.99:
+            wav = wav / max_val * 0.99
+            
+        # Use simple float saving for max quality
         if output_path:
             # 直接保存音频到指定路径中
             if os.path.isfile(output_path):
@@ -694,7 +734,8 @@ class IndexTTS2:
                 print(">> remove old wav file:", output_path)
             if os.path.dirname(output_path) != "":
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            torchaudio.save(output_path, wav.float(), sampling_rate)
+                
+            torchaudio.save(output_path, wav, sampling_rate)
             print(">> wav file saved to:", output_path)
             if stream_return:
                 return None
@@ -703,7 +744,7 @@ class IndexTTS2:
             if stream_return:
                 return None
             # 返回以符合Gradio的格式要求
-            wav_data = (wav * 32767).clamp(-32767, 32767).type(torch.int16)
+            wav_data = (wav * 32767).to(torch.int16)
             wav_data = wav_data.numpy().T
             yield (sampling_rate, wav_data)
 

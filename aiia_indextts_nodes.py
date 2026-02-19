@@ -5,12 +5,17 @@ Loader + TTS nodes for Bilibili's IndexTTS-2 zero-shot voice cloning model.
 
 import os
 import sys
+import re
+import contextlib
+import tempfile
+import warnings
+
 import torch
 import torchaudio
-import tempfile
 import numpy as np
-import contextlib
-import shutil
+
+from pathlib import Path
+from typing import Optional, List, Tuple
 
 # --- Preload kaldifst to prevent hang when used with NeMo Diarization ---
 # IndexTTS-2 seems to put the process (OpenMP/MKL/dlopen lock) in a state
@@ -60,8 +65,7 @@ def _ensure_indextts():
     _install_missing_deps()
 
 
-    # Patch transformers compatibility before any indextts import
-    # _patch_transformers_compat() -> Now using context manager in load/infer
+
 
 
     _INDEXTTS_READY = True
@@ -73,89 +77,7 @@ def _ensure_indextts():
 
 _SENTINEL = object()  # unique marker for "attribute didn't exist before"
 
-@contextlib.contextmanager
-def _transformers_patches():
-    """
-    Context manager: temporarily add shims for attributes removed in newer
-    transformers versions.  On exit every added attribute is deleted again so
-    that downstream imports (NeMo, etc.) see an unmodified transformers.
 
-    IndexTTS's own modules are safe because they cache references at import
-    time via ``from X import Y`` — those bindings survive the delattr.
-    """
-
-    from transformers import cache_utils
-    from transformers.generation import candidate_generator as cg
-    from transformers.generation import configuration_utils as cu
-    import transformers.modeling_utils as mu
-    from transformers import GenerationConfig
-
-    # ---- build the list of (module, attr_name, shim_value) ---------------
-    class _QCC:
-        def __init__(self, **kw): pass
-
-    def _crop(model, past_key_values, max_length):
-        return past_key_values
-
-    class _SeqSummary(torch.nn.Module):
-        def __init__(self, config): super().__init__()
-        def forward(self, hidden_states, **kw): return hidden_states[:, -1]
-
-    def _chunking(forward_fn, chunk_size, *tensors, **kw):
-        return forward_fn(*tensors, **kw)
-
-    patches = [
-        (cache_utils, "QuantizedCacheConfig",             _QCC),
-        (cg,          "_crop_past_key_values",             _crop),
-        (cu,          "NEED_SETUP_CACHE_CLASSES_MAPPING",  {}),
-        (cu,          "QUANT_BACKEND_CLASSES_MAPPING",     {}),
-        (mu,          "SequenceSummary",                   _SeqSummary),
-        (mu,          "apply_chunking_to_forward",         _chunking),
-    ]
-
-    # GenerationConfig.forced_decoder_ids (class-level attribute)
-    gc_had = hasattr(GenerationConfig, "forced_decoder_ids")
-    gc_old = getattr(GenerationConfig, "forced_decoder_ids", _SENTINEL)
-
-    # ---- apply (only if the attribute is absent) -------------------------
-    originals = []  # (module, attr_name, old_value_or_SENTINEL)
-    count = 0
-    for mod, attr, shim in patches:
-        old = getattr(mod, attr, _SENTINEL)
-        originals.append((mod, attr, old))
-        if old is _SENTINEL:
-            setattr(mod, attr, shim)
-            count += 1
-
-    if not gc_had:
-        setattr(GenerationConfig, "forced_decoder_ids", None)
-        count += 1
-
-    if count > 0:
-        print(f"[AIIA] Applied {count} transformers compatibility patches.")
-
-    try:
-        yield
-    finally:
-        # ---- revert: remove everything we added -------------------------
-        reverted = 0
-        for mod, attr, old in originals:
-            if old is _SENTINEL:
-                # we added it → delete it
-                if hasattr(mod, attr):
-                    delattr(mod, attr)
-                    reverted += 1
-            # else: attribute existed before us, leave it alone
-
-        if not gc_had:
-            try:
-                delattr(GenerationConfig, "forced_decoder_ids")
-                reverted += 1
-            except AttributeError:
-                pass
-
-        if reverted > 0:
-            print(f"[AIIA] Reverted {reverted} transformers compatibility patches.")
 
 
 
@@ -280,7 +202,7 @@ class AIIA_IndexTTS2_Loader:
         return {
             "required": {
                 "use_fp16": ("BOOLEAN", {"default": True, "tooltip": "Use half-precision for lower VRAM and faster inference."}),
-                "use_cuda_kernel": ("BOOLEAN", {"default": True, "tooltip": "Use BigVGAN custom CUDA kernel (faster, CUDA only)."}),
+                "use_cuda_kernel": ("BOOLEAN", {"default": True, "tooltip": "Use BigVGAN custom CUDA kernel for faster vocoder inference (NVIDIA GPU only)."}),
             },
             "optional": {
                 "model_dir": ("STRING", {
@@ -338,19 +260,15 @@ class AIIA_IndexTTS2_Loader:
 
         print(f"[AIIA] Loading IndexTTS-2 from {model_dir} (fp16={use_fp16}, cuda_kernel={use_cuda_kernel})")
         
-        # Temporarily apply transformers compatibility patches for the IndexTTS
-        # import chain.  They are reverted on exit so other modules (NeMo etc.)
-        # see an unmodified transformers.
-        with _transformers_patches():
-            from indextts.infer_v2 import IndexTTS2
-            with _patch_indextts_loading(model_dir):
-                tts = IndexTTS2(
-                    cfg_path=cfg_path,
-                    model_dir=model_dir,
-                    use_fp16=use_fp16,
-                    use_cuda_kernel=use_cuda_kernel,
-                    use_deepspeed=False,
-                )
+        from indextts.infer_v2 import IndexTTS2
+        with _patch_indextts_loading(model_dir):
+            tts = IndexTTS2(
+                cfg_path=cfg_path,
+                model_dir=model_dir,
+                use_fp16=use_fp16,
+                use_cuda_kernel=use_cuda_kernel,
+                use_deepspeed=False,
+            )
         
         _INDEXTTS_MODEL_CACHE[cache_key] = tts
         print("[AIIA] IndexTTS-2 loaded successfully.")
@@ -359,10 +277,158 @@ class AIIA_IndexTTS2_Loader:
 
 
 # ============================================================================
+#  EMOTION TAG MAPPING
+# ============================================================================
+
+# Emotion tag → IndexTTS-2 8-dim vector [happy, angry, sad, afraid, disgusted, melancholic, surprised, calm]
+_EMOTION_TAG_TO_VECTOR = {
+    "happy":        [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "excited":      [0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.0],
+    "enthusiastic": [0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0],
+    "proud":        [0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3],
+    "angry":        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "sad":          [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "disappointed": [0.0, 0.0, 0.7, 0.0, 0.0, 0.3, 0.0, 0.0],
+    "nostalgic":    [0.0, 0.0, 0.4, 0.0, 0.0, 0.5, 0.0, 0.1],
+    "afraid":       [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+    "fearful":      [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+    "anxious":      [0.0, 0.0, 0.0, 0.6, 0.0, 0.0, 0.2, 0.0],
+    "nervous":      [0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.3, 0.0],
+    "disgusted":    [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+    "sarcastic":    [0.0, 0.3, 0.0, 0.0, 0.4, 0.0, 0.0, 0.0],
+    "melancholic":  [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+    "surprised":    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+    "confused":     [0.0, 0.0, 0.0, 0.2, 0.0, 0.0, 0.6, 0.0],
+    "mysterious":   [0.0, 0.0, 0.0, 0.2, 0.0, 0.3, 0.0, 0.3],
+    "calm":         [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+    "gentle":       [0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7],
+    "neutral":      [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+    "serious":      [0.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+    "romantic":     [0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4],
+    "lazy":         [0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.0, 0.5],
+    "gossip":       [0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4, 0.0],
+    "innocent":     [0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3],
+}
+
+
+# ============================================================================
 #  TTS NODE
 # ============================================================================
 
 class AIIA_IndexTTS2_TTS:
+    # Match emotion tags injected by Splitter/Annotator, e.g. [Happy], [Calm]
+    _EMOTION_TAG_RE = re.compile(r'^\[(\w[\w\s]*?)\]\s*', re.MULTILINE)
+
+    @staticmethod
+    def _split_by_emotion_tags(text: str) -> List[Tuple[Optional[str], str]]:
+        """
+        Split text by lines. 
+        - Lines starting with `[Tag]` get that emotion.
+        - Lines without a tag get None (No Emotion). I.e. NO Inheritance.
+        - Consecutive lines with the same emotion are merged.
+        
+        Input: 
+            [Happy] Line 1
+            Line 2 (No tag -> None)
+            [Happy] Line 3
+            [Happy] Line 4
+            
+        Output: 
+            [("Happy", "Line 1"), (None, "Line 2"), ("Happy", "Line 3\\nLine 4")]
+        """
+        # Regex to match leading tag: [Happy] ...
+        tag_pattern = re.compile(r'^\s*\[([\w\s]+?)\]\s*(.*)$')
+        
+        lines = text.split('\n')
+        raw_segments = []
+        
+        for line in lines:
+            m = tag_pattern.match(line)
+            if m:
+                tag = m.group(1)
+                content = m.group(2)
+                raw_segments.append((tag, content))
+            else:
+                raw_segments.append((None, line))
+        
+        if not raw_segments:
+            return [(None, text)]
+
+        # Merge consecutive segments with the same emotion (case-insensitive)
+        merged = [raw_segments[0]]
+        for tag, txt in raw_segments[1:]:
+            prev_tag, prev_txt = merged[-1]
+            
+            same_emo = False
+            if prev_tag is None and tag is None:
+                same_emo = True
+            elif prev_tag is not None and tag is not None:
+                if prev_tag.strip().lower() == tag.strip().lower():
+                    same_emo = True
+            
+            if same_emo:
+                merged[-1] = (prev_tag, prev_txt + "\n" + txt)
+            else:
+                merged.append((tag, txt))
+        
+        # Filter out purely empty segments if they have a tag (avoid generating silence for just tags)
+        # But keep None segments (for pauses)
+        final_segments = []
+        for tag, txt in merged:
+            if txt.strip():
+                final_segments.append((tag, txt))
+                
+        if not final_segments:
+             return [(None, text)]
+
+        return final_segments
+
+    @staticmethod
+    def _crossfade_segments(waveforms: list, sample_rate: int, crossfade_ms: int = 50, silence_ms: int = 100) -> torch.Tensor:
+        """
+        Join waveform segments with cosine fade-out / silence gap / fade-in.
+        Each waveform is (C, N).
+        """
+        if not waveforms:
+            return torch.zeros(1, 0)
+        if len(waveforms) == 1:
+            return waveforms[0]
+
+        xfade_samples = int(sample_rate * crossfade_ms / 1000)
+        silence_samples = int(sample_rate * silence_ms / 1000)
+
+        result = waveforms[0]
+        for i in range(1, len(waveforms)):
+            curr = waveforms[i]
+
+            # Fade out the tail of previous segment
+            fo_len = min(xfade_samples, result.shape[-1])
+            if fo_len >= 2:
+                t_fo = torch.linspace(0, np.pi, fo_len, device=result.device)
+                fade_out = 0.5 * (1.0 + torch.cos(t_fo))  # 1 → 0
+                result = torch.cat([
+                    result[..., :-fo_len],
+                    result[..., -fo_len:] * fade_out,
+                ], dim=-1)
+
+            # Insert silence gap
+            channels = result.shape[0] if result.dim() >= 2 else 1
+            silence = torch.zeros(channels, silence_samples, device=result.device)
+
+            # Fade in the head of next segment
+            fi_len = min(xfade_samples, curr.shape[-1])
+            if fi_len >= 2:
+                t_fi = torch.linspace(0, np.pi, fi_len, device=curr.device)
+                fade_in = 1.0 - 0.5 * (1.0 + torch.cos(t_fi))  # 0 → 1
+                curr = torch.cat([
+                    curr[..., :fi_len] * fade_in,
+                    curr[..., fi_len:],
+                ], dim=-1)
+
+            result = torch.cat([result, silence, curr], dim=-1)
+
+        return result
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -386,6 +452,22 @@ class AIIA_IndexTTS2_TTS:
                 "melancholic": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "surprised": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "calm":  ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "use_emo_text": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Auto-detect emotion from text using built-in Qwen emotion model. Overrides emotion sliders."
+                }),
+                "emo_text": ("STRING", {
+                    "default": "",
+                    "tooltip": "Custom emotion text prompt (used with use_emo_text). Leave empty to use main text."
+                }),
+                "interval_silence": ("INT", {
+                    "default": 200, "min": 0, "max": 2000, "step": 50,
+                    "tooltip": "Silence duration (ms) inserted between text segments for long text."
+                }),
+                "max_text_tokens_per_segment": ("INT", {
+                    "default": 120, "min": 30, "max": 500, "step": 10,
+                    "tooltip": "Max tokens per text segment. Lower = more segments, higher = longer per-segment generation."
+                }),
                 "use_random": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "Enable random sampling (reduces voice cloning fidelity)."
@@ -444,12 +526,42 @@ class AIIA_IndexTTS2_TTS:
         tmp.close()
         return tmp.name
 
+    def _infer_single_segment(self, tts, text, ref_path, out_path,
+                              emo_path=None, emo_alpha=1.0, emo_vector=None,
+                              use_emo_text=False, emo_text=None,
+                              interval_silence=200, max_text_tokens_per_segment=120,
+                              use_random=False):
+        """Generate a single segment and return (waveform, sample_rate)."""
+        with torch.no_grad():
+            tts.infer(
+                spk_audio_prompt=ref_path,
+                text=text,
+                output_path=out_path,
+                emo_audio_prompt=emo_path,
+                emo_alpha=emo_alpha,
+                emo_vector=emo_vector,
+                use_emo_text=use_emo_text,
+                emo_text=emo_text if (emo_text and emo_text.strip()) else None,
+                interval_silence=interval_silence,
+                max_text_tokens_per_segment=max_text_tokens_per_segment,
+                use_random=use_random,
+                verbose=True,
+            )
+
+        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            return None, None
+
+        wav, sr = torchaudio.load(out_path)
+        return wav, sr
+
     def generate(self, indextts_model, text, voice_preset="Female_HQ",
                  reference_audio=None,
                  emotion_audio=None,
                  emo_alpha=1.0,
                  happy=0.0, angry=0.0, sad=0.0, afraid=0.0,
                  disgusted=0.0, melancholic=0.0, surprised=0.0, calm=0.0,
+                 use_emo_text=False, emo_text="",
+                 interval_silence=200, max_text_tokens_per_segment=120,
                  use_random=False, seed=0):
         _ensure_indextts()
 
@@ -483,11 +595,20 @@ class AIIA_IndexTTS2_TTS:
         if emotion_audio is not None:
             emo_path = self._audio_to_wav_path(emotion_audio, prefix="indextts_emo_")
 
-        # --- Emotion vector (if any slider > 0) ---
-        emo_vector = [happy, angry, sad, afraid, disgusted, melancholic, surprised, calm]
-        has_emo_vector = any(v > 0.001 for v in emo_vector)
-        if not has_emo_vector:
-            emo_vector = None
+        # --- Emotion vector from sliders (if any slider > 0) ---
+        slider_emo_vector = [happy, angry, sad, afraid, disgusted, melancholic, surprised, calm]
+        has_slider_emo = any(v > 0.001 for v in slider_emo_vector)
+        if not has_slider_emo:
+            slider_emo_vector = None
+
+        # --- Detect emotion tags in text ---
+        emotion_segments = self._split_by_emotion_tags(text)
+        has_multi_emotion = len(emotion_segments) > 1 or (len(emotion_segments) == 1 and emotion_segments[0][0] is not None)
+
+        if has_multi_emotion:
+            print(f"[AIIA IndexTTS-2] Detected {len(emotion_segments)} emotion-tagged segment(s):")
+            for i, (emo, seg) in enumerate(emotion_segments):
+                print(f"  Segment {i}: [{emo}] {seg[:50]}...")
 
         # --- Output temp file ---
         out_fd, out_path = tempfile.mkstemp(suffix=".wav", prefix="indextts_out_")
@@ -496,37 +617,100 @@ class AIIA_IndexTTS2_TTS:
         # --- Generate ---
         try:
             print(f"[AIIA IndexTTS-2] Generating: text='{text[:50]}...', ref={ref_path}")
-            if emo_vector:
-                print(f"  Emotion vector: {emo_vector}, alpha={emo_alpha}")
-            if emo_path:
-                print(f"  Emotion audio: {emo_path}")
 
-            # Temporarily re-apply patches for inference, then revert.
-            with _transformers_patches(), torch.no_grad():
-                tts.infer(
-                    spk_audio_prompt=ref_path,
-                    text=text,
-                    output_path=out_path,
-                    emo_audio_prompt=emo_path,
+            if has_multi_emotion:
+                # ===== Per-segment emotion generation =====
+                all_waveforms = []
+                final_sr = 22050  # will be overwritten by actual sr
+
+                for seg_idx, (seg_emotion, seg_text) in enumerate(emotion_segments):
+                    # Determine emotion vector for this segment
+                    seg_emo_vector = None
+                    seg_use_emo_text = False
+                    seg_emo_text = None
+                    seg_emo_path = emo_path  # default: use global emotion audio
+
+                    if seg_emotion:
+                        tag_lower = seg_emotion.lower().strip()
+                        if tag_lower in _EMOTION_TAG_TO_VECTOR:
+                            # Known tag → use mapped vector
+                            seg_emo_vector = list(_EMOTION_TAG_TO_VECTOR[tag_lower])
+                            seg_emo_path = None  # tag overrides emotion audio
+                            print(f"  [{seg_emotion}] → mapped vector: {seg_emo_vector}")
+                        else:
+                            # Unknown tag → fallback to QwenEmotion inference
+                            seg_use_emo_text = True
+                            seg_emo_text = seg_emotion
+                            seg_emo_path = None
+                            print(f"  [{seg_emotion}] → unknown tag, falling back to QwenEmotion inference")
+                    else:
+                        # No tag on this segment → use slider vector or global settings
+                        seg_emo_vector = slider_emo_vector
+                        seg_use_emo_text = use_emo_text
+                        seg_emo_text = emo_text
+
+                    print(f"  Generating segment {seg_idx+1}/{len(emotion_segments)}: '{seg_text[:40]}...'")
+
+                    wav, sr = self._infer_single_segment(
+                        tts, seg_text, ref_path, out_path,
+                        emo_path=seg_emo_path,
+                        emo_alpha=emo_alpha,
+                        emo_vector=seg_emo_vector,
+                        use_emo_text=seg_use_emo_text,
+                        emo_text=seg_emo_text,
+                        interval_silence=interval_silence,
+                        max_text_tokens_per_segment=max_text_tokens_per_segment,
+                        use_random=use_random,
+                    )
+
+                    if wav is not None:
+                        all_waveforms.append(wav)
+                        final_sr = sr
+                    else:
+                        print(f"  WARNING: Segment {seg_idx+1} produced no output, skipping.")
+
+                if not all_waveforms:
+                    print("[AIIA IndexTTS-2] WARNING: All segments produced no output. Returning silence.")
+                    silence = torch.zeros(1, 1, 22050)
+                    return ({"waveform": silence, "sample_rate": 22050},)
+
+                # Crossfade join all segments
+                final_wav = self._crossfade_segments(all_waveforms, final_sr)
+                final_wav = final_wav.unsqueeze(0)  # (C, N) → (1, C, N)
+
+                total_duration = final_wav.shape[-1] / final_sr
+                print(f"[AIIA IndexTTS-2] Generated {len(all_waveforms)} segments, total {total_duration:.2f}s at {final_sr}Hz")
+
+                return ({"waveform": final_wav, "sample_rate": final_sr},)
+
+            else:
+                # ===== Single segment (original path) =====
+                if slider_emo_vector:
+                    print(f"  Emotion vector: {slider_emo_vector}, alpha={emo_alpha}")
+                if emo_path:
+                    print(f"  Emotion audio: {emo_path}")
+
+                wav, sr = self._infer_single_segment(
+                    tts, text, ref_path, out_path,
+                    emo_path=emo_path,
                     emo_alpha=emo_alpha,
-                    emo_vector=emo_vector,
+                    emo_vector=slider_emo_vector,
+                    use_emo_text=use_emo_text,
+                    emo_text=emo_text,
+                    interval_silence=interval_silence,
+                    max_text_tokens_per_segment=max_text_tokens_per_segment,
                     use_random=use_random,
-                    verbose=True,
                 )
 
-            # --- Read output wav → ComfyUI AUDIO format ---
-            if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-                print("[AIIA IndexTTS-2] WARNING: Generation produced no output. Returning silence.")
-                silence = torch.zeros(1, 1, 22050)  # 1 second silence
-                return ({"waveform": silence, "sample_rate": 22050},)
+                if wav is None:
+                    print("[AIIA IndexTTS-2] WARNING: Generation produced no output. Returning silence.")
+                    silence = torch.zeros(1, 1, 22050)
+                    return ({"waveform": silence, "sample_rate": 22050},)
 
-            wav, sr = torchaudio.load(out_path)
-            # wav shape: (channels, samples) → (1, channels, samples) for ComfyUI batch dim
-            wav = wav.unsqueeze(0)
+                wav = wav.unsqueeze(0)  # (C, N) → (1, C, N)
+                print(f"[AIIA IndexTTS-2] Generated {wav.shape[-1] / sr:.2f}s audio at {sr}Hz")
 
-            print(f"[AIIA IndexTTS-2] Generated {wav.shape[-1] / sr:.2f}s audio at {sr}Hz")
-
-            return ({"waveform": wav, "sample_rate": sr},)
+                return ({"waveform": wav, "sample_rate": sr},)
 
         finally:
             # Cleanup temp files
