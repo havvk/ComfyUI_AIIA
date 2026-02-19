@@ -120,16 +120,73 @@ for use_fp16 in [True, False]:
     try:
         with torch.no_grad():
             with _transformers_patches(): # Patches needed for inference too?
-                tts.infer(
+                # We need to capture the raw wav before it's saved/converted ideally.
+                # But tts.infer() saves it.
+                # However, tts.infer() returns the path.
+                # Let's try to monkeypatch torch.clamp or torchaudio.save inside the context?
+                # Or just use the model components directly? No, too complex.
+                
+                # We can use tts.infer(..., stream_return=True) to get the generator?
+                # tts.infer signature: if stream_return is True, it yields output.
+                
+                # Let's try stream_return=True to get raw audio data.
+                # output = next(tts.infer(..., stream_return=True))
+                # infer() yields partial wavs? No, logic says:
+                # if stream_return: yield wav.cpu() (per segment)
+                # then yields silence.
+                # then yields output_path (if output_path set)?
+                # Wait, code says:
+                # if output_path: ... save ... if stream_return: return None ... yield output_path
+                # So if output_path is set AND stream_return is True, it might not yield wavs?
+                
+                # Let's look at lines 669:
+                # if stream_return: yield wav.cpu()
+                
+                # So we can collect segments.
+                generator = tts.infer(
                     text=text,
                     spk_audio_prompt=ref_audio,
-                    output_path=output_path,
+                    output_path=None, # Don't let it save
+                    stream_return=True,
                     verbose=True
                 )
-        print(f"Successfully generated: {output_path}")
+                
+                wavs = []
+                for chunk in generator:
+                    if isinstance(chunk, tuple):
+                        # (sampling_rate, wav_data_numpy) - final yield if output_path=None
+                        pass
+                    elif isinstance(chunk, torch.Tensor):
+                        wavs.append(chunk)
+
+                # Combine
+                if not wavs:
+                    print("No wavs generated via stream!")
+                    continue
+                    
+                full_wav = torch.cat(wavs, dim=1) if len(wavs) > 1 else wavs[0]
+                
+                # Save as float (normalized)
+                # The model output seems to be already scaled to 32767 in `infer_v2.py` line 664?
+                # wav = torch.clamp(32767 * wav, ...)
+                # Wait, `infer_v2.py` does that inside the loop.
+                # So `wavs` collected here are ALREADY multiplied by 32767.
+                
+                # So we should divide by 32768.0 to get back to float [-1, 1]
+                full_wav_float = full_wav.float() / 32768.0
+                
+                import torchaudio
+                torchaudio.save(output_path.replace(".wav", "_norm.wav"), full_wav_float, 24000)
+                print(f"Saved normalized float wav: {output_path.replace('.wav', '_norm.wav')}")
+                
+                # Also save as int16 as original
+                torchaudio.save(output_path, full_wav.to(torch.int16), 24000)
+                print(f"Saved int16 wav: {output_path}")
+
     except Exception as e:
         print(f"Inference failed: {e}")
         import traceback
         traceback.print_exc()
 
 print("--- End Test ---")
+
