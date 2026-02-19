@@ -269,7 +269,36 @@ class AIIA_GenerateSpeakerSegments:
                 print(f"{node_name_log} 已保存临时音频到 {temp_wav_path}")
 
                 print(f"{node_name_log} 加载 E2E 模型: {model_path}")
-                diar_model = SortformerEncLabelModel.restore_from(restore_path=model_path, map_location=actual_device)
+                
+                # --- Diagnostic: trace hang point in NeMo restore_from ---
+                import time as _time
+                _t0 = _time.time()
+                
+                # Patch SortformerEncLabelModel.__init__ to trace progress
+                _orig_init = SortformerEncLabelModel.__init__
+                def _traced_init(self_model, cfg, trainer=None):
+                    print(f"[AIIA DEBUG] SortformerEncLabelModel.__init__ START ({_time.time()-_t0:.1f}s)")
+                    import nemo.core.classes.modelPT as _mpt
+                    _orig_mpt_init = _mpt.ModelPT.__init__
+                    def _traced_mpt_init(self2, **kwargs2):
+                        print(f"[AIIA DEBUG]   ModelPT.__init__ START ({_time.time()-_t0:.1f}s)")
+                        _orig_mpt_init(self2, **kwargs2)
+                        print(f"[AIIA DEBUG]   ModelPT.__init__ DONE ({_time.time()-_t0:.1f}s)")
+                    _mpt.ModelPT.__init__ = _traced_mpt_init
+                    try:
+                        _orig_init(self_model, cfg, trainer)
+                    finally:
+                        _mpt.ModelPT.__init__ = _orig_mpt_init
+                    print(f"[AIIA DEBUG] SortformerEncLabelModel.__init__ DONE ({_time.time()-_t0:.1f}s)")
+                SortformerEncLabelModel.__init__ = _traced_init
+                
+                try:
+                    print(f"[AIIA DEBUG] restore_from START ({_time.time()-_t0:.1f}s)")
+                    diar_model = SortformerEncLabelModel.restore_from(restore_path=model_path, map_location=actual_device)
+                    print(f"[AIIA DEBUG] restore_from DONE ({_time.time()-_t0:.1f}s)")
+                finally:
+                    SortformerEncLabelModel.__init__ = _orig_init
+                
                 diar_model.eval()
 
                 file_duration = sf.info(temp_wav_path).duration
