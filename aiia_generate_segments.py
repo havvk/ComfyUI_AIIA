@@ -240,8 +240,28 @@ class AIIA_GenerateSpeakerSegments:
 
 
         try:
-            from nemo.collections.asr.models.sortformer_diar_models import SortformerEncLabelModel
-            from nemo.collections.asr.parts.mixins.diarization import DiarizeConfig 
+            import os as _os
+            # Prevent NeMo's import chain from making HuggingFace Hub network requests.
+            # aed_multitask_models loads facebook/w2v-bert-2.0 configs during import,
+            # which hangs for minutes in network-restricted environments (China) due to
+            # exponential-backoff retries against blocked huggingface.co.
+            _hf_offline_prev = _os.environ.get("HF_HUB_OFFLINE")
+            _tf_offline_prev = _os.environ.get("TRANSFORMERS_OFFLINE")
+            _os.environ["HF_HUB_OFFLINE"] = "1"
+            _os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            try:
+                from nemo.collections.asr.models.sortformer_diar_models import SortformerEncLabelModel
+                from nemo.collections.asr.parts.mixins.diarization import DiarizeConfig 
+            finally:
+                # Restore previous values
+                if _hf_offline_prev is None:
+                    _os.environ.pop("HF_HUB_OFFLINE", None)
+                else:
+                    _os.environ["HF_HUB_OFFLINE"] = _hf_offline_prev
+                if _tf_offline_prev is None:
+                    _os.environ.pop("TRANSFORMERS_OFFLINE", None)
+                else:
+                    _os.environ["TRANSFORMERS_OFFLINE"] = _tf_offline_prev
             print(f"{node_name_log} 成功导入 NeMo 类。")
         except ImportError as e_import_model:
             return self._create_error_output(f"导入 NeMo 类失败 ({e_import_model})")

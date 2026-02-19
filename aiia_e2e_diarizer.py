@@ -220,7 +220,22 @@ class AIIA_E2E_Speaker_Diarization:
                      "language":whisper_chunks.get("language", "") if isinstance(whisper_chunks, dict) else ""},)
 
         try:
-            from nemo.collections.asr.models.sortformer_diar_models import SortformerEncLabelModel
+            import os as _os
+            _hf_offline_prev = _os.environ.get("HF_HUB_OFFLINE")
+            _tf_offline_prev = _os.environ.get("TRANSFORMERS_OFFLINE")
+            _os.environ["HF_HUB_OFFLINE"] = "1"
+            _os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            try:
+                from nemo.collections.asr.models.sortformer_diar_models import SortformerEncLabelModel
+            finally:
+                if _hf_offline_prev is None:
+                    _os.environ.pop("HF_HUB_OFFLINE", None)
+                else:
+                    _os.environ["HF_HUB_OFFLINE"] = _hf_offline_prev
+                if _tf_offline_prev is None:
+                    _os.environ.pop("TRANSFORMERS_OFFLINE", None)
+                else:
+                    _os.environ["TRANSFORMERS_OFFLINE"] = _tf_offline_prev
             print(f"[AIIA E2E Diarization] 成功导入 SortformerEncLabelModel。")
         except ImportError as e_import_model:
             error_msg = f"错误: NeMo SortformerEncLabelModel 未找到 ({e_import_model})。请确保 nemo_toolkit['asr'] 已正确安装且版本兼容。"
