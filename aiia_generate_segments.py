@@ -240,46 +240,8 @@ class AIIA_GenerateSpeakerSegments:
 
 
         try:
-            import sys, time as _t, importlib
-            print(f"{node_name_log} [DEBUG] 开始导入 NeMo 类... ({_t.strftime('%H:%M:%S')})", flush=True)
-            
-            # Check from_pretrained state
-            import transformers as _tf
-            print(f"{node_name_log} [DEBUG]  modelscope in sys.modules: {'modelscope' in sys.modules}", flush=True)
-            
-            # Install import hook to trace which module hangs
-            _orig_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
-            _import_stack = []
-            def _traced_import(name, *args, **kwargs):
-                is_interesting = name.startswith(('nemo.collections.asr.models', 'transformers'))
-                if is_interesting:
-                    indent = '  ' * len(_import_stack)
-                    print(f"{node_name_log} [IMPORT] {indent}-> {name}", flush=True)
-                    _import_stack.append(name)
-                try:
-                    return _orig_import(name, *args, **kwargs)
-                finally:
-                    if is_interesting:
-                        _import_stack.pop()
-                        indent = '  ' * len(_import_stack)
-                        print(f"{node_name_log} [IMPORT] {indent}<- {name} OK", flush=True)
-            
-            import builtins
-            builtins.__import__ = _traced_import
-            try:
-                print(f"{node_name_log} [DEBUG]  importing SortformerEncLabelModel from msdd_models...", flush=True)
-                from nemo.collections.asr.models.msdd_models import SortformerEncLabelModel
-                print(f"{node_name_log} [DEBUG]  SortformerEncLabelModel imported OK ({_t.strftime('%H:%M:%S')})", flush=True)
-            except ImportError:
-                print(f"{node_name_log} [DEBUG]  msdd_models failed, trying asr.models...", flush=True)
-                from nemo.collections.asr.models import SortformerEncLabelModel
-            finally:
-                builtins.__import__ = _orig_import
-            
-            print(f"{node_name_log} [DEBUG]  importing DiarizeConfig...", flush=True)
+            from nemo.collections.asr.models.sortformer_diar_models import SortformerEncLabelModel
             from nemo.collections.asr.parts.mixins.diarization import DiarizeConfig 
-            print(f"{node_name_log} [DEBUG]  DiarizeConfig imported OK ({_t.strftime('%H:%M:%S')})", flush=True)
-            
             print(f"{node_name_log} 成功导入 NeMo 类。")
         except ImportError as e_import_model:
             return self._create_error_output(f"导入 NeMo 类失败 ({e_import_model})")
@@ -305,36 +267,7 @@ class AIIA_GenerateSpeakerSegments:
                 print(f"{node_name_log} 已保存临时音频到 {temp_wav_path}")
 
                 print(f"{node_name_log} 加载 E2E 模型: {model_path}")
-                
-                # --- Diagnostic: trace hang point in NeMo restore_from ---
-                import time as _time
-                _t0 = _time.time()
-                
-                # Patch SortformerEncLabelModel.__init__ to trace progress
-                _orig_init = SortformerEncLabelModel.__init__
-                def _traced_init(self_model, cfg, trainer=None):
-                    print(f"[AIIA DEBUG] SortformerEncLabelModel.__init__ START ({_time.time()-_t0:.1f}s)")
-                    import nemo.core.classes.modelPT as _mpt
-                    _orig_mpt_init = _mpt.ModelPT.__init__
-                    def _traced_mpt_init(self2, **kwargs2):
-                        print(f"[AIIA DEBUG]   ModelPT.__init__ START ({_time.time()-_t0:.1f}s)")
-                        _orig_mpt_init(self2, **kwargs2)
-                        print(f"[AIIA DEBUG]   ModelPT.__init__ DONE ({_time.time()-_t0:.1f}s)")
-                    _mpt.ModelPT.__init__ = _traced_mpt_init
-                    try:
-                        _orig_init(self_model, cfg, trainer)
-                    finally:
-                        _mpt.ModelPT.__init__ = _orig_mpt_init
-                    print(f"[AIIA DEBUG] SortformerEncLabelModel.__init__ DONE ({_time.time()-_t0:.1f}s)")
-                SortformerEncLabelModel.__init__ = _traced_init
-                
-                try:
-                    print(f"[AIIA DEBUG] restore_from START ({_time.time()-_t0:.1f}s)")
-                    diar_model = SortformerEncLabelModel.restore_from(restore_path=model_path, map_location=actual_device)
-                    print(f"[AIIA DEBUG] restore_from DONE ({_time.time()-_t0:.1f}s)")
-                finally:
-                    SortformerEncLabelModel.__init__ = _orig_init
-                
+                diar_model = SortformerEncLabelModel.restore_from(restore_path=model_path, map_location=actual_device)
                 diar_model.eval()
 
                 file_duration = sf.info(temp_wav_path).duration
