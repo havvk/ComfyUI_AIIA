@@ -372,6 +372,10 @@ class AIIA_Podcast_Stitcher:
         clean = re.sub(r'[^\u4e00-\u9fff\w\s]', '', text)
         if not clean.strip():
             return text.lower()
+        # 将数字转为中文再转拼音（MMS_FA tokenizer 不识别数字字符）
+        digit_map = {'0': '零', '1': '一', '2': '二', '3': '三', '4': '四',
+                     '5': '五', '6': '六', '7': '七', '8': '八', '9': '九'}
+        clean = ''.join(digit_map.get(c, c) for c in clean)
         # lazy_pinyin 会把中文转拼音，非中文字符原样保留
         result = ' '.join(lazy_pinyin(clean, style=Style.NORMAL))
         # 全部小写 + 只保留 MMS_FA tokenizer 支持的字符 [a-z, space, ', -]
