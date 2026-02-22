@@ -56,6 +56,9 @@ class AIIA_Podcast_Splitter:
         if len(speakers_seen) > 2:
             print(f"{log} 警告: 发现 {len(speakers_seen)} 个说话人 ({speakers_seen})，仅使用前两个")
 
+        # 按名称排序，确保 speaker_A/speaker_B 的分配不受对话顺序影响
+        speakers_seen.sort()
+
         speaker_A = speakers_seen[0] if len(speakers_seen) > 0 else None
         speaker_B = speakers_seen[1] if len(speakers_seen) > 1 else None
 
