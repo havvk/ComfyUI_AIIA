@@ -266,7 +266,7 @@ class AIIA_VibeVoice_TTS:
         import re
         lines = text.split('\n')
         # Match "Role Name:" at start of line (limit to 30 chars to avoid long sentences)
-        role_pattern = re.compile(r'^([^\n:]{1,30})[:\uff1a]\s+')
+        role_pattern = re.compile(r'^([^\n:：。，、；！？.,;!?`\'\"]{1,15})[:\uff1a]\s+')
         # Already in [N] format
         bracket_pattern = re.compile(r'^\[\d+\]\s*[:\uff1a]')
         # Legacy Speaker N: format
