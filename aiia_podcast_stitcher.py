@@ -811,29 +811,37 @@ class AIIA_Podcast_Stitcher:
                 
                 if fa_entry:
                     fa_start, fa_end = fa_entry['start'], fa_entry['end']
-                    # FA 精确起点 + 能量检测自然收尾（受 VAD 约束）
+                    # FA 精确起点
                     cut_start = fa_start
-                    cut_end = self._refine_cut_point(wav, sr, fa_end,
-                        search_radius=0.15, direction="after")
-                    # 用 VAD 约束尾部：cut_end 不应超过 VAD 检测到的实际语音结束
+                    
+                    # 针对清辅音（如 PPT 的 T）或者呼吸尾音经常被 FA 强制截断的问题：
+                    # 直接给予充分的自然发音衰减物理时间 (0.35s)
+                    TAIL_ALLOWANCE = 0.35
+                    
+                    if fa_results and sent_local_idx + 1 < len(fa_results):
+                        next_fa = fa_results[sent_local_idx + 1]
+                        if next_fa and next_fa['start'] > fa_end:
+                            gap = next_fa['start'] - fa_end
+                            # 延伸进入 gap，最多 TAIL_ALLOWANCE，且不超过 gap 的 60% (避免吃进下一句的气口)
+                            extend = min(TAIL_ALLOWANCE, gap * 0.6)
+                            cut_end = fa_end + extend
+                        else:
+                            # 如果下一句贴得很紧，保底向后略微缓冲
+                            cut_end = fa_end + TAIL_ALLOWANCE / 2
+                    else:
+                        cut_end = fa_end + TAIL_ALLOWANCE
+                        
+                    # 用 VAD 验证尾部：寻找能量谷和 VAD 终点附近的合理落点
                     if use_vad:
                         vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
                         if vad_ts:
-                            _, vad_offset = self._refine_with_vad(fa_start, fa_end, vad_ts, search_margin=0.3)
-                            # 取能量谷和 VAD 终点中更早的（避免切入静音区）
-                            cut_end = min(cut_end, vad_offset)
-                    
-                    # 防止尾部扩展吃进下一句的 FA 起点
-                    if fa_results and sent_local_idx + 1 < len(fa_results):
-                        next_fa = fa_results[sent_local_idx + 1]
-                        if next_fa and cut_end > next_fa['start']:
-                            # 取中点，但保底不低于 FA 原始终点（防止 FA 时间戳微重叠时过度截断）
-                            cut_end = max(fa_end, (fa_end + next_fa['start']) / 2)
-                    else:
-                        # 最后一句：硬性上限 = FA 终点 + 0.3s
-                        # 防止 CosyVoice/TTS 在音频末尾重复最后一句被误收
-                        MAX_TAIL_AFTER_FA = 0.3
-                        cut_end = min(cut_end, fa_end + MAX_TAIL_AFTER_FA)
+                            # 放大 search_margin 容忍拖音
+                            _, vad_offset = self._refine_with_vad(fa_start, fa_end, vad_ts, search_margin=0.5)
+                            # 如果 VAD 侦测到更长的尾音，则采纳更长的；但绝不早于我们的物理推断
+                            cut_end = max(cut_end, vad_offset)
+                            
+                    # 取能量谷微调：在估算好的 cut_end 附近找一个真正安静的帧切断，避免切在底噪波峰
+                    cut_end = self._refine_cut_point(wav, sr, cut_end, search_radius=0.10, direction="both")
                     
                     # 交叉验证：同时计算 VAD 和 Energy 的结果做对比
                     if use_vad and vad_timestamps_A is not None:
@@ -874,9 +882,9 @@ class AIIA_Podcast_Stitcher:
                 cut_start = self._refine_cut_point(wav, sr, cut_start, search_radius=0.15, direction="before")
                 cut_end = self._refine_cut_point(wav, sr, cut_end, search_radius=0.10, direction="both")
 
-            # 应用 padding：cut_start 全额保留起音余量，cut_end 少量保留尾音衰减
+            # 应用 padding：cut_start 全额保留起音余量，cut_end 增加较多尾音衰减
             cut_start = max(0, cut_start - padding)
-            cut_end = min(len(wav) / sr, cut_end + padding * 0.3)
+            cut_end = min(len(wav) / sr, cut_end + padding * 0.8)
 
             # 防重叠：确保 cut_start 不早于同一说话人上一个片段的 cut_end
             if cut_start < prev_cut_end[speaker]:
