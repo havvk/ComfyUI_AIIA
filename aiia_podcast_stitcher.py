@@ -842,6 +842,25 @@ class AIIA_Podcast_Stitcher:
                             
                     # 取能量谷微调：在估算好的 cut_end 附近找一个真正安静的帧切断，避免切在底噪波峰
                     cut_end = self._refine_cut_point(wav, sr, cut_end, search_radius=0.10, direction="both")
+
+                    # 硬性上界：cut_end 不得超过下一句的最早起始位置
+                    # 这是最终兜底——无论前面 TAIL_ALLOWANCE / VAD / Energy 怎么延伸，
+                    # 绝不允许吃进下一句的任何检测器所认定的起始时间
+                    if fa_results and sent_local_idx + 1 < len(fa_results):
+                        next_fa = fa_results[sent_local_idx + 1]
+                        if next_fa:
+                            next_starts = [next_fa['start']]
+                            # 也收集下一句对应的 VAD 段起始时间
+                            if use_vad:
+                                vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
+                                if vad_ts:
+                                    for vad in vad_ts:
+                                        if vad['end'] > next_fa['start'] and vad['start'] < next_fa['end']:
+                                            next_starts.append(vad['start'])
+                                            break
+                            next_hard_limit = min(next_starts)
+                            if cut_end > next_hard_limit:
+                                cut_end = next_hard_limit
                     
                     # 交叉验证：同时计算 VAD 和 Energy 的结果做对比
                     if use_vad and vad_timestamps_A is not None:
