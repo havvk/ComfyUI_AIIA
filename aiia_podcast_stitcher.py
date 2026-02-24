@@ -847,29 +847,28 @@ class AIIA_Podcast_Stitcher:
                     print(f"{log} 🐛 {speaker}[{sent_local_idx}] after Energy refine: cut_end={cut_end:.4f}")
 
                     # 硬性上界：cut_end 不得超过下一句的最早起始位置
-                    # 这是最终兜底——无论前面 TAIL_ALLOWANCE / VAD / Energy 怎么延伸，
-                    # 绝不允许吃进下一句的任何检测器所认定的起始时间
+                    # 直接对下一句的 FA 区间做 VAD/Energy 精修，获取下一句真实语音起始
                     if fa_results and sent_local_idx + 1 < len(fa_results):
                         next_fa = fa_results[sent_local_idx + 1]
                         if next_fa:
-                            next_starts = [next_fa['start']]
-                            # 也收集下一句对应的 VAD 段起始时间
-                            # 注意：只有当 VAD 段的 start 晚于当前句 FA end 时才有意义
-                            # 否则说明该 VAD 段跨越了当前句和下一句，其 start 不代表下一句的起始
+                            next_limit = next_fa['start']
+                            # 用 VAD 精修下一句起始（可能比 FA 更早检测到语音）
                             if use_vad:
                                 vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
                                 if vad_ts:
-                                    for vad in vad_ts:
-                                        if vad['end'] > next_fa['start'] and vad['start'] < next_fa['end']:
-                                            # 只有 VAD 段 start 在当前句 FA end 之后才作为下一句起始约束
-                                            if vad['start'] > fa_end:
-                                                next_starts.append(vad['start'])
-                                            print(f"{log} 🐛 {speaker}[{sent_local_idx}] hard limit: matched VAD=[{vad['start']:.3f},{vad['end']:.3f}], fa_end={fa_end:.3f}")
-                                            break
-                            next_hard_limit = min(next_starts)
-                            print(f"{log} 🐛 {speaker}[{sent_local_idx}] hard limit: next_starts={[round(x,3) for x in next_starts]}, limit={next_hard_limit:.4f}, cut_end_before={cut_end:.4f}")
-                            if cut_end > next_hard_limit:
-                                cut_end = next_hard_limit
+                                    next_vad_start, _ = self._refine_with_vad(
+                                        next_fa['start'], next_fa['end'], vad_ts)
+                                    next_limit = min(next_limit, next_vad_start)
+                            # 用能量检测精修下一句起始
+                            next_energy_start = self._refine_cut_point(
+                                wav, sr, next_fa['start'],
+                                search_radius=0.15, direction="before")
+                            next_limit = min(next_limit, next_energy_start)
+                            print(f"{log} 🐛 {speaker}[{sent_local_idx}] hard limit: "
+                                  f"next_fa={next_fa['start']:.3f}, next_limit={next_limit:.3f}, "
+                                  f"cut_end_before={cut_end:.3f}")
+                            if cut_end > next_limit:
+                                cut_end = next_limit
                     
                     # 兜底：cut_end 绝不能小于 cut_start
                     if cut_end < cut_start:
