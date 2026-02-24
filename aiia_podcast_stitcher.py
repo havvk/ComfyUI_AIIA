@@ -811,8 +811,27 @@ class AIIA_Podcast_Stitcher:
                 
                 if fa_entry:
                     fa_start, fa_end = fa_entry['start'], fa_entry['end']
-                    # FA 精确起点
+                    fa_score = fa_entry.get('score', 1.0)
+                    
+                    # ASR 偏差校验：FA 置信度低且与 ASR 偏差大时发出警告
+                    asr_start = boundary.get("start", fa_start)
+                    asr_end = boundary.get("end", fa_end)
+                    if fa_score < 0.85 and (abs(fa_start - asr_start) > 1.0 or abs(fa_end - asr_end) > 1.0):
+                        print(f"{log} ⚠️ {speaker}[{sent_local_idx}] FA score={fa_score:.3f}, "
+                              f"与 ASR 偏差大 (FA=[{fa_start:.3f},{fa_end:.3f}] "
+                              f"ASR=[{asr_start:.3f},{asr_end:.3f}])，结果可能不可靠")
+                    
+                    # 起始位置：min(FA, VAD) 保留气口/起音
                     cut_start = fa_start
+                    if use_vad:
+                        vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
+                        if vad_ts:
+                            vad_start_refined, _ = self._refine_with_vad(
+                                fa_start, fa_end, vad_ts, search_margin=0.3)
+                            if vad_start_refined < cut_start:
+                                print(f"{log} 🐛 {speaker}[{sent_local_idx}] "
+                                      f"VAD 气口保留: cut_start {fa_start:.4f} → {vad_start_refined:.4f}")
+                                cut_start = vad_start_refined
                     
                     # 针对清辅音（如 PPT 的 T）或者呼吸尾音经常被 FA 强制截断的问题：
                     # 直接给予充分的自然发音衰减物理时间 (0.35s)
@@ -913,13 +932,20 @@ class AIIA_Podcast_Stitcher:
                 cut_start = self._refine_cut_point(wav, sr, cut_start, search_radius=0.15, direction="before")
                 cut_end = self._refine_cut_point(wav, sr, cut_end, search_radius=0.10, direction="both")
 
-            # 应用 padding：cut_start 全额保留起音余量，cut_end 增加较多尾音衰减
-            cut_start = max(0, cut_start - padding)
-            cut_end = min(len(wav) / sr, cut_end + padding * 0.8)
-
-            # 防重叠：确保 cut_start 不早于同一说话人上一个片段的 cut_end
-            if cut_start < prev_cut_end[speaker]:
+            # 间隙感知 padding：与前一片段之间的余量向中点分配，各自最多延伸 padding
+            gap_before = cut_start - prev_cut_end[speaker]  # 与同说话人上一片段的间隙
+            if gap_before > 0:
+                # 有余量：各自向中点延伸，最多 padding
+                half_gap = gap_before / 2
+                cut_start = cut_start - min(half_gap, padding)
+            else:
+                # 无余量或重叠：硬截到上一片段的 cut_end
                 cut_start = prev_cut_end[speaker]
+            cut_start = max(0, cut_start)
+
+            # cut_end 向后延伸 padding（后续片段处理时会通过 gap_before 自动约束）
+            cut_end = min(len(wav) / sr, cut_end + padding)
+
             prev_cut_end[speaker] = cut_end
 
             start_sample = int(cut_start * sr)
