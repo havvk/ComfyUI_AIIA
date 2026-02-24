@@ -803,6 +803,7 @@ class AIIA_Podcast_Stitcher:
             sent_local_idx = (idx_A - 1) if speaker == "A" else (idx_B - 1)
 
             # 边界微调：FA > VAD > Energy
+            next_onset_limit = None  # 硬性上界，在 FA 分支中计算，供 padding 使用
             if use_forced_align:
                 fa_results = fa_results_A if speaker == "A" else fa_results_B
                 fa_entry = None
@@ -821,17 +822,23 @@ class AIIA_Podcast_Stitcher:
                               f"与 ASR 偏差大 (FA=[{fa_start:.3f},{fa_end:.3f}] "
                               f"ASR=[{asr_start:.3f},{asr_end:.3f}])，结果可能不可靠")
                     
-                    # 起始位置：min(FA, VAD) 保留气口/起音
+                    # 起始位置：min(FA, VAD onset) 保留气口/起音
                     cut_start = fa_start
                     if use_vad:
                         vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
                         if vad_ts:
-                            vad_start_refined, _ = self._refine_with_vad(
-                                fa_start, fa_end, vad_ts, search_margin=0.3)
-                            if vad_start_refined < cut_start:
+                            # 直接查找包含 FA start 的最早 VAD 段（不用 max-overlap，避免选错段）
+                            vad_onset = fa_start
+                            for vad in vad_ts:
+                                if (vad['end'] > fa_start and
+                                    vad['start'] < fa_start and
+                                    fa_start - vad['start'] < 0.3 and
+                                    vad['start'] < vad_onset):
+                                    vad_onset = vad['start']
+                            if vad_onset < cut_start:
                                 print(f"{log} 🐛 {speaker}[{sent_local_idx}] "
-                                      f"VAD 气口保留: cut_start {fa_start:.4f} → {vad_start_refined:.4f}")
-                                cut_start = vad_start_refined
+                                      f"VAD 气口保留: cut_start {fa_start:.4f} → {vad_onset:.4f}")
+                                cut_start = vad_onset
                     
                     # 针对清辅音（如 PPT 的 T）或者呼吸尾音经常被 FA 强制截断的问题：
                     # 直接给予充分的自然发音衰减物理时间 (0.35s)
@@ -865,27 +872,31 @@ class AIIA_Podcast_Stitcher:
                     cut_end = self._refine_cut_point(wav, sr, cut_end, search_radius=0.10, direction="both")
                     print(f"{log} 🐛 {speaker}[{sent_local_idx}] after Energy refine: cut_end={cut_end:.4f}")
 
-                    # 硬性上界：cut_end 不得超过下一句的最早起始位置
-                    # 直接对下一句的 FA 区间做 VAD/Energy 精修，获取下一句真实语音起始
+                    # 硬性上界：cut_end 不得超过下一句的最早语音起始位置
+                    next_onset_limit = None  # 记录硬上界，供后续 padding 使用
                     if fa_results and sent_local_idx + 1 < len(fa_results):
                         next_fa = fa_results[sent_local_idx + 1]
                         if next_fa:
                             next_limit = next_fa['start']
-                            # 用 VAD 精修下一句起始（可能比 FA 更早检测到语音）
+                            # 直接查找下一句 FA start 附近最早的 VAD 活动
                             if use_vad:
                                 vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
                                 if vad_ts:
-                                    next_vad_start, _ = self._refine_with_vad(
-                                        next_fa['start'], next_fa['end'], vad_ts)
-                                    next_limit = min(next_limit, next_vad_start)
+                                    for vad in vad_ts:
+                                        if (vad['end'] > next_fa['start'] and
+                                            vad['start'] < next_fa['start'] and
+                                            next_fa['start'] - vad['start'] < 0.5 and
+                                            vad['start'] < next_limit):
+                                            next_limit = vad['start']
                             # 用能量检测精修下一句起始
                             next_energy_start = self._refine_cut_point(
-                                wav, sr, next_fa['start'],
+                                wav, sr, next_limit,
                                 search_radius=0.15, direction="before")
                             next_limit = min(next_limit, next_energy_start)
                             print(f"{log} 🐛 {speaker}[{sent_local_idx}] hard limit: "
                                   f"next_fa={next_fa['start']:.3f}, next_limit={next_limit:.3f}, "
                                   f"cut_end_before={cut_end:.3f}")
+                            next_onset_limit = next_limit
                             if cut_end > next_limit:
                                 cut_end = next_limit
                     
@@ -943,8 +954,11 @@ class AIIA_Podcast_Stitcher:
                 cut_start = prev_cut_end[speaker]
             cut_start = max(0, cut_start)
 
-            # cut_end 向后延伸 padding（后续片段处理时会通过 gap_before 自动约束）
-            cut_end = min(len(wav) / sr, cut_end + padding)
+            # cut_end 向后延伸 padding，但不得超过 hard limit（下一句的语音起始）
+            max_cut_end = len(wav) / sr
+            if next_onset_limit is not None:
+                max_cut_end = next_onset_limit
+            cut_end = min(max_cut_end, cut_end + padding)
 
             prev_cut_end[speaker] = cut_end
 
