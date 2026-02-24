@@ -831,6 +831,7 @@ class AIIA_Podcast_Stitcher:
                     else:
                         cut_end = fa_end + TAIL_ALLOWANCE
                         
+                    print(f"{log} 🐛 {speaker}[{sent_local_idx}] after TAIL_ALLOWANCE: cut_end={cut_end:.4f}")
                     # 用 VAD 验证尾部：寻找能量谷和 VAD 终点附近的合理落点
                     if use_vad:
                         vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
@@ -839,9 +840,11 @@ class AIIA_Podcast_Stitcher:
                             _, vad_offset = self._refine_with_vad(fa_start, fa_end, vad_ts, search_margin=0.5)
                             # 如果 VAD 侦测到更长的尾音，则采纳更长的；但绝不早于我们的物理推断
                             cut_end = max(cut_end, vad_offset)
+                            print(f"{log} 🐛 {speaker}[{sent_local_idx}] after VAD refine: cut_end={cut_end:.4f} (vad_offset={vad_offset:.4f})")
                             
                     # 取能量谷微调：在估算好的 cut_end 附近找一个真正安静的帧切断，避免切在底噪波峰
                     cut_end = self._refine_cut_point(wav, sr, cut_end, search_radius=0.10, direction="both")
+                    print(f"{log} 🐛 {speaker}[{sent_local_idx}] after Energy refine: cut_end={cut_end:.4f}")
 
                     # 硬性上界：cut_end 不得超过下一句的最早起始位置
                     # 这是最终兜底——无论前面 TAIL_ALLOWANCE / VAD / Energy 怎么延伸，
@@ -851,16 +854,26 @@ class AIIA_Podcast_Stitcher:
                         if next_fa:
                             next_starts = [next_fa['start']]
                             # 也收集下一句对应的 VAD 段起始时间
+                            # 注意：只有当 VAD 段的 start 晚于当前句 FA end 时才有意义
+                            # 否则说明该 VAD 段跨越了当前句和下一句，其 start 不代表下一句的起始
                             if use_vad:
                                 vad_ts = vad_timestamps_A if speaker == "A" else vad_timestamps_B
                                 if vad_ts:
                                     for vad in vad_ts:
                                         if vad['end'] > next_fa['start'] and vad['start'] < next_fa['end']:
-                                            next_starts.append(vad['start'])
+                                            # 只有 VAD 段 start 在当前句 FA end 之后才作为下一句起始约束
+                                            if vad['start'] > fa_end:
+                                                next_starts.append(vad['start'])
+                                            print(f"{log} 🐛 {speaker}[{sent_local_idx}] hard limit: matched VAD=[{vad['start']:.3f},{vad['end']:.3f}], fa_end={fa_end:.3f}")
                                             break
                             next_hard_limit = min(next_starts)
+                            print(f"{log} 🐛 {speaker}[{sent_local_idx}] hard limit: next_starts={[round(x,3) for x in next_starts]}, limit={next_hard_limit:.4f}, cut_end_before={cut_end:.4f}")
                             if cut_end > next_hard_limit:
                                 cut_end = next_hard_limit
+                    
+                    # 兜底：cut_end 绝不能小于 cut_start
+                    if cut_end < cut_start:
+                        cut_end = fa_end
                     
                     # 交叉验证：同时计算 VAD 和 Energy 的结果做对比
                     if use_vad and vad_timestamps_A is not None:
